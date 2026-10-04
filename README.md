@@ -26,6 +26,8 @@ Packages/CompanionKit/       Local Swift package
   Sources/BLETransport/      CoreBluetooth link: scanning, connecting, moving bytes
   Sources/CompanionProtocol/ Protocol messages and codecs (no UI, no CoreBluetooth)
   Sources/CompanionLink/     Protocol client over the BLE link, controller state, demo controller
+  Sources/PresetSync/        Bundled presets and the push / revert flow (no UI)
+  Sources/CompanionFakes/    In-memory controller for tests and previews
   Sources/DesignSystem/      Dark theme tokens, shared components, preview catalog
 ```
 
@@ -99,6 +101,24 @@ reads on `FakeRadio`.
 Golden vectors live in
 [`Tests/CompanionProtocolTests/Fixtures/golden-vectors`](Packages/CompanionKit/Tests/CompanionProtocolTests/Fixtures/golden-vectors);
 its README says where each file comes from.
+
+## Presets
+
+`PresetSync` ships a few presets in
+[`Sources/PresetSync/Presets`](Packages/CompanionKit/Sources/PresetSync/Presets).
+Each is a complete, canonical schema version 1 config made from the factory profile
+(`factory.json`, a verbatim copy of the firmware's) with a few changes; turn
+signals, hazards and the brake light stay exactly as in the factory profile.
+`ConfigDescriber` explains each action in plain language.
+
+`PresetSyncModel` pushes a preset or reverts to factory over a `PresetSyncLink`.
+The app does not validate presets: the controller does, and the flow shows its
+verdict, including the error code and field when it rejects one. A push or revert
+counts as done only after the controller restarts and Config status shows the new
+config running. `PresetsView` is the entry point Home links to.
+
+`CompanionFakes` has the in-memory `FakeController` and a `FakePresetSyncLink`
+over it, used by the tests and the Presets previews.
 
 ## Theme
 

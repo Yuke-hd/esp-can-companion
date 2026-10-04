@@ -29,6 +29,10 @@ targets:
         product: BLETransport
       - package: CompanionKit
         product: CompanionLink
+      - package: CompanionKit
+        product: PresetSync
+      - package: CompanionKit
+        product: CompanionFakes
     info:
       path: App/Info.plist
       properties:

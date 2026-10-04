@@ -1,5 +1,6 @@
 import XCTest
 @testable import CompanionProtocol
+import CompanionFakes
 
 final class CompanionClientTests: XCTestCase {
     private var controller: FakeController!
