@@ -151,6 +151,47 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(store.rememberedDeviceID, controller.id)
     }
 
+    func testBondRemovedReportedAsConnectFailureIsNotRetried() async {
+        makeManager(controllers: [FakeController(connectError: .peerRemovedPairingInformation)])
+        manager.connect(to: controller.id)
+        scheduler.runUntilIdle()
+
+        XCTAssertEqual(manager.state, .disconnected(.bondRemoved, willReconnect: false))
+        XCTAssertNil(scheduler.nextDelay, "nothing should be scheduled to retry")
+    }
+
+    func testBondRemovedReportedAsDisconnectIsNotRetried() async {
+        makeManager()
+        connectAndPair()
+
+        radio.dropConnection(controller.id, error: .peerRemovedPairingInformation)
+        scheduler.runUntilIdle()
+
+        XCTAssertEqual(manager.state, .disconnected(.bondRemoved, willReconnect: false))
+        XCTAssertTrue(radio.pendingConnections.isEmpty)
+    }
+
+    func testLinkDroppingDuringPairingBacksOff() async {
+        makeManager(controllers: [FakeController(pairing: .dropsLink)])
+        manager.connect(to: controller.id)
+        scheduler.advance(by: 0.2)
+
+        guard case .disconnected(.connectionLost, willReconnect: true) = manager.state else {
+            return XCTFail("expected connectionLost, got \(manager.state)")
+        }
+        XCTAssertTrue(radio.pendingConnections.isEmpty, "should wait before reconnecting")
+        XCTAssertEqual(scheduler.nextDelay ?? -1, 1, accuracy: 0.001)
+
+        // The retry (at 1.2 s) connects and drops again at 1.4 s; the next wait is 2 s.
+        scheduler.advance(by: 1.3)
+        XCTAssertTrue(radio.pendingConnections.isEmpty)
+        XCTAssertEqual(scheduler.nextDelay ?? -1, 1.9, accuracy: 0.001)
+
+        radio.update(controller.id) { $0.pairing = .succeeds }
+        scheduler.advance(by: 2.5)
+        XCTAssertTrue(manager.state.isConnected)
+    }
+
     func testDeviceWithoutCompanionServiceIsRejected() async {
         makeManager(controllers: [FakeController(hasCompanionService: false)])
         manager.connect(to: controller.id)
@@ -392,6 +433,25 @@ final class ConnectionManagerTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ConnectionError, .disconnected)
         }
+    }
+
+    func testPendingWriteFailsWhenSwitchingControllers() async {
+        let first = FakeController(name: "First")
+        let second = FakeController(name: "Second")
+        makeManager(controllers: [first, second])
+        connectAndPair()
+
+        let write = startWrite(Data([0x01]))
+        await waitForRadioWork()
+        manager.connect(to: second.id)
+        scheduler.runUntilIdle()
+        do {
+            try await write.value
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ConnectionError, .disconnected)
+        }
+        XCTAssertTrue(manager.state.isConnected)
     }
 
     func testNotificationsAreForwarded() async {

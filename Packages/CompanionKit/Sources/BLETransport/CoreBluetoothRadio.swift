@@ -82,7 +82,11 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     }
 
     public func write(_ data: Data, to characteristic: GATTUUID, on id: PeripheralID) {
-        guard let peripheral = peripherals[id], let target = self.characteristic(characteristic, on: peripheral) else {
+        // Only the companion service's writable characteristics, whoever the caller is.
+        guard configuration?.writableCharacteristicUUIDs.contains(characteristic) == true,
+              let peripheral = peripherals[id],
+              let target = self.characteristic(characteristic, on: peripheral)
+        else {
             emit(.wrote(id, characteristic, .characteristicNotFound(characteristic)))
             return
         }
@@ -119,8 +123,18 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         return companionService(on: peripheral)?.characteristics?.first { $0.uuid == cbUUID }
     }
 
+    /// Maps back to the configured spelling, since `CBUUID.uuidString` shortens
+    /// Bluetooth-base UUIDs (for example "2A19").
     private func gattUUID(_ characteristic: CBCharacteristic) -> GATTUUID {
-        GATTUUID(characteristic.uuid.uuidString)
+        if let configuration {
+            let configured = [configuration.pairingCharacteristicUUID]
+                + configuration.writableCharacteristicUUIDs
+                + configuration.notifyingCharacteristicUUIDs
+            if let match = configured.first(where: { CBUUID(string: $0.string) == characteristic.uuid }) {
+                return match
+            }
+        }
+        return GATTUUID(characteristic.uuid.uuidString)
     }
 
     private func finishPreparing(_ id: PeripheralID, _ error: RadioError?) {
@@ -158,6 +172,11 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
 extension CoreBluetoothRadio: CBCentralManagerDelegate {
     nonisolated public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {
+            if central.state == .resetting || central.state == .poweredOff {
+                // Peripheral objects are invalid after a reset; retrieve them again later.
+                peripherals.removeAll()
+                preparing.removeAll()
+            }
             emit(.stateChanged(state))
         }
     }

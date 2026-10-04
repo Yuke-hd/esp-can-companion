@@ -32,7 +32,7 @@ public final class ConnectionManager {
     @ObservationIgnored private var isScanRequested = false
     @ObservationIgnored private var isScanningForTarget = false
     /// A disconnect we caused ourselves and will handle with a backoff retry.
-    @ObservationIgnored private var ignoreNextDisconnect = false
+    @ObservationIgnored private var ignoreDisconnectFor: PeripheralID?
     @ObservationIgnored private var restoredConnected: Set<PeripheralID> = []
     @ObservationIgnored private var failedAttempts = 0
     @ObservationIgnored private var retryToken: BLECancellable?
@@ -86,8 +86,11 @@ public final class ConnectionManager {
     /// device once pairing succeeds.
     public func connect(to id: PeripheralID) {
         stopScan()
+        stopTargetScan()
+        ignoreDisconnectFor = nil
         if let previous = target, previous != id {
             radio.cancelConnection(previous)
+            failPendingWrites(.disconnected)
         }
         target = id
         wantsLink = true
@@ -100,7 +103,8 @@ public final class ConnectionManager {
     public func disconnect() {
         wantsLink = false
         cancelRetry()
-        isScanningForTarget = false
+        stopTargetScan()
+        ignoreDisconnectFor = nil
         if let id = target { radio.cancelConnection(id) }
         failPendingWrites(.disconnected)
         state = .disconnected(.userRequested, willReconnect: false)
@@ -113,6 +117,7 @@ public final class ConnectionManager {
         target = id
         wantsLink = true
         failedAttempts = 0
+        ignoreDisconnectFor = nil
         guard radio.state == .poweredOn else { return }
         attemptConnect(id)
     }
@@ -177,17 +182,30 @@ public final class ConnectionManager {
 
         case .failedToConnect(let id, let error):
             guard id == target, wantsLink else { return }
-            scheduleRetry(reason: .connectFailed(error?.message))
+            if let error, let reason = Self.terminalReason(for: error) {
+                stopReconnecting(id, reason: reason)
+            } else {
+                scheduleRetry(reason: .connectFailed(error?.message))
+            }
 
         case .disconnected(let id, let error):
             guard id == target else { return }
             failPendingWrites(.disconnected)
-            if ignoreNextDisconnect {
-                ignoreNextDisconnect = false
+            if ignoreDisconnectFor == id {
+                ignoreDisconnectFor = nil
                 return
             }
             guard wantsLink, radio.state == .poweredOn else { return }
-            attemptConnect(id, showing: .connectionLost(error?.message))
+            if let error, let reason = Self.terminalReason(for: error) {
+                // iOS often reports a cleared bond or failed pairing as a disconnect.
+                stopReconnecting(id, reason: reason)
+            } else if case .connected = state {
+                attemptConnect(id, showing: .connectionLost(error?.message))
+            } else {
+                // Dropped before the link was usable (for example during pairing):
+                // back off so a failing controller does not cause a tight loop.
+                scheduleRetry(reason: .connectionLost(error?.message))
+            }
 
         case .prepared(let id, let error):
             guard id == target, wantsLink else { return }
@@ -204,7 +222,7 @@ public final class ConnectionManager {
             }
 
         case .received(let id, let characteristic, let data):
-            guard id == target else { return }
+            guard id == target, state.isConnected else { return }
             onNotification?(characteristic, data)
 
         case .restored(let peripherals):
@@ -253,7 +271,7 @@ public final class ConnectionManager {
     private func radioWentAway(_ newState: LinkState) {
         cancelRetry()
         isScanningForTarget = false
-        ignoreNextDisconnect = false
+        ignoreDisconnectFor = nil
         failPendingWrites(.disconnected)
         state = newState
     }
@@ -271,24 +289,32 @@ public final class ConnectionManager {
             return
         }
 
-        let terminalReason: DisconnectReason?
-        switch error {
-        case .peerRemovedPairingInformation: terminalReason = .bondRemoved
-        case .pairingFailed(let message): terminalReason = .pairingFailed(message)
-        case .serviceNotFound, .characteristicNotFound: terminalReason = .incompatibleDevice
-        case .other: terminalReason = nil
-        }
-
-        if let terminalReason {
-            // Retrying would only re-prompt or fail again; wait for the user.
-            wantsLink = false
-            radio.cancelConnection(id)
-            state = .disconnected(terminalReason, willReconnect: false)
+        if let reason = Self.terminalReason(for: error) {
+            stopReconnecting(id, reason: reason)
         } else {
-            ignoreNextDisconnect = true
+            ignoreDisconnectFor = id
             radio.cancelConnection(id)
             scheduleRetry(reason: .connectionLost(error.message))
         }
+    }
+
+    /// Errors that retrying cannot fix: it would only re-prompt or fail again.
+    private static func terminalReason(for error: RadioError) -> DisconnectReason? {
+        switch error {
+        case .peerRemovedPairingInformation: .bondRemoved
+        case .pairingFailed(let message): .pairingFailed(message)
+        case .serviceNotFound, .characteristicNotFound: .incompatibleDevice
+        case .other: nil
+        }
+    }
+
+    /// Gives up on the target until the user acts.
+    private func stopReconnecting(_ id: PeripheralID, reason: DisconnectReason) {
+        wantsLink = false
+        cancelRetry()
+        stopTargetScan()
+        radio.cancelConnection(id)
+        state = .disconnected(reason, willReconnect: false)
     }
 
     // MARK: - Connecting
@@ -305,6 +331,7 @@ public final class ConnectionManager {
     /// link went down while the request is pending.
     private func attemptConnect(_ id: PeripheralID, showing reason: DisconnectReason? = nil) {
         cancelRetry()
+        stopTargetScan()
         if let reason {
             state = .disconnected(reason, willReconnect: true)
         } else {
@@ -328,6 +355,12 @@ public final class ConnectionManager {
             guard let self, self.wantsLink, let id = self.target, self.radio.state == .poweredOn else { return }
             self.attemptConnect(id, showing: reason)
         }
+    }
+
+    private func stopTargetScan() {
+        guard isScanningForTarget else { return }
+        isScanningForTarget = false
+        if !isScanRequested { radio.stopScan() }
     }
 
     private func cancelRetry() {

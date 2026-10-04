@@ -8,6 +8,9 @@ public struct FakeController: Sendable {
         case fails(String)
         /// The controller's bonds were cleared but the phone still has one.
         case peerRemovedPairingInformation
+        /// The link drops mid-pairing without a pairing error, as ESP32 stacks
+        /// often do when the user cancels the prompt.
+        case dropsLink
     }
 
     public let id: PeripheralID
@@ -124,6 +127,9 @@ public final class FakeRadio: BLERadio {
             case .succeeds: onEvent?(.prepared(id, nil))
             case .fails(let message): onEvent?(.prepared(id, .pairingFailed(message)))
             case .peerRemovedPairingInformation: onEvent?(.prepared(id, .peerRemovedPairingInformation))
+            case .dropsLink:
+                connectedPeripherals.remove(id)
+                onEvent?(.disconnected(id, .other("The specified device has disconnected from us.")))
             }
         }
     }
@@ -193,10 +199,14 @@ public final class FakeRadio: BLERadio {
         scheduler.schedule(after: duration) { [weak self] in self?.powerOn(id) }
     }
 
-    /// Drops an open link while the controller stays powered, like brief interference.
-    public func dropConnection(_ id: PeripheralID) {
+    /// Drops an open link while the controller stays powered, like brief
+    /// interference. Pass an error to mimic how iOS reports the drop.
+    public func dropConnection(
+        _ id: PeripheralID,
+        error: RadioError = .other("The specified device has disconnected from us.")
+    ) {
         if connectedPeripherals.remove(id) != nil {
-            emit(.disconnected(id, .other("The specified device has disconnected from us.")))
+            emit(.disconnected(id, error))
         }
     }
 
