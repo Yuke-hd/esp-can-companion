@@ -100,4 +100,4 @@ capture formats as a backstop.
 
 ## License
 
-Not chosen yet.
+MIT. See [LICENSE](LICENSE).
