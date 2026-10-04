@@ -35,13 +35,17 @@ public final class ConnectionManager {
     @ObservationIgnored private var ignoreDisconnectFor: PeripheralID?
     @ObservationIgnored private var restoredConnected: Set<PeripheralID> = []
     @ObservationIgnored private var failedAttempts = 0
+    /// Links dropped during pairing in a row. The controller drops the link when
+    /// it rejects a pairing, for example outside its pairing window.
+    @ObservationIgnored private var pairingDrops = 0
+    private static let maximumPairingDrops = 3
     @ObservationIgnored private var retryToken: BLECancellable?
     @ObservationIgnored private var pendingWrites: [GATTUUID: [CheckedContinuation<Void, Error>]] = [:]
     @ObservationIgnored private var started = false
 
     public init(
         radio: BLERadio,
-        configuration: CompanionServiceConfiguration = .placeholder,
+        configuration: CompanionServiceConfiguration = .protocolV1,
         store: DeviceStore,
         scheduler: BLEScheduler,
         reconnectPolicy: ReconnectPolicy = ReconnectPolicy()
@@ -95,6 +99,7 @@ public final class ConnectionManager {
         target = id
         wantsLink = true
         failedAttempts = 0
+        pairingDrops = 0
         guard radio.state == .poweredOn else { return }
         attemptConnect(id)
     }
@@ -117,6 +122,7 @@ public final class ConnectionManager {
         target = id
         wantsLink = true
         failedAttempts = 0
+        pairingDrops = 0
         ignoreDisconnectFor = nil
         guard radio.state == .poweredOn else { return }
         attemptConnect(id)
@@ -201,7 +207,11 @@ public final class ConnectionManager {
                 stopReconnecting(id, reason: reason)
             } else if case .connected = state {
                 attemptConnect(id, showing: .connectionLost(error?.message))
+            } else if case .pairing = state, pairingDrops + 1 >= Self.maximumPairingDrops {
+                pairingDrops = 0
+                stopReconnecting(id, reason: .pairingFailed(error?.message))
             } else {
+                if case .pairing = state { pairingDrops += 1 }
                 // Dropped before the link was usable (for example during pairing):
                 // back off so a failing controller does not cause a tight loop.
                 scheduleRetry(reason: .connectionLost(error?.message))
@@ -279,6 +289,7 @@ public final class ConnectionManager {
     private func handlePrepared(_ id: PeripheralID, error: RadioError?) {
         guard let error else {
             failedAttempts = 0
+            pairingDrops = 0
             store.rememberedDeviceID = id
             rememberedDeviceID = id
             state = .connected(ConnectedDevice(
@@ -304,6 +315,7 @@ public final class ConnectionManager {
         case .peerRemovedPairingInformation: .bondRemoved
         case .pairingFailed(let message): .pairingFailed(message)
         case .serviceNotFound, .characteristicNotFound: .incompatibleDevice
+        case .unsupportedProtocol(let major): .unsupportedProtocol(major: major)
         case .other: nil
         }
     }

@@ -145,9 +145,10 @@ extension LinkState {
             case .userRequested: "Disconnected."
             case .connectionLost: "Lost the connection. Waiting for the controller to come back."
             case .connectFailed: "Could not connect. Retrying."
-            case .pairingFailed: "Pairing did not complete. Try again."
+            case .pairingFailed: "Pairing did not complete. Press the user key on the controller to allow pairing for 120 seconds, then try again."
             case .bondRemoved: "The controller forgot this phone. Forget it in iOS Settings > Bluetooth, then pair again."
             case .incompatibleDevice: "This device is not a companion controller."
+            case .unsupportedProtocol: "This controller needs a newer app, or the controller firmware needs an update."
             }
         }
     }

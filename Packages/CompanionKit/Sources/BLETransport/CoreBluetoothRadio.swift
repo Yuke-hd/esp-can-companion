@@ -137,6 +137,49 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         return GATTUUID(characteristic.uuid.uuidString)
     }
 
+    private func deviceInfoRead(
+        on peripheral: CBPeripheral,
+        value: Data?,
+        error: Error?,
+        configuration: CompanionServiceConfiguration
+    ) {
+        let id = peripheral.identifier
+        if let error {
+            finishPreparing(id, Self.radioError(error))
+            return
+        }
+        guard let major = value?.first else {
+            finishPreparing(id, .other("Device info was empty."))
+            return
+        }
+        guard configuration.supportedProtocolMajors.contains(major) else {
+            finishPreparing(id, .unsupportedProtocol(major: major))
+            return
+        }
+        // Reading an encrypted characteristic makes iOS pair (showing its prompt)
+        // or re-encrypt with the stored bond. The controller answers with
+        // Insufficient Authentication (0x05) or Insufficient Encryption (0x0F),
+        // iOS handles those itself, and the read completes once the link is encrypted.
+        if let pairing = characteristic(configuration.pairingCharacteristicUUID, on: peripheral) {
+            peripheral.readValue(for: pairing)
+        }
+    }
+
+    private func pairingRead(on peripheral: CBPeripheral, error: Error?, configuration: CompanionServiceConfiguration) {
+        let id = peripheral.identifier
+        if let error {
+            finishPreparing(id, Self.radioError(error))
+            return
+        }
+        // CCCD writes need the encrypted, bonded link too, so subscribe only now.
+        for uuid in configuration.notifyingCharacteristicUUIDs {
+            if let notifying = characteristic(uuid, on: peripheral) {
+                peripheral.setNotifyValue(true, for: notifying)
+            }
+        }
+        finishPreparing(id, nil)
+    }
+
     private func finishPreparing(_ id: PeripheralID, _ error: RadioError?) {
         guard preparing.remove(id) != nil else { return }
         emit(.prepared(id, error))
@@ -260,18 +303,17 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
                 finishPreparing(id, Self.radioError(error))
                 return
             }
-            guard let pairing = characteristic(configuration.pairingCharacteristicUUID, on: peripheral) else {
-                finishPreparing(id, .characteristicNotFound(configuration.pairingCharacteristicUUID))
-                return
-            }
-            for uuid in configuration.notifyingCharacteristicUUIDs {
-                if let notifying = characteristic(uuid, on: peripheral) {
-                    peripheral.setNotifyValue(true, for: notifying)
+            for required in [configuration.deviceInfoCharacteristicUUID, configuration.pairingCharacteristicUUID] {
+                guard self.characteristic(required, on: peripheral) != nil else {
+                    finishPreparing(id, .characteristicNotFound(required))
+                    return
                 }
             }
-            // Reading an encrypted characteristic makes iOS pair (showing its
-            // prompt) if needed; the read completes once the link is encrypted.
-            peripheral.readValue(for: pairing)
+            // Device info is readable before pairing; check the protocol version first
+            // so the app never pairs with firmware it cannot talk to.
+            if let deviceInfo = self.characteristic(configuration.deviceInfoCharacteristicUUID, on: peripheral) {
+                peripheral.readValue(for: deviceInfo)
+            }
         }
     }
 
@@ -283,9 +325,15 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
         MainActor.assumeIsolated {
             let id = peripheral.identifier
             let uuid = gattUUID(characteristic)
-            if preparing.contains(id), uuid == configuration?.pairingCharacteristicUUID {
-                finishPreparing(id, Self.radioError(error))
-                return
+            if preparing.contains(id), let configuration {
+                if uuid == configuration.deviceInfoCharacteristicUUID {
+                    deviceInfoRead(on: peripheral, value: characteristic.value, error: error, configuration: configuration)
+                    return
+                }
+                if uuid == configuration.pairingCharacteristicUUID {
+                    pairingRead(on: peripheral, error: error, configuration: configuration)
+                    return
+                }
             }
             guard error == nil, let value = characteristic.value else { return }
             emit(.received(id, uuid, value))

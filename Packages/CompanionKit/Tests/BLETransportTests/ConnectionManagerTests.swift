@@ -9,8 +9,8 @@ final class ConnectionManagerTests: XCTestCase {
     private var store: InMemoryDeviceStore!
     private var manager: ConnectionManager!
 
-    private let control = CompanionServiceConfiguration.placeholderControlCharacteristic
-    private let telemetry = CompanionServiceConfiguration.placeholderTelemetryCharacteristic
+    private let control = CompanionGATT.command
+    private let telemetry = CompanionGATT.liveSignals
 
     private func makeManager(
         controllers: [FakeController]? = nil,
@@ -190,6 +190,28 @@ final class ConnectionManagerTests: XCTestCase {
         radio.update(controller.id) { $0.pairing = .succeeds }
         scheduler.advance(by: 2.5)
         XCTAssertTrue(manager.state.isConnected)
+    }
+
+    func testUnsupportedProtocolMajorIsRejectedBeforePairing() async {
+        makeManager(controllers: [FakeController(protocolMajor: 2)])
+        manager.connect(to: controller.id)
+        scheduler.runUntilIdle()
+
+        XCTAssertEqual(manager.state, .disconnected(.unsupportedProtocol(major: 2), willReconnect: false))
+        XCTAssertNil(store.rememberedDeviceID)
+    }
+
+    func testRepeatedDropsDuringPairingStopRetrying() async {
+        // For example the pairing window is closed: the controller rejects the
+        // pairing and drops the link each time.
+        makeManager(controllers: [FakeController(pairing: .dropsLink)])
+        manager.connect(to: controller.id)
+        scheduler.advance(by: 60)
+
+        guard case .disconnected(.pairingFailed, willReconnect: false) = manager.state else {
+            return XCTFail("expected pairingFailed, got \(manager.state)")
+        }
+        XCTAssertNil(scheduler.nextDelay)
     }
 
     func testDeviceWithoutCompanionServiceIsRejected() async {

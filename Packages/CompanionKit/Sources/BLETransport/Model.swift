@@ -28,38 +28,63 @@ public struct GATTUUID: Hashable, Sendable, ExpressibleByStringLiteral, CustomSt
 public struct CompanionServiceConfiguration: Sendable, Equatable {
     /// Service UUID used to filter scans and to find the service after connecting.
     public var serviceUUID: GATTUUID
-    /// An encrypted characteristic. Reading it makes iOS start pairing if the
-    /// phone and controller are not bonded yet.
+    /// Readable without pairing. Its first byte is the protocol major version,
+    /// checked before pairing so the app never pairs with firmware it cannot talk to.
+    public var deviceInfoCharacteristicUUID: GATTUUID
+    /// Protocol major versions this app supports.
+    public var supportedProtocolMajors: Set<UInt8>
+    /// An encrypted, readable characteristic. Reading it makes iOS pair (or
+    /// re-encrypt with a stored bond) before the read completes.
     public var pairingCharacteristicUUID: GATTUUID
     /// Characteristics the app is allowed to write (always with response).
     public var writableCharacteristicUUIDs: Set<GATTUUID>
-    /// Characteristics the app subscribes to for notifications.
+    /// Characteristics the app subscribes to once the link is paired.
     public var notifyingCharacteristicUUIDs: Set<GATTUUID>
 
     public init(
         serviceUUID: GATTUUID,
+        deviceInfoCharacteristicUUID: GATTUUID,
+        supportedProtocolMajors: Set<UInt8>,
         pairingCharacteristicUUID: GATTUUID,
         writableCharacteristicUUIDs: Set<GATTUUID>,
         notifyingCharacteristicUUIDs: Set<GATTUUID>
     ) {
         self.serviceUUID = serviceUUID
+        self.deviceInfoCharacteristicUUID = deviceInfoCharacteristicUUID
+        self.supportedProtocolMajors = supportedProtocolMajors
         self.pairingCharacteristicUUID = pairingCharacteristicUUID
         self.writableCharacteristicUUIDs = writableCharacteristicUUIDs
         self.notifyingCharacteristicUUIDs = notifyingCharacteristicUUIDs
     }
+}
 
-    // TODO: Replace with the UUIDs from the firmware protocol spec
-    // (Yuke-hd/mazda-can-accessory-controller#160) once it is published.
-    // These are placeholders so the app, previews, and tests can run today.
-    public static let placeholderControlCharacteristic: GATTUUID = "6E400002-0C1E-4C0B-9D1A-5CA1AB1E0001"
-    public static let placeholderTelemetryCharacteristic: GATTUUID = "6E400003-0C1E-4C0B-9D1A-5CA1AB1E0001"
-    public static let placeholderPairingCharacteristic: GATTUUID = "6E400004-0C1E-4C0B-9D1A-5CA1AB1E0001"
+/// UUIDs from the companion BLE protocol, version 1
+/// (Yuke-hd/mazda-can-accessory-controller, docs/specs/companion/ble-protocol.md).
+/// They are fixed for every protocol version.
+public enum CompanionGATT {
+    public static let service: GATTUUID = "AB490000-09B6-4509-BF8E-2790253BAF98"
+    /// Read, no security.
+    public static let deviceInfo: GATTUUID = "AB490001-09B6-4509-BF8E-2790253BAF98"
+    /// Read and write, encrypted and bonded.
+    public static let config: GATTUUID = "AB490002-09B6-4509-BF8E-2790253BAF98"
+    /// Read and notify, encrypted and bonded.
+    public static let configStatus: GATTUUID = "AB490003-09B6-4509-BF8E-2790253BAF98"
+    /// Notify, encrypted and bonded.
+    public static let liveSignals: GATTUUID = "AB490004-09B6-4509-BF8E-2790253BAF98"
+    /// Write, encrypted and bonded.
+    public static let command: GATTUUID = "AB490005-09B6-4509-BF8E-2790253BAF98"
+}
 
-    public static let placeholder = CompanionServiceConfiguration(
-        serviceUUID: "6E400001-0C1E-4C0B-9D1A-5CA1AB1E0001",
-        pairingCharacteristicUUID: placeholderPairingCharacteristic,
-        writableCharacteristicUUIDs: [placeholderControlCharacteristic],
-        notifyingCharacteristicUUIDs: [placeholderTelemetryCharacteristic]
+extension CompanionServiceConfiguration {
+    /// Protocol version 1. Config status is the pairing trigger because it is
+    /// the cheapest encrypted read.
+    public static let protocolV1 = CompanionServiceConfiguration(
+        serviceUUID: CompanionGATT.service,
+        deviceInfoCharacteristicUUID: CompanionGATT.deviceInfo,
+        supportedProtocolMajors: [1],
+        pairingCharacteristicUUID: CompanionGATT.configStatus,
+        writableCharacteristicUUIDs: [CompanionGATT.config, CompanionGATT.command],
+        notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals]
     )
 }
 
@@ -117,6 +142,9 @@ public enum DisconnectReason: Sendable, Equatable {
     case bondRemoved
     /// The peripheral does not expose the companion service.
     case incompatibleDevice
+    /// The controller speaks a protocol major version this app does not
+    /// support. The app or the firmware needs an update; the app did not pair.
+    case unsupportedProtocol(major: UInt8)
 }
 
 /// Connection state of the BLE link to a companion controller, as the UI sees it.
@@ -158,6 +186,7 @@ public enum RadioError: Error, Sendable, Equatable {
     case peerRemovedPairingInformation
     case serviceNotFound
     case characteristicNotFound(GATTUUID)
+    case unsupportedProtocol(major: UInt8)
     case other(String?)
 
     var message: String? {
@@ -166,6 +195,7 @@ public enum RadioError: Error, Sendable, Equatable {
         case .peerRemovedPairingInformation: "The controller removed its pairing information."
         case .serviceNotFound: "The companion service was not found."
         case .characteristicNotFound(let uuid): "Characteristic \(uuid) was not found."
+        case .unsupportedProtocol(let major): "Unsupported protocol version \(major)."
         }
     }
 }

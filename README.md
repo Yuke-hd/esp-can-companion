@@ -63,8 +63,10 @@ power or the app is relaunched in the background (state restoration plus the
 `bluetooth-central` background mode). It only writes to characteristics of the
 companion service.
 
-The service and characteristic UUIDs in `CompanionServiceConfiguration.placeholder`
-are placeholders until the firmware protocol spec is published.
+UUIDs and pairing follow protocol version 1 of the firmware's
+[companion BLE spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md):
+the app reads device info and checks the protocol major version before pairing,
+and new pairings only work for 120 seconds after the controller's user key is pressed.
 
 `FakeRadio` simulates controllers in memory. The app uses it automatically in the
 Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument

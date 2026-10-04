@@ -7,8 +7,9 @@ public enum RadioEvent: Sendable, Equatable {
     case connected(PeripheralID)
     case failedToConnect(PeripheralID, RadioError?)
     case disconnected(PeripheralID, RadioError?)
-    /// The companion service was found, notifications are enabled, and the
-    /// encrypted pairing characteristic was read, so the link is paired.
+    /// The companion service was found, the protocol version is supported, the
+    /// encrypted pairing characteristic was read (so the link is paired), and
+    /// notifications were requested.
     /// `nil` means success.
     case prepared(PeripheralID, RadioError?)
     case wrote(PeripheralID, GATTUUID, RadioError?)
@@ -45,8 +46,9 @@ public protocol BLERadio: AnyObject {
     /// peripheral is in range; it does not time out.
     func connect(_ id: PeripheralID)
     func cancelConnection(_ id: PeripheralID)
-    /// Discovers the companion service, subscribes to notifications, and reads
-    /// the encrypted pairing characteristic. Reports `.prepared`.
+    /// Discovers the companion service, reads device info and checks the
+    /// protocol major version, reads the encrypted pairing characteristic (which
+    /// pairs or re-encrypts), then subscribes to notifications. Reports `.prepared`.
     func prepare(_ id: PeripheralID, configuration: CompanionServiceConfiguration)
     /// Writes with response. Reports `.wrote`.
     func write(_ data: Data, to characteristic: GATTUUID, on id: PeripheralID)

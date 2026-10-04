@@ -22,6 +22,8 @@ public struct FakeController: Sendable {
     public var isKnownToSystem: Bool
     public var pairing: Pairing
     public var hasCompanionService: Bool
+    /// `protocol_major` reported in device info.
+    public var protocolMajor: UInt8
     /// When set, connection attempts fail with this error instead of connecting.
     public var connectError: RadioError?
     public var maximumWriteLength: Int
@@ -34,6 +36,7 @@ public struct FakeController: Sendable {
         isKnownToSystem: Bool = true,
         pairing: Pairing = .succeeds,
         hasCompanionService: Bool = true,
+        protocolMajor: UInt8 = 1,
         connectError: RadioError? = nil,
         maximumWriteLength: Int = 182
     ) {
@@ -44,6 +47,7 @@ public struct FakeController: Sendable {
         self.isKnownToSystem = isKnownToSystem
         self.pairing = pairing
         self.hasCompanionService = hasCompanionService
+        self.protocolMajor = protocolMajor
         self.connectError = connectError
         self.maximumWriteLength = maximumWriteLength
     }
@@ -121,6 +125,10 @@ public final class FakeRadio: BLERadio {
             guard connectedPeripherals.contains(id), let controller = controllers[id] else { return }
             guard controller.hasCompanionService else {
                 onEvent?(.prepared(id, .serviceNotFound))
+                return
+            }
+            guard configuration.supportedProtocolMajors.contains(controller.protocolMajor) else {
+                onEvent?(.prepared(id, .unsupportedProtocol(major: controller.protocolMajor)))
                 return
             }
             switch controller.pairing {
