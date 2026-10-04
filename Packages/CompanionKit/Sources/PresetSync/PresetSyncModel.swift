@@ -64,6 +64,8 @@ public final class PresetSyncModel {
     public var onChange: (@MainActor () -> Void)?
 
     private let link: PresetSyncLink
+    /// The last push or revert failed with a storage error.
+    private var lastFailureWasStorage = false
 
     public init(presets: [Preset], link: PresetSyncLink) {
         self.presets = presets
@@ -122,7 +124,7 @@ public final class PresetSyncModel {
             await settleUnknownOutcome(target)
             return
         } catch {
-            phase = .failed(target, .push(error))
+            fail(target, .push(error))
             return
         }
 
@@ -133,17 +135,23 @@ public final class PresetSyncModel {
             try? await refresh(using: client)
             guard let crc = receipt.savedCRC32 else {
                 // Saved, but the Saved notification with its CRC never arrived.
-                phase = .failed(target, .outcomeUnknown(push: true))
+                fail(target, .outcomeUnknown(push: true))
+                return
+            }
+            guard status.state != .known(.restartPending) else {
+                // Still the connection from before the restart.
+                fail(target, .outcomeUnknown(push: true))
                 return
             }
             if status.isActive(savedCRC32: crc) {
                 phase = .succeeded(target)
+                lastFailureWasStorage = false
                 onChange?()
             } else {
-                phase = .failed(target, .notActive(status))
+                fail(target, .notActive(status))
             }
         } catch {
-            phase = .failed(target, .outcomeUnknown(push: true))
+            fail(target, .outcomeUnknown(push: true))
         }
     }
 
@@ -155,7 +163,7 @@ public final class PresetSyncModel {
         } catch CompanionClientError.commandOutcomeUnknown {
             // The controller may have reverted; reconnect and check below.
         } catch {
-            phase = .failed(.factory, .revert(error))
+            fail(.factory, .revert(error))
             return
         }
 
@@ -164,14 +172,20 @@ public final class PresetSyncModel {
             let client = try await link.clientAfterRestart()
             let status = try await client.readConfigStatus()
             try? await refresh(using: client)
-            if status.activeSource == .known(.factory) {
-                phase = .succeeded(.factory)
-                onChange?()
+            if status.state == .known(.restartPending) {
+                // Still the connection from before the restart.
+                fail(.factory, .outcomeUnknown(push: false))
+            } else if status.activeSource != .known(.factory) {
+                fail(.factory, .revertNotConfirmed(status))
+            } else if status.bootFlags.contains(.lightingSetupFailed) {
+                fail(.factory, .factoryLightingFailed)
             } else {
-                phase = .failed(.factory, .revertNotConfirmed(status))
+                phase = .succeeded(.factory)
+                lastFailureWasStorage = false
+                onChange?()
             }
         } catch {
-            phase = .failed(.factory, .outcomeUnknown(push: false))
+            fail(.factory, .outcomeUnknown(push: false))
         }
     }
 
@@ -182,7 +196,15 @@ public final class PresetSyncModel {
         if let client = try? await link.clientAfterRestart() {
             try? await refresh(using: client)
         }
-        phase = .failed(target, .outcomeUnknown(push: true))
+        fail(target, .outcomeUnknown(push: true))
+    }
+
+    private func fail(_ target: Target, _ failure: SyncFailure) {
+        // After a storage failure, a second one means the storage is failing:
+        // say so instead of offering the same retry again (config-transfer.md, Commit).
+        let failure = failure.kind == .storage && lastFailureWasStorage ? .storageFailing : failure
+        lastFailureWasStorage = failure.kind == .storage
+        phase = .failed(target, failure)
     }
 
     private func report(_ progress: ConfigUploadProgress, for preset: Preset) {

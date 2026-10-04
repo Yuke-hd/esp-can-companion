@@ -184,6 +184,58 @@ final class PresetSyncModelTests: XCTestCase {
         XCTAssertEqual(link.restarts, 2)
     }
 
+    func testRevertIsNotConfirmedWhenLightingFailsToStart() async throws {
+        await push(earlyShift)
+        controller.lightingFailsAtBoot = true
+
+        model.requestRevert()
+        await model.confirm()
+
+        XCTAssertEqual(model.phase, .failed(.factory, .factoryLightingFailed))
+        XCTAssertEqual(model.active?.isFactory, true)
+        XCTAssertEqual(model.active?.lightingSetupFailed, true)
+        XCTAssertEqual(changes, 1, "Only the push was confirmed")
+    }
+
+    func testPushIsNotConfirmedOnTheConnectionBeforeTheRestart() async throws {
+        await push(earlyShift)
+        link.skipsRestart = true
+
+        await push(earlyShift)
+
+        XCTAssertEqual(failure()?.kind, .outcomeUnknown)
+        XCTAssertEqual(changes, 1)
+    }
+
+    func testRevertIsNotConfirmedOnTheConnectionBeforeTheRestart() async throws {
+        link.skipsRestart = true
+
+        model.requestRevert()
+        await model.confirm()
+
+        XCTAssertEqual(failure()?.kind, .outcomeUnknown)
+        XCTAssertEqual(changes, 0)
+    }
+
+    func testSecondStorageFailureSaysStorageIsFailing() async throws {
+        controller.commitOutcome = .storageFailure
+        await push(earlyShift)
+        XCTAssertEqual(failure()?.title, "The controller could not save the preset")
+
+        controller.revertFails = true
+        model.requestRevert()
+        await model.confirm()
+        XCTAssertEqual(failure(), .storageFailing)
+
+        controller.commitOutcome = .save
+        controller.revertFails = false
+        await push(earlyShift)
+        XCTAssertEqual(model.phase, .succeeded(.preset(earlyShift)))
+        controller.commitOutcome = .storageFailure
+        await push(earlyShift)
+        XCTAssertEqual(failure()?.title, "The controller could not save the preset", "A success resets the count")
+    }
+
     func testRevertStorageFailureLeavesTheConfig() async throws {
         await push(earlyShift)
         controller.revertFails = true

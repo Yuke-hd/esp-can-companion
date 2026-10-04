@@ -122,6 +122,23 @@ extension SyncFailure {
         )
     }
 
+    /// The factory config is selected, but lighting setup failed at boot:
+    /// the LEDs are off and CAN acquisition did not start.
+    static let factoryLightingFailed = SyncFailure(
+        kind: .notActive,
+        title: "Lighting failed to start",
+        message: "The controller restarted with its factory config, but its lights failed to start. "
+            + "The controller may need a firmware update."
+    )
+
+    /// A storage failure right after another one.
+    static let storageFailing = SyncFailure(
+        kind: .storage,
+        title: "The controller's storage is failing",
+        message: "It could not update its storage twice in a row. Which config it loads at its next start is uncertain, "
+            + "and retrying is unlikely to help. The controller may need service."
+    )
+
     static func revertNotConfirmed(_ status: ConfigStatus) -> SyncFailure {
         SyncFailure(
             kind: .notActive,

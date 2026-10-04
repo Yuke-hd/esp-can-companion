@@ -7,6 +7,9 @@ import PresetSync
 public final class FakePresetSyncLink: PresetSyncLink, @unchecked Sendable {
     public let controller: FakeController
     public let restartDelay: Duration
+    /// Returns from `clientAfterRestart()` without restarting the controller,
+    /// as an adapter that answers too early would.
+    public var skipsRestart = false
     private let lock = NSLock()
     private var restartCount = 0
 
@@ -29,7 +32,7 @@ public final class FakePresetSyncLink: PresetSyncLink, @unchecked Sendable {
     public func clientAfterRestart() async throws -> CompanionClient {
         lock.withLock { restartCount += 1 }
         if restartDelay > .zero { try await Task.sleep(for: restartDelay) }
-        controller.restart()
+        if !skipsRestart { controller.restart() }
         return try await currentClient()
     }
 }

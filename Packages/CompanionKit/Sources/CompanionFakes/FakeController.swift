@@ -62,6 +62,8 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
     /// At the next restart, the persisted override fails to load with this
     /// diagnostic and the factory config runs instead (boot flag 0).
     public var overrideFailsAtBoot: (code: UInt8, validation: UInt8)?
+    /// At every restart, lighting setup fails (boot flag 3).
+    public var lightingFailsAtBoot = false
     /// Revert to factory fails with `StorageFailure`.
     public var revertFails = false
     /// Commands perform their storage change, then the link drops before the
@@ -107,6 +109,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
                     bootDiagnostic = nil
                 }
             }
+            if lightingFailsAtBoot { bootFlags |= 0x08 }
             savedDocument = nil
             isRevertPending = false
             state = 0
