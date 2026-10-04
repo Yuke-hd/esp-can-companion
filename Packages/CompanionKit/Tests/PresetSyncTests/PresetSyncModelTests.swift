@@ -102,6 +102,29 @@ final class PresetSyncModelTests: XCTestCase {
         XCTAssertEqual(changes, 0)
     }
 
+    func testOtherLinkFailureDuringCommitIsAnUnknownOutcome() async throws {
+        controller.beforeWrite = { _, _, value in
+            if value == ConfigWritePDU.commit.encoded { throw CompanionTransportError.other("link failed") }
+        }
+        await push(earlyShift)
+
+        XCTAssertEqual(failure()?.kind, .outcomeUnknown)
+        XCTAssertEqual(changes, 0)
+    }
+
+    func testRevertWithOtherLinkFailureChecksTheController() async throws {
+        await push(earlyShift)
+        controller.beforeWrite = { _, characteristic, _ in
+            if characteristic == .command { throw CompanionTransportError.other(nil) }
+        }
+
+        model.requestRevert()
+        await model.confirm()
+
+        XCTAssertEqual(link.restarts, 2, "An unknown revert outcome is checked after reconnecting")
+        XCTAssertEqual(failure()?.kind, .notActive, "The command never ran, so the preset is still active")
+    }
+
     func testOverrideRejectedAtBootIsNotActive() async throws {
         controller.overrideFailsAtBoot = (code: 9, validation: 18)
         await push(earlyShift)

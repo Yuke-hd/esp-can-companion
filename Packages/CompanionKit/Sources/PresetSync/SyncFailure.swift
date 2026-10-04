@@ -175,6 +175,8 @@ extension SyncFailure {
             return "This controller needs a newer app, or its firmware needs an update."
         case .configSchemaMismatch(let document, let controller):
             return "The preset uses config version \(document), but the controller expects version \(controller)."
+        case .unreadableDocumentVersion:
+            return "The preset has no readable config version, so it was not sent."
         case .documentTooLarge(let size, let maximum):
             return "The preset is \(size) bytes; the controller accepts at most \(maximum)."
         case .mtuTooSmall:
