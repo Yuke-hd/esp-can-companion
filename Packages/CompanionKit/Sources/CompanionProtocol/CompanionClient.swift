@@ -23,6 +23,8 @@ public enum CompanionClientError: Error, Equatable, Sendable {
     case unsupportedLiveSignalLayout(UInt8)
     /// The document's `version` is not the controller's config schema version.
     case configSchemaMismatch(document: Int, controller: UInt16)
+    /// The document is not JSON with an integer top-level `version`.
+    case unreadableDocumentVersion
     case emptyDocument
     case documentTooLarge(size: Int, maximum: Int)
     /// The link's MTU is below the 64 bytes a config transfer needs.
@@ -52,6 +54,18 @@ public enum CompanionClientError: Error, Equatable, Sendable {
     case readBackInconsistent
     case malformed(ProtocolDecodingError)
     case transport(CompanionTransportError)
+}
+
+extension CompanionClientError {
+    /// The write may have reached the controller but no response came back:
+    /// the link dropped, failed in another way, or timed out. Only
+    /// `notConnected` means the write never left the phone.
+    var isUnknownWriteOutcome: Bool {
+        switch self {
+        case .timedOut, .transport(.disconnected), .transport(.other): true
+        default: false
+        }
+    }
 }
 
 /// Upload progress, reported after each accepted chunk.
@@ -170,7 +184,11 @@ public actor CompanionClient {
         guard document.count <= Int(info.maxConfigBytes) else {
             throw CompanionClientError.documentTooLarge(size: document.count, maximum: Int(info.maxConfigBytes))
         }
-        if let version = Self.documentVersion(document), version != Int(info.configSchemaVersion) {
+        // Compatibility rule 4: write only a document whose version matches.
+        guard let version = Self.documentVersion(document) else {
+            throw CompanionClientError.unreadableDocumentVersion
+        }
+        guard version == Int(info.configSchemaVersion) else {
             throw CompanionClientError.configSchemaMismatch(document: version, controller: info.configSchemaVersion)
         }
         guard !isUploading else { throw CompanionClientError.uploadInProgress }
@@ -262,9 +280,7 @@ public actor CompanionClient {
             try await perform(.command, timeout: timeouts.operation, cancellable: false) {
                 try await self.transport.write(command.encoded, to: .command)
             }
-        } catch CompanionClientError.transport(.disconnected) {
-            throw CompanionClientError.commandOutcomeUnknown(command)
-        } catch CompanionClientError.timedOut(.command) {
+        } catch let error as CompanionClientError where error.isUnknownWriteOutcome {
             throw CompanionClientError.commandOutcomeUnknown(command)
         }
     }
@@ -283,7 +299,8 @@ public actor CompanionClient {
             throw CompanionClientError.unsupportedLiveSignalLayout(info.liveSignalLayoutVersion)
         }
         let transport = transport
-        return AsyncStream { continuation in
+        // Keep only the newest value: a slow consumer sees current frames, not a backlog.
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let clock = ContinuousClock()
             let feed = LockedValue((feed: LiveSignalFeed(stallTimeout: stallTimeout), reportedStall: true))
             continuation.yield(.unknown)
@@ -298,7 +315,13 @@ public actor CompanionClient {
             }
             let watchdog = Task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: stallTimeout / 4)
+                    // Sleep to the exact stall deadline; poll only while none is armed.
+                    let deadline = feed.withValue { $0.reportedStall ? nil : $0.feed.stallDeadline }
+                    if let deadline {
+                        try? await Task.sleep(until: deadline, clock: .continuous)
+                    } else {
+                        try? await Task.sleep(for: stallTimeout / 4)
+                    }
                     let stalled = feed.withValue { state -> Bool in
                         guard !state.reportedStall, state.feed.isStalled(at: clock.now) else { return false }
                         state.reportedStall = true
@@ -324,8 +347,7 @@ public actor CompanionClient {
         return info
     }
 
-    /// The document's top-level integer `version`, if it parses. Anything
-    /// else is left for the controller to reject.
+    /// The document's top-level integer `version`, if it parses.
     private static func documentVersion(_ document: Data) -> Int? {
         struct Header: Decodable { let version: Int }
         return try? JSONDecoder().decode(Header.self, from: document).version
@@ -358,10 +380,7 @@ public actor CompanionClient {
 
     private func commitFailure(_ error: CompanionClientError, latestStatus: ConfigStatus?) async -> CompanionClientError {
         guard case .controllerError(let code, _) = error else {
-            switch error {
-            case .transport(.disconnected), .timedOut: return .commitOutcomeUnknown
-            default: return error
-            }
+            return error.isUnknownWriteOutcome ? .commitOutcomeUnknown : error
         }
         switch code {
         case .known(.configRejected):

@@ -22,6 +22,7 @@ final class LiveSignalFeedTests: XCTestCase {
         XCTAssertNotNil(feed.receive(frame(nibble: 0x09), at: start))
         XCTAssertEqual(feed.snapshot(at: start + .milliseconds(1999)).turnState.availability, .fresh)
         XCTAssertEqual(feed.snapshot(at: start + .seconds(2)), .unknown)
+        XCTAssertEqual(feed.stallDeadline, start + .seconds(2))
 
         feed.receive(frame(sequence: 1, nibble: 0x09), at: start + .seconds(3))
         XCTAssertEqual(feed.snapshot(at: start + .seconds(3)).sequence, 1)

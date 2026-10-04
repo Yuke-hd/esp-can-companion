@@ -167,6 +167,16 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertTrue(controller.configWrites.isEmpty)
     }
 
+    func testRefusesDocumentsWithoutAReadableVersion() async throws {
+        try await connect()
+        for document in [#"{"actions":[]}"#, #"{"version":1.5}"#, #"{"version":"1"}"#, "not json"] {
+            await assertThrows(.unreadableDocumentVersion) {
+                try await self.client.uploadConfig(document: Data(document.utf8))
+            }
+        }
+        XCTAssertTrue(controller.configWrites.isEmpty)
+    }
+
     func testSchemaMismatchWithNewerController() async throws {
         controller.deviceInfo.configSchemaVersion = 2
         try await connect()
@@ -256,6 +266,22 @@ final class CompanionClientTests: XCTestCase {
         controller.commitOutcome = .dropLink
         try await connect()
         await assertThrows(.commitOutcomeUnknown) { try await self.client.uploadConfig(document: try self.factoryDocument()) }
+    }
+
+    func testOtherLinkFailureDuringCommitIsUnknownOutcome() async throws {
+        try await connect()
+        controller.beforeWrite = { _, _, value in
+            if value == ConfigWritePDU.commit.encoded { throw CompanionTransportError.other("link failed") }
+        }
+        await assertThrows(.commitOutcomeUnknown) { try await self.client.uploadConfig(document: try self.factoryDocument()) }
+    }
+
+    func testNotConnectedDuringCommitIsAPlainFailure() async throws {
+        try await connect()
+        controller.beforeWrite = { _, _, value in
+            if value == ConfigWritePDU.commit.encoded { throw CompanionTransportError.notConnected }
+        }
+        await assertThrows(.transport(.notConnected)) { try await self.client.uploadConfig(document: try self.factoryDocument()) }
     }
 
     func testCommitTimeoutIsUnknownOutcome() async throws {
@@ -389,6 +415,14 @@ final class CompanionClientTests: XCTestCase {
         await assertThrows(.commandOutcomeUnknown(.clearBonds)) { try await self.client.send(.clearBonds) }
     }
 
+    func testCommandOtherLinkFailureIsUnknownOutcome() async throws {
+        try await connect()
+        controller.beforeWrite = { _, characteristic, _ in
+            if characteristic == .command { throw CompanionTransportError.other(nil) }
+        }
+        await assertThrows(.commandOutcomeUnknown(.revertToFactory)) { try await self.client.send(.revertToFactory) }
+    }
+
     func testCommandBusyDuringTransfer() async throws {
         try await connect()
         controller.state = 1
@@ -425,6 +459,37 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(live?.engineRPM.availability, .freshnessUnverified)
         let stalled = await iterator.next()
         XCTAssertEqual(stalled, .unknown)
+    }
+
+    func testStallIsReportedAtTheDeadline() async throws {
+        try await connect()
+        let timeout = Duration.seconds(1)
+        let stream = try await client.liveSignals(stallTimeout: timeout)
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+
+        let clock = ContinuousClock()
+        let sentAt = clock.now
+        controller.notify(.liveSignals, Data([1, 1, 1]) + Data(count: 20))
+        _ = await iterator.next()
+        let stalled = await iterator.next()
+        let elapsed = clock.now - sentAt
+        XCTAssertEqual(stalled, .unknown)
+        XCTAssertGreaterThanOrEqual(elapsed, timeout)
+        // Polling at a quarter of the timeout could lag by up to 25%.
+        XCTAssertLessThan(elapsed, timeout * 1.2)
+    }
+
+    func testSlowConsumerGetsTheNewestFrame() async throws {
+        try await connect()
+        let stream = try await client.liveSignals(stallTimeout: .seconds(5))
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+        for sequence: UInt8 in 1...5 {
+            controller.notify(.liveSignals, Data([1, sequence, 1]) + Data(count: 20))
+        }
+        let next = await iterator.next()
+        XCTAssertEqual(next?.sequence, 5)
     }
 
     func testLiveSignalsDropMalformedFrames() async throws {
