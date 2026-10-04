@@ -37,6 +37,9 @@ targets:
           - UIInterfaceOrientationPortrait
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        NSBluetoothAlwaysUsageDescription: CAN Companion uses Bluetooth to connect to your accessory controller.
+        UIBackgroundModes:
+          - bluetooth-central
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)

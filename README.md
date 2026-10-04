@@ -6,8 +6,8 @@ controller that implements the companion BLE protocol
 originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
 so it is not tied to one vehicle brand.
 
-> Status: early scaffold. The app launches to a placeholder Home screen; Bluetooth
-> and the protocol client are not implemented yet.
+> Status: early. The app can scan for, pair with, and reconnect to a controller;
+> the protocol client is not implemented yet.
 
 ## Requirements
 
@@ -53,6 +53,22 @@ cd Packages/CompanionKit
 xcodebuild test -scheme CompanionKit-Package \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
+
+## Bluetooth
+
+`BLETransport` has a `ConnectionManager` (observable from SwiftUI) that scans for
+the companion service, connects, pairs by reading an encrypted characteristic,
+remembers the controller, and reconnects on its own after the controller loses
+power or the app is relaunched in the background (state restoration plus the
+`bluetooth-central` background mode). It only writes to characteristics of the
+companion service.
+
+The service and characteristic UUIDs in `CompanionServiceConfiguration.placeholder`
+are placeholders until the firmware protocol spec is published.
+
+`FakeRadio` simulates controllers in memory. The app uses it automatically in the
+Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument
+to use it on a device. SwiftUI previews can use `ConnectionManager.demo()`.
 
 ## Theme
 
