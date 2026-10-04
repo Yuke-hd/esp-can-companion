@@ -18,6 +18,8 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     private var configuration: CompanionServiceConfiguration?
     /// Peripherals still waiting for the pairing read to finish.
     private var preparing: Set<PeripheralID> = []
+    /// `live_signal_layout_version` from each peripheral's device info.
+    private var liveSignalLayouts: [PeripheralID: UInt8] = [:]
 
     public init(restoreIdentifier: String? = CoreBluetoothRadio.defaultRestoreIdentifier) {
         super.init()
@@ -94,7 +96,10 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     }
 
     public func maximumWriteLength(for id: PeripheralID) -> Int {
-        peripherals[id]?.maximumWriteValueLength(for: .withResponse) ?? 20
+        // `.withResponse` reports 512 because iOS would fall back to a long
+        // (Prepare/Execute) write, which the controller rejects; config-transfer.md
+        // requires one ATT Write Request per PDU, so the limit is MTU - 3.
+        peripherals[id]?.maximumWriteValueLength(for: .withoutResponse) ?? 20
     }
 
     public func name(for id: PeripheralID) -> String? {
@@ -156,11 +161,17 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             finishPreparing(id, .unsupportedProtocol(major: major))
             return
         }
+        if let value, value.count > 4 {
+            liveSignalLayouts[id] = value[value.startIndex + 4]
+        } else {
+            liveSignalLayouts[id] = nil
+        }
         // Reading an encrypted characteristic makes iOS pair (showing its prompt)
         // or re-encrypt with the stored bond. The controller answers with
         // Insufficient Authentication (0x05) or Insufficient Encryption (0x0F),
         // iOS handles those itself, and the read completes once the link is encrypted.
         if let pairing = characteristic(configuration.pairingCharacteristicUUID, on: peripheral) {
+            emit(.pairingStarted(id))
             peripheral.readValue(for: pairing)
         }
     }
@@ -172,7 +183,15 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             return
         }
         // CCCD writes need the encrypted, bonded link too, so subscribe only now.
+        // Live signals only for a layout the app can decode (ble-protocol.md,
+        // versioning rule 5).
+        // TODO(#3): report subscription results (didUpdateNotificationStateFor);
+        // a failed subscription is currently silent.
         for uuid in configuration.notifyingCharacteristicUUIDs {
+            if uuid == configuration.liveSignalsCharacteristicUUID,
+               !(liveSignalLayouts[id].map(configuration.supportedLiveSignalLayouts.contains) ?? false) {
+                continue
+            }
             if let notifying = characteristic(uuid, on: peripheral) {
                 peripheral.setNotifyValue(true, for: notifying)
             }
@@ -193,7 +212,9 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             case .peerRemovedPairingInformation:
                 return .peerRemovedPairingInformation
             case .encryptionTimedOut:
-                return .pairingFailed(error.localizedDescription)
+                // Also happens when a bonded link re-encrypts at the edge of
+                // range, so retry rather than treat it as a rejected pairing.
+                return .other(error.localizedDescription)
             default:
                 break
             }

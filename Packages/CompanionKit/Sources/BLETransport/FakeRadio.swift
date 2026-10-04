@@ -22,6 +22,9 @@ public struct FakeController: Sendable {
     public var isKnownToSystem: Bool
     public var pairing: Pairing
     public var hasCompanionService: Bool
+    /// The link drops during discovery, before the pairing read (for example
+    /// accessory power flickering while the engine cranks).
+    public var dropsBeforePairing: Bool
     /// `protocol_major` reported in device info.
     public var protocolMajor: UInt8
     /// When set, connection attempts fail with this error instead of connecting.
@@ -36,6 +39,7 @@ public struct FakeController: Sendable {
         isKnownToSystem: Bool = true,
         pairing: Pairing = .succeeds,
         hasCompanionService: Bool = true,
+        dropsBeforePairing: Bool = false,
         protocolMajor: UInt8 = 1,
         connectError: RadioError? = nil,
         maximumWriteLength: Int = 182
@@ -47,6 +51,7 @@ public struct FakeController: Sendable {
         self.isKnownToSystem = isKnownToSystem
         self.pairing = pairing
         self.hasCompanionService = hasCompanionService
+        self.dropsBeforePairing = dropsBeforePairing
         self.protocolMajor = protocolMajor
         self.connectError = connectError
         self.maximumWriteLength = maximumWriteLength
@@ -131,6 +136,12 @@ public final class FakeRadio: BLERadio {
                 onEvent?(.prepared(id, .unsupportedProtocol(major: controller.protocolMajor)))
                 return
             }
+            if controller.dropsBeforePairing {
+                connectedPeripherals.remove(id)
+                onEvent?(.disconnected(id, .other("The connection has timed out unexpectedly.")))
+                return
+            }
+            onEvent?(.pairingStarted(id))
             switch controller.pairing {
             case .succeeds: onEvent?(.prepared(id, nil))
             case .fails(let message): onEvent?(.prepared(id, .pairingFailed(message)))

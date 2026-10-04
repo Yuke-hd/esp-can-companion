@@ -7,6 +7,9 @@ public enum RadioEvent: Sendable, Equatable {
     case connected(PeripheralID)
     case failedToConnect(PeripheralID, RadioError?)
     case disconnected(PeripheralID, RadioError?)
+    /// The protocol version checked out and the encrypted read that pairs (or
+    /// re-encrypts) was issued.
+    case pairingStarted(PeripheralID)
     /// The companion service was found, the protocol version is supported, the
     /// encrypted pairing characteristic was read (so the link is paired), and
     /// notifications were requested.

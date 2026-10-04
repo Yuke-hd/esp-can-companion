@@ -214,6 +214,23 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertNil(scheduler.nextDelay)
     }
 
+    func testDropsBeforePairingKeepRetryingForBondedPhone() async {
+        makeManager()
+        connectAndPair()
+
+        radio.update(controller.id) { $0.dropsBeforePairing = true }
+        radio.dropConnection(controller.id)
+        scheduler.advance(by: 120)
+
+        guard case .disconnected(.connectionLost, willReconnect: true) = manager.state else {
+            return XCTFail("expected to keep retrying, got \(manager.state)")
+        }
+
+        radio.update(controller.id) { $0.dropsBeforePairing = false }
+        scheduler.advance(by: 60)
+        XCTAssertTrue(manager.state.isConnected)
+    }
+
     func testDeviceWithoutCompanionServiceIsRejected() async {
         makeManager(controllers: [FakeController(hasCompanionService: false)])
         manager.connect(to: controller.id)

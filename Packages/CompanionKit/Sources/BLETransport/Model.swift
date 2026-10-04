@@ -40,6 +40,10 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
     public var writableCharacteristicUUIDs: Set<GATTUUID>
     /// Characteristics the app subscribes to once the link is paired.
     public var notifyingCharacteristicUUIDs: Set<GATTUUID>
+    /// Subscribed only when device info reports a supported live-signal layout
+    /// (`live_signal_layout_version`, byte 4).
+    public var liveSignalsCharacteristicUUID: GATTUUID?
+    public var supportedLiveSignalLayouts: Set<UInt8>
 
     public init(
         serviceUUID: GATTUUID,
@@ -47,7 +51,9 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
         supportedProtocolMajors: Set<UInt8>,
         pairingCharacteristicUUID: GATTUUID,
         writableCharacteristicUUIDs: Set<GATTUUID>,
-        notifyingCharacteristicUUIDs: Set<GATTUUID>
+        notifyingCharacteristicUUIDs: Set<GATTUUID>,
+        liveSignalsCharacteristicUUID: GATTUUID? = nil,
+        supportedLiveSignalLayouts: Set<UInt8> = []
     ) {
         self.serviceUUID = serviceUUID
         self.deviceInfoCharacteristicUUID = deviceInfoCharacteristicUUID
@@ -55,6 +61,8 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
         self.pairingCharacteristicUUID = pairingCharacteristicUUID
         self.writableCharacteristicUUIDs = writableCharacteristicUUIDs
         self.notifyingCharacteristicUUIDs = notifyingCharacteristicUUIDs
+        self.liveSignalsCharacteristicUUID = liveSignalsCharacteristicUUID
+        self.supportedLiveSignalLayouts = supportedLiveSignalLayouts
     }
 }
 
@@ -84,7 +92,9 @@ extension CompanionServiceConfiguration {
         supportedProtocolMajors: [1],
         pairingCharacteristicUUID: CompanionGATT.configStatus,
         writableCharacteristicUUIDs: [CompanionGATT.config, CompanionGATT.command],
-        notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals]
+        notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals],
+        liveSignalsCharacteristicUUID: CompanionGATT.liveSignals,
+        supportedLiveSignalLayouts: [1]
     )
 }
 
@@ -115,8 +125,8 @@ public struct DiscoveredDevice: Identifiable, Sendable, Equatable {
 public struct ConnectedDevice: Identifiable, Sendable, Equatable {
     public let id: PeripheralID
     public var name: String?
-    /// Largest payload a single write with response can carry. iOS negotiates
-    /// the ATT MTU itself, so this is the result of that negotiation.
+    /// Largest payload a single ATT Write Request can carry (`MTU - 3`). iOS
+    /// negotiates the ATT MTU itself, so this is the result of that negotiation.
     public var maximumWriteLength: Int
 
     public init(id: PeripheralID, name: String?, maximumWriteLength: Int) {

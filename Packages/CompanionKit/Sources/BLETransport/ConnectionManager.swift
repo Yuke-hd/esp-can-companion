@@ -38,6 +38,9 @@ public final class ConnectionManager {
     /// Links dropped during pairing in a row. The controller drops the link when
     /// it rejects a pairing, for example outside its pairing window.
     @ObservationIgnored private var pairingDrops = 0
+    /// Set once the encrypted read was issued on the current connection, so only
+    /// failures of the pairing itself count toward `maximumPairingDrops`.
+    @ObservationIgnored private var pairingStartedFor: PeripheralID?
     private static let maximumPairingDrops = 3
     @ObservationIgnored private var retryToken: BLECancellable?
     @ObservationIgnored private var pendingWrites: [GATTUUID: [CheckedContinuation<Void, Error>]] = [:]
@@ -207,15 +210,15 @@ public final class ConnectionManager {
                 stopReconnecting(id, reason: reason)
             } else if case .connected = state {
                 attemptConnect(id, showing: .connectionLost(error?.message))
-            } else if case .pairing = state, pairingDrops + 1 >= Self.maximumPairingDrops {
-                pairingDrops = 0
-                stopReconnecting(id, reason: .pairingFailed(error?.message))
-            } else {
-                if case .pairing = state { pairingDrops += 1 }
+            } else if !pairingFailureReachedLimit(id, message: error?.message) {
                 // Dropped before the link was usable (for example during pairing):
                 // back off so a failing controller does not cause a tight loop.
                 scheduleRetry(reason: .connectionLost(error?.message))
             }
+
+        case .pairingStarted(let id):
+            guard id == target else { return }
+            pairingStartedFor = id
 
         case .prepared(let id, let error):
             guard id == target, wantsLink else { return }
@@ -302,11 +305,25 @@ public final class ConnectionManager {
 
         if let reason = Self.terminalReason(for: error) {
             stopReconnecting(id, reason: reason)
-        } else {
+        } else if !pairingFailureReachedLimit(id, message: error.message) {
             ignoreDisconnectFor = id
             radio.cancelConnection(id)
             scheduleRetry(reason: .connectionLost(error.message))
         }
+    }
+
+    /// Counts a failure after the pairing read was issued. The controller drops
+    /// the link when it rejects a pairing (for example outside its pairing
+    /// window), so repeated failures there mean the user has to act. Returns
+    /// true when it gave up.
+    private func pairingFailureReachedLimit(_ id: PeripheralID, message: String?) -> Bool {
+        guard pairingStartedFor == id else { return false }
+        pairingStartedFor = nil
+        pairingDrops += 1
+        guard pairingDrops >= Self.maximumPairingDrops else { return false }
+        pairingDrops = 0
+        stopReconnecting(id, reason: .pairingFailed(message))
+        return true
     }
 
     /// Errors that retrying cannot fix: it would only re-prompt or fail again.
@@ -343,6 +360,7 @@ public final class ConnectionManager {
     /// link went down while the request is pending.
     private func attemptConnect(_ id: PeripheralID, showing reason: DisconnectReason? = nil) {
         cancelRetry()
+        pairingStartedFor = nil
         stopTargetScan()
         if let reason {
             state = .disconnected(reason, willReconnect: true)
