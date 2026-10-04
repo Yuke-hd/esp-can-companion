@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 import BLETransport
 
-/// Placeholder Home screen. The real screen lands with the BLE manager and protocol client.
+/// Placeholder Home ("Pit Wall") screen. The real screen lands with the BLE manager and protocol client.
 struct HomeView: View {
     var linkState: LinkState = .idle
 
@@ -10,19 +10,27 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Card {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            HStack {
-                                Text("Controller")
-                                    .font(Theme.Typography.headline)
-                                Spacer()
-                                StatusPill(linkState.title, status: linkState.pillStatus)
-                            }
-                            Text("No controller paired yet. Bluetooth support is coming next.")
+                    HStack(alignment: .bottom) {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                            Text("No controller").themeLabel(Theme.Colors.textSecondary)
+                            Text("PIT WALL")
+                                .font(Theme.Typography.display)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+                        Spacer()
+                        StatusPill(linkState.title, status: linkState.pillStatus)
+                    }
+
+                    Card(edge: Theme.Colors.accent) {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                            Text("Controller").themeLabel()
+                            Text("Not paired")
+                                .font(Theme.Typography.headline)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text("Bluetooth support is coming next.")
                                 .font(Theme.Typography.body)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
-                        .foregroundStyle(Theme.Colors.textPrimary)
                     }
 
                     Button("Connect") {}
@@ -32,7 +40,6 @@ struct HomeView: View {
                 .padding(Theme.Spacing.md)
             }
             .background(Theme.Colors.background.ignoresSafeArea())
-            .navigationTitle("Home")
             .toolbarBackground(Theme.Colors.background, for: .navigationBar)
             #if DEBUG
             .toolbar {
@@ -48,20 +55,20 @@ struct HomeView: View {
 extension LinkState {
     var title: String {
         switch self {
-        case .idle: "Not connected"
+        case .idle: "Not linked"
         case .scanning: "Scanning"
         case .connecting: "Connecting"
-        case .connected: "Connected"
-        case .disconnected: "Disconnected"
+        case .connected: "Linked"
+        case .disconnected: "Lost link"
         }
     }
 
     var pillStatus: StatusPill.Status {
         switch self {
         case .idle: .neutral
-        case .scanning, .connecting: .warning
-        case .connected: .success
-        case .disconnected: .danger
+        case .scanning, .connecting: .pending
+        case .connected: .live
+        case .disconnected: .alert
         }
     }
 }

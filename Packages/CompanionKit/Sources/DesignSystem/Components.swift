@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// A rounded surface that groups related content.
+/// A flat surface that groups related content, with an optional colored edge
+/// (the drafts use a red edge on the controller summary card).
 public struct Card<Content: View>: View {
+    private let edge: Color?
     private let content: Content
 
-    public init(@ViewBuilder content: () -> Content) {
+    public init(edge: Color? = nil, @ViewBuilder content: () -> Content) {
+        self.edge = edge
         self.content = content()
     }
 
@@ -12,25 +15,28 @@ public struct Card<Content: View>: View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Spacing.md)
-            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                    .strokeBorder(Theme.Colors.separator, lineWidth: 1)
-            )
+            .background(Theme.Colors.surface)
+            .overlay(alignment: .leading) {
+                if let edge {
+                    Rectangle().fill(edge).frame(width: 3)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
     }
 }
 
-/// A small capsule showing a state such as "Connected" or "Offline".
+/// A small outlined tag showing a state such as "LINKED", "3 CHANGES", or "EDITING".
 public struct StatusPill: View {
     public enum Status: Sendable {
-        case neutral, success, warning, danger
+        case neutral, live, pending, editing, alert
 
         var tint: Color {
             switch self {
             case .neutral: Theme.Colors.textSecondary
-            case .success: Theme.Colors.success
-            case .warning: Theme.Colors.warning
-            case .danger: Theme.Colors.danger
+            case .live: Theme.Colors.signalTeal
+            case .pending: Theme.Colors.signalYellow
+            case .editing: Theme.Colors.signalBlue
+            case .alert: Theme.Colors.accent
             }
         }
     }
@@ -44,22 +50,25 @@ public struct StatusPill: View {
     }
 
     public var body: some View {
-        HStack(spacing: Theme.Spacing.xs) {
+        HStack(spacing: Theme.Spacing.xs - 2) {
             Circle()
                 .fill(status.tint)
-                .frame(width: 8, height: 8)
+                .frame(width: 6, height: 6)
             Text(title)
-                .font(Theme.Typography.caption)
-                .foregroundStyle(Theme.Colors.textPrimary)
+                .themeLabel(status.tint)
         }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, Theme.Spacing.xxs + 2)
-        .background(status.tint.opacity(0.16), in: Capsule())
+        .padding(.horizontal, Theme.Spacing.xs + 2)
+        .padding(.vertical, Theme.Spacing.xs - 2)
+        .background(status.tint.opacity(0.1))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.xs)
+                .strokeBorder(status.tint.opacity(0.6), lineWidth: 1)
+        )
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Full-width filled button style for the main action on a screen.
+/// Filled red button for the main action on a screen, such as "SEND TO CAR".
 public struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -67,16 +76,43 @@ public struct PrimaryButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Theme.Typography.headline)
+            .font(Theme.Typography.button)
+            .textCase(.uppercase)
             .foregroundStyle(Theme.Colors.textOnAccent)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(Theme.Colors.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(Theme.Colors.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.xs))
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Outlined button for a secondary action next to a primary one, such as "PREVIEW".
+public struct SecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.Typography.headline)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.Colors.textPrimary)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(configuration.isPressed ? Theme.Colors.surfaceRaised : .clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.xs)
+                    .strokeBorder(Theme.Colors.textSecondary, lineWidth: 1)
+            )
+            .opacity(isEnabled ? 1 : 0.4)
     }
 }
 
 public extension ButtonStyle where Self == PrimaryButtonStyle {
     static var primary: PrimaryButtonStyle { PrimaryButtonStyle() }
+}
+
+public extension ButtonStyle where Self == SecondaryButtonStyle {
+    static var secondary: SecondaryButtonStyle { SecondaryButtonStyle() }
 }

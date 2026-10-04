@@ -55,12 +55,13 @@ xcodebuild test -scheme CompanionKit-Package \
 
 ## Theme
 
-The app is dark-only. Tokens live in
+The app is dark-only and follows the "Pit Wall" drafts. Tokens live in
 [`Theme.swift`](Packages/CompanionKit/Sources/DesignSystem/Theme.swift): palette,
-spacing, corner radii, and a Dynamic Type based type scale. Unit tests check that
+spacing, corner radii, and a Dynamic Type based type scale using system fonts (SF
+compressed/condensed for display text, SF Mono for labels). Unit tests check that
 text and status colors meet WCAG contrast targets on every surface.
 
-The core components (`Card`, `StatusPill`, `PrimaryButtonStyle`) are shown in
+The core components (`Card`, `StatusPill`, `PrimaryButtonStyle`, `SecondaryButtonStyle`) are shown in
 [`ComponentCatalog.swift`](Packages/CompanionKit/Sources/DesignSystem/ComponentCatalog.swift).
 Open it in Xcode to see them in the preview canvas. Debug builds also link to the
 catalog from the Home screen toolbar.

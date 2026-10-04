@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Preview catalog of the core components on the app background.
 /// Open this file in Xcode and use the canvas to review changes to the theme.
+/// All values shown are synthetic.
 public struct ComponentCatalog: View {
     public init() {}
 
@@ -10,44 +11,80 @@ public struct ComponentCatalog: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 section("Typography") {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                        Text("Large title").font(Theme.Typography.largeTitle)
-                        Text("Title").font(Theme.Typography.title)
-                        Text("Headline").font(Theme.Typography.headline)
+                        Text("PIT WALL").font(Theme.Typography.display)
+                        Text("4,820").font(Theme.Typography.readoutLarge)
+                        Text("RELEASED").font(Theme.Typography.value)
+                        Text("RPM FILL").font(Theme.Typography.headline)
                         Text("Body text for descriptions.").font(Theme.Typography.body)
-                        Text("Caption").font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                        Text("12.6 V").font(Theme.Typography.readout)
+                        Text("Engine RPM · unverified").themeLabel(Theme.Colors.signalYellow)
                     }
                     .foregroundStyle(Theme.Colors.textPrimary)
                 }
 
-                section("Status pill") {
+                section("Signal colors") {
                     HStack(spacing: Theme.Spacing.xs) {
-                        StatusPill("Idle", status: .neutral)
-                        StatusPill("Connected", status: .success)
-                        StatusPill("Pairing", status: .warning)
-                        StatusPill("Error", status: .danger)
+                        swatch(Theme.Colors.accent)
+                        swatch(Theme.Colors.signalTeal)
+                        swatch(Theme.Colors.signalYellow)
+                        swatch(Theme.Colors.signalGreen)
+                        swatch(Theme.Colors.signalBlue)
+                        swatch(Theme.Colors.signalPurple)
+                    }
+                }
+
+                section("Status pill") {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            StatusPill("Linked", status: .live)
+                            StatusPill("3 changes", status: .pending)
+                            StatusPill("Editing", status: .editing)
+                        }
+                        HStack(spacing: Theme.Spacing.xs) {
+                            StatusPill("Idle", status: .neutral)
+                            StatusPill("Fault", status: .alert)
+                        }
                     }
                 }
 
                 section("Card") {
-                    Card {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                            HStack {
-                                Text("Controller").font(Theme.Typography.headline)
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Card(edge: Theme.Colors.accent) {
+                            HStack(alignment: .top) {
+                                field("Controller", "CAN485 · FW 0.4", Theme.Colors.textPrimary)
                                 Spacer()
-                                StatusPill("Connected", status: .success)
+                                field("Profile", "TRACK", Theme.Colors.accent)
+                                Spacer()
+                                field("Bus", "LISTEN-ONLY", Theme.Colors.signalTeal)
                             }
-                            Text("Synthetic sample data").font(Theme.Typography.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
-                        .foregroundStyle(Theme.Colors.textPrimary)
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Card {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                    Text("Brake").themeLabel()
+                                    Text("RELEASED").font(Theme.Typography.value)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text("Unverified").themeLabel(Theme.Colors.signalYellow)
+                                }
+                            }
+                            Card {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                    Text("Wipers").themeLabel()
+                                    Text("—").font(Theme.Typography.value)
+                                        .foregroundStyle(Theme.Colors.textDisabled)
+                                    Text("Stale").themeLabel(Theme.Colors.textDisabled)
+                                }
+                            }
+                        }
                     }
                 }
 
-                section("Primary button") {
+                section("Buttons") {
                     VStack(spacing: Theme.Spacing.sm) {
-                        Button("Connect") {}.buttonStyle(.primary)
+                        Button("Send to car") {}.buttonStyle(.primary)
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Button("Preview") {}.buttonStyle(.secondary)
+                            Button("Send") {}.buttonStyle(.primary)
+                        }
                         Button("Disabled") {}.buttonStyle(.primary).disabled(true)
                     }
                 }
@@ -60,11 +97,22 @@ public struct ComponentCatalog: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(title.uppercased())
-                .font(Theme.Typography.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(title).themeLabel()
             content()
         }
+    }
+
+    private func field(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+            Text(label).themeLabel()
+            Text(value).font(Theme.Typography.headline).foregroundStyle(color)
+        }
+    }
+
+    private func swatch(_ color: Color) -> some View {
+        RoundedRectangle(cornerRadius: Theme.Radius.xs)
+            .fill(color)
+            .frame(width: 36, height: 36)
     }
 }
 

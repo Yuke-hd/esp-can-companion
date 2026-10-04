@@ -10,7 +10,7 @@ final class HomeViewTests: XCTestCase {
         }
     }
 
-    func testConnectedShowsSuccess() {
-        XCTAssertEqual(LinkState.connected.pillStatus, .success)
+    func testConnectedShowsLive() {
+        XCTAssertEqual(LinkState.connected.pillStatus, .live)
     }
 }
