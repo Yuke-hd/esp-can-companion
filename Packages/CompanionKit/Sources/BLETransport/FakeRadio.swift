@@ -76,6 +76,9 @@ public final class FakeRadio: BLERadio {
     public private(set) var receivedWrites: [(peripheral: PeripheralID, characteristic: GATTUUID, data: Data)] = []
     /// Return an error to make the controller reject a write.
     public var writeHandler: (@MainActor (GATTUUID, Data) -> RadioError?)?
+    /// Answers reads. Without one, every read fails as if the characteristic
+    /// were missing.
+    public var readHandler: (@MainActor (PeripheralID, GATTUUID) -> Result<Data, RadioError>)?
 
     private let scheduler: BLEScheduler
     private let latency: TimeInterval
@@ -166,6 +169,14 @@ public final class FakeRadio: BLERadio {
         }
     }
 
+    public func read(_ characteristic: GATTUUID, on id: PeripheralID) {
+        later { [self] in
+            guard connectedPeripherals.contains(id) else { return }
+            let result = readHandler?(id, characteristic) ?? .failure(.characteristicNotFound(characteristic))
+            onEvent?(.read(id, characteristic, result))
+        }
+    }
+
     public func maximumWriteLength(for id: PeripheralID) -> Int {
         controllers[id]?.maximumWriteLength ?? 20
     }
@@ -229,9 +240,16 @@ public final class FakeRadio: BLERadio {
         }
     }
 
-    public func sendNotification(from id: PeripheralID, characteristic: GATTUUID, data: Data) {
+    /// Sends a notification after the radio latency. With `immediately`, it is
+    /// delivered now; call it that way from `writeHandler` to send a
+    /// notification ahead of the write response, as the controller does.
+    public func sendNotification(from id: PeripheralID, characteristic: GATTUUID, data: Data, immediately: Bool = false) {
         guard connectedPeripherals.contains(id) else { return }
-        emit(.received(id, characteristic, data))
+        if immediately {
+            onEvent?(.received(id, characteristic, data))
+        } else {
+            emit(.received(id, characteristic, data))
+        }
     }
 
     /// Simulates iOS relaunching the app in the background and restoring the

@@ -20,6 +20,8 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     private var preparing: Set<PeripheralID> = []
     /// `live_signal_layout_version` from each peripheral's device info.
     private var liveSignalLayouts: [PeripheralID: UInt8] = [:]
+    /// Reads issued with `read(_:on:)` and not answered yet, per characteristic.
+    private var pendingReads: [PeripheralID: [GATTUUID: Int]] = [:]
 
     public init(restoreIdentifier: String? = CoreBluetoothRadio.defaultRestoreIdentifier) {
         super.init()
@@ -71,6 +73,7 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
 
     public func cancelConnection(_ id: PeripheralID) {
         preparing.remove(id)
+        pendingReads[id] = nil
         guard let peripheral = peripherals[id] else { return }
         central.cancelPeripheralConnection(peripheral)
     }
@@ -93,6 +96,19 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             return
         }
         peripheral.writeValue(data, for: target, type: .withResponse)
+    }
+
+    public func read(_ characteristic: GATTUUID, on id: PeripheralID) {
+        guard configuration?.readableCharacteristicUUIDs.contains(characteristic) == true,
+              let peripheral = peripherals[id],
+              let target = self.characteristic(characteristic, on: peripheral)
+        else {
+            emit(.read(id, characteristic, .failure(.characteristicNotFound(characteristic))))
+            return
+        }
+        pendingReads[id, default: [:]][characteristic, default: 0] += 1
+        // CoreBluetooth follows up with Read Blob requests for long values.
+        peripheral.readValue(for: target)
     }
 
     public func maximumWriteLength(for id: PeripheralID) -> Int {
@@ -134,6 +150,7 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         if let configuration {
             let configured = [configuration.pairingCharacteristicUUID]
                 + configuration.writableCharacteristicUUIDs
+                + configuration.readableCharacteristicUUIDs
                 + configuration.notifyingCharacteristicUUIDs
             if let match = configured.first(where: { CBUUID(string: $0.string) == characteristic.uuid }) {
                 return match
@@ -229,6 +246,18 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         }
         return .other(error.localizedDescription)
     }
+
+    /// Like `radioError`, but keeps the ATT code of an error response to a
+    /// read or write, so the protocol client can tell the controller's
+    /// application errors apart.
+    static func operationError(_ error: Error?) -> RadioError? {
+        guard let error else { return nil }
+        let nsError = error as NSError
+        if nsError.domain == CBATTErrorDomain, let code = UInt8(exactly: nsError.code) {
+            return .att(code)
+        }
+        return radioError(error)
+    }
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -289,6 +318,7 @@ extension CoreBluetoothRadio: CBCentralManagerDelegate {
     ) {
         MainActor.assumeIsolated {
             preparing.remove(peripheral.identifier)
+            pendingReads[peripheral.identifier] = nil
             emit(.disconnected(peripheral.identifier, Self.radioError(error)))
         }
     }
@@ -356,6 +386,19 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
                     return
                 }
             }
+            // CoreBluetooth reports read responses and notifications the same
+            // way, so the next value after a read counts as its answer. If a
+            // notification wins that race, the read's own answer arrives next
+            // and is forwarded as a notification, so subscribers lose nothing.
+            if let count = pendingReads[id]?[uuid], count > 0 {
+                pendingReads[id]?[uuid] = count - 1
+                if let error = Self.operationError(error) {
+                    emit(.read(id, uuid, .failure(error)))
+                } else {
+                    emit(.read(id, uuid, .success(characteristic.value ?? Data())))
+                }
+                return
+            }
             guard error == nil, let value = characteristic.value else { return }
             emit(.received(id, uuid, value))
         }
@@ -367,7 +410,7 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
         error: Error?
     ) {
         MainActor.assumeIsolated {
-            emit(.wrote(peripheral.identifier, gattUUID(characteristic), Self.radioError(error)))
+            emit(.wrote(peripheral.identifier, gattUUID(characteristic), Self.operationError(error)))
         }
     }
 }

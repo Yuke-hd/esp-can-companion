@@ -16,6 +16,8 @@ public enum RadioEvent: Sendable, Equatable {
     /// `nil` means success.
     case prepared(PeripheralID, RadioError?)
     case wrote(PeripheralID, GATTUUID, RadioError?)
+    /// The answer to `read(_:on:)`.
+    case read(PeripheralID, GATTUUID, Result<Data, RadioError>)
     case received(PeripheralID, GATTUUID, Data)
     /// iOS relaunched the app for a Bluetooth event and handed back the
     /// peripherals it was tracking.
@@ -55,6 +57,9 @@ public protocol BLERadio: AnyObject {
     func prepare(_ id: PeripheralID, configuration: CompanionServiceConfiguration)
     /// Writes with response. Reports `.wrote`.
     func write(_ data: Data, to characteristic: GATTUUID, on id: PeripheralID)
+    /// Reads the characteristic's whole value (Read, then Read Blob for long
+    /// values). Reports `.read`.
+    func read(_ characteristic: GATTUUID, on id: PeripheralID)
     func maximumWriteLength(for id: PeripheralID) -> Int
     func name(for id: PeripheralID) -> String?
 }

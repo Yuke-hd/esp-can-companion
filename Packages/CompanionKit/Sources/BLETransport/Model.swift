@@ -38,6 +38,8 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
     public var pairingCharacteristicUUID: GATTUUID
     /// Characteristics the app is allowed to write (always with response).
     public var writableCharacteristicUUIDs: Set<GATTUUID>
+    /// Characteristics the app is allowed to read once the link is paired.
+    public var readableCharacteristicUUIDs: Set<GATTUUID>
     /// Characteristics the app subscribes to once the link is paired.
     public var notifyingCharacteristicUUIDs: Set<GATTUUID>
     /// Subscribed only when device info reports a supported live-signal layout
@@ -51,6 +53,7 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
         supportedProtocolMajors: Set<UInt8>,
         pairingCharacteristicUUID: GATTUUID,
         writableCharacteristicUUIDs: Set<GATTUUID>,
+        readableCharacteristicUUIDs: Set<GATTUUID> = [],
         notifyingCharacteristicUUIDs: Set<GATTUUID>,
         liveSignalsCharacteristicUUID: GATTUUID? = nil,
         supportedLiveSignalLayouts: Set<UInt8> = []
@@ -60,6 +63,7 @@ public struct CompanionServiceConfiguration: Sendable, Equatable {
         self.supportedProtocolMajors = supportedProtocolMajors
         self.pairingCharacteristicUUID = pairingCharacteristicUUID
         self.writableCharacteristicUUIDs = writableCharacteristicUUIDs
+        self.readableCharacteristicUUIDs = readableCharacteristicUUIDs
         self.notifyingCharacteristicUUIDs = notifyingCharacteristicUUIDs
         self.liveSignalsCharacteristicUUID = liveSignalsCharacteristicUUID
         self.supportedLiveSignalLayouts = supportedLiveSignalLayouts
@@ -92,6 +96,7 @@ extension CompanionServiceConfiguration {
         supportedProtocolMajors: [1],
         pairingCharacteristicUUID: CompanionGATT.configStatus,
         writableCharacteristicUUIDs: [CompanionGATT.config, CompanionGATT.command],
+        readableCharacteristicUUIDs: [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus],
         notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals],
         liveSignalsCharacteristicUUID: CompanionGATT.liveSignals,
         supportedLiveSignalLayouts: [1]
@@ -197,6 +202,9 @@ public enum RadioError: Error, Sendable, Equatable {
     case serviceNotFound
     case characteristicNotFound(GATTUUID)
     case unsupportedProtocol(major: UInt8)
+    /// The controller answered a read or write with this ATT error code,
+    /// including the protocol's application codes (`0x80`–`0x9F`).
+    case att(UInt8)
     case other(String?)
 
     var message: String? {
@@ -206,17 +214,21 @@ public enum RadioError: Error, Sendable, Equatable {
         case .serviceNotFound: "The companion service was not found."
         case .characteristicNotFound(let uuid): "Characteristic \(uuid) was not found."
         case .unsupportedProtocol(let major): "Unsupported protocol version \(major)."
+        case .att(let code): "The controller answered with ATT error \(code)."
         }
     }
 }
 
-/// Errors from `ConnectionManager.write(_:to:)`.
+/// Errors from `ConnectionManager.write(_:to:)` and `read(_:)`.
 public enum ConnectionError: Error, Sendable, Equatable {
     case notConnected
     /// The characteristic is not one the companion service allows writes to.
     case characteristicNotWritable(GATTUUID)
+    /// The characteristic is not one the companion service allows reads from.
+    case characteristicNotReadable(GATTUUID)
     case payloadTooLarge(size: Int, maximum: Int)
     case writeFailed(RadioError)
-    /// The link dropped before the controller acknowledged the write.
+    case readFailed(RadioError)
+    /// The link dropped before the controller answered the write or read.
     case disconnected
 }

@@ -1,0 +1,39 @@
+import XCTest
+import CompanionProtocol
+@testable import CompanionLink
+
+final class ConfigSummaryTests: XCTestCase {
+    func testFactoryConfigInPlainLanguage() throws {
+        let config = try ControllerConfig(canonicalJSON: DemoController.factoryDocument)
+        let summary = ConfigSummary(config)
+        let byName = Dictionary(uniqueKeysWithValues: summary.actions.map { ($0.name, $0) })
+
+        XCTAssertEqual(byName["left_turn"]?.title, "Left turn")
+        XCTAssertEqual(byName["left_turn"]?.triggers, ["When turn state is left"])
+        XCTAssertEqual(byName["left_turn"]?.outputs, ["Right turn LED effect"])
+        XCTAssertEqual(byName["hazard"]?.outputs, ["Left turn LED effect", "Right turn LED effect"])
+        XCTAssertEqual(byName["rpm_fill"]?.triggers, ["Follows engine rpm from 0 to 6500"])
+        XCTAssertEqual(byName["rpm_fill"]?.outputs, ["Fills LEDs 0–99 from the center out"])
+        XCTAssertEqual(byName["red_zone"]?.triggers, ["When engine rpm is above 6000, checked periodically"])
+        XCTAssertEqual(byName["red_zone"]?.outputs, ["Lights LEDs 35–64"])
+        XCTAssertEqual(byName["brake"]?.triggers, ["When brake pressed is on"])
+    }
+
+    func testOtherRuleAndOutputShapes() {
+        let config = ControllerConfig(
+            actions: [.init(name: "door_chime"), .init(name: "shift")],
+            rules: [
+                .event(.init(action: "door_chime", signalKey: "vehicle.door.front_left_open", comparison: .equal, operand: .boolean(false)), edge: .becomesTrue),
+                .sampledState(.init(action: "shift", signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual, operand: .number(5800.5)), releaseThreshold: 5500),
+            ],
+            outputs: [
+                .ledTransient(.init(action: "door_chime", zone: .init(start: 7, length: 1, direction: .startToEnd), color: .init(red: 1, green: 1, blue: 1)), durationMs: 250),
+            ]
+        )
+        let summary = ConfigSummary(config)
+        XCTAssertEqual(summary.actions[0].triggers, ["Each time door front left open is off starts"])
+        XCTAssertEqual(summary.actions[0].outputs, ["Flashes LED 7 for 250 ms"])
+        XCTAssertEqual(summary.actions[1].triggers, ["When engine rpm is at least 5800.5, checked periodically, releases at 5500"])
+        XCTAssertEqual(summary.actions[1].outputs, [])
+    }
+}

@@ -9,7 +9,12 @@ import Observation
 @Observable
 public final class ConnectionManager {
     /// Current link state.
-    public private(set) var state: LinkState = .unknown
+    public private(set) var state: LinkState = .unknown {
+        didSet {
+            guard state != oldValue else { return }
+            for observer in Array(stateObservers.values) { observer(state) }
+        }
+    }
     /// Controllers seen since the last `startScan()`.
     public private(set) var discoveredDevices: [DiscoveredDevice] = []
     /// The controller the manager reconnects to on launch, if any.
@@ -19,6 +24,8 @@ public final class ConnectionManager {
 
     /// Called for every notification from the companion service.
     @ObservationIgnored public var onNotification: (@MainActor (GATTUUID, Data) -> Void)?
+    @ObservationIgnored private var notificationObservers: [UUID: @MainActor (GATTUUID, Data) -> Void] = [:]
+    @ObservationIgnored private var stateObservers: [UUID: @MainActor (LinkState) -> Void] = [:]
 
     @ObservationIgnored private let radio: BLERadio
     @ObservationIgnored private let store: DeviceStore
@@ -44,6 +51,7 @@ public final class ConnectionManager {
     private static let maximumPairingDrops = 3
     @ObservationIgnored private var retryToken: BLECancellable?
     @ObservationIgnored private var pendingWrites: [GATTUUID: [CheckedContinuation<Void, Error>]] = [:]
+    @ObservationIgnored private var pendingReads: [GATTUUID: [CheckedContinuation<Data, Error>]] = [:]
     @ObservationIgnored private var started = false
 
     public init(
@@ -97,7 +105,7 @@ public final class ConnectionManager {
         ignoreDisconnectFor = nil
         if let previous = target, previous != id {
             radio.cancelConnection(previous)
-            failPendingWrites(.disconnected)
+            failPendingRequests(.disconnected)
         }
         target = id
         wantsLink = true
@@ -114,7 +122,7 @@ public final class ConnectionManager {
         stopTargetScan()
         ignoreDisconnectFor = nil
         if let id = target { radio.cancelConnection(id) }
-        failPendingWrites(.disconnected)
+        failPendingRequests(.disconnected)
         state = .disconnected(.userRequested, willReconnect: false)
     }
 
@@ -162,6 +170,41 @@ public final class ConnectionManager {
         }
     }
 
+    /// Reads a companion-service characteristic's whole value.
+    ///
+    /// Only characteristics in `configuration.readableCharacteristicUUIDs` are
+    /// accepted. A pending read fails with `.disconnected` when the link drops.
+    public func read(_ characteristic: GATTUUID) async throws -> Data {
+        guard configuration.readableCharacteristicUUIDs.contains(characteristic) else {
+            throw ConnectionError.characteristicNotReadable(characteristic)
+        }
+        guard case .connected(let device) = state else {
+            throw ConnectionError.notConnected
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            pendingReads[characteristic, default: []].append(continuation)
+            radio.read(characteristic, on: device.id)
+        }
+    }
+
+    /// Calls `handler` for every notification from the companion service, on
+    /// the main actor and in arrival order, until the token is cancelled.
+    @discardableResult
+    public func observeNotifications(_ handler: @escaping @MainActor (GATTUUID, Data) -> Void) -> ObservationToken {
+        let id = UUID()
+        notificationObservers[id] = handler
+        return ObservationToken { [weak self] in self?.notificationObservers[id] = nil }
+    }
+
+    /// Calls `handler` synchronously on every change of `state`, so no
+    /// transition is missed (SwiftUI observation can coalesce them).
+    @discardableResult
+    public func observeState(_ handler: @escaping @MainActor (LinkState) -> Void) -> ObservationToken {
+        let id = UUID()
+        stateObservers[id] = handler
+        return ObservationToken { [weak self] in self?.stateObservers[id] = nil }
+    }
+
     // MARK: - Events
 
     private func handle(_ event: RadioEvent) {
@@ -199,7 +242,7 @@ public final class ConnectionManager {
 
         case .disconnected(let id, let error):
             guard id == target else { return }
-            failPendingWrites(.disconnected)
+            failPendingRequests(.disconnected)
             if ignoreDisconnectFor == id {
                 ignoreDisconnectFor = nil
                 return
@@ -234,9 +277,19 @@ public final class ConnectionManager {
                 continuation.resume()
             }
 
+        case .read(let id, let characteristic, let result):
+            guard id == target, var queue = pendingReads[characteristic], !queue.isEmpty else { return }
+            let continuation = queue.removeFirst()
+            pendingReads[characteristic] = queue
+            switch result {
+            case .success(let value): continuation.resume(returning: value)
+            case .failure(let error): continuation.resume(throwing: ConnectionError.readFailed(error))
+            }
+
         case .received(let id, let characteristic, let data):
             guard id == target, state.isConnected else { return }
             onNotification?(characteristic, data)
+            for observer in Array(notificationObservers.values) { observer(characteristic, data) }
 
         case .restored(let peripherals):
             // Prefer the remembered device; otherwise adopt whatever iOS was tracking.
@@ -285,7 +338,7 @@ public final class ConnectionManager {
         cancelRetry()
         isScanningForTarget = false
         ignoreDisconnectFor = nil
-        failPendingWrites(.disconnected)
+        failPendingRequests(.disconnected)
         state = newState
     }
 
@@ -333,7 +386,7 @@ public final class ConnectionManager {
         case .pairingFailed(let message): .pairingFailed(message)
         case .serviceNotFound, .characteristicNotFound: .incompatibleDevice
         case .unsupportedProtocol(let major): .unsupportedProtocol(major: major)
-        case .other: nil
+        case .att, .other: nil
         }
     }
 
@@ -398,10 +451,15 @@ public final class ConnectionManager {
         retryToken = nil
     }
 
-    private func failPendingWrites(_ error: ConnectionError) {
-        let continuations = pendingWrites.values.flatMap { $0 }
+    private func failPendingRequests(_ error: ConnectionError) {
+        let writes = pendingWrites.values.flatMap { $0 }
+        let reads = pendingReads.values.flatMap { $0 }
         pendingWrites = [:]
-        for continuation in continuations {
+        pendingReads = [:]
+        for continuation in writes {
+            continuation.resume(throwing: error)
+        }
+        for continuation in reads {
             continuation.resume(throwing: error)
         }
     }

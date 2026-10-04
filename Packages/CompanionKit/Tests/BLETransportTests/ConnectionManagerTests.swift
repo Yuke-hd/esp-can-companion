@@ -506,4 +506,115 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(received.first?.0, telemetry)
         XCTAssertEqual(received.first?.1, Data([0xAA]))
     }
+
+    // MARK: Reads
+
+    private let configStatus = CompanionGATT.configStatus
+
+    private func startRead(_ characteristic: GATTUUID) -> Task<Data, Error> {
+        let manager = manager!
+        return Task { @MainActor in try await manager.read(characteristic) }
+    }
+
+    func testReadReturnsTheControllersValue() async throws {
+        makeManager()
+        connectAndPair()
+        radio.readHandler = { _, characteristic in
+            characteristic == CompanionGATT.configStatus ? .success(Data([0x00, 0x01])) : .failure(.att(0x02))
+        }
+
+        let read = startRead(configStatus)
+        await waitForRadioWork()
+        scheduler.runUntilIdle()
+        let value = try await read.value
+        XCTAssertEqual(value, Data([0x00, 0x01]))
+    }
+
+    func testReadErrorKeepsTheATTCode() async {
+        makeManager()
+        connectAndPair()
+        radio.readHandler = { _, _ in .failure(.att(0x82)) }
+
+        let read = startRead(configStatus)
+        await waitForRadioWork()
+        scheduler.runUntilIdle()
+        do {
+            _ = try await read.value
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ConnectionError, .readFailed(.att(0x82)))
+        }
+    }
+
+    func testReadOutsideCompanionServiceIsRefused() async {
+        makeManager()
+        connectAndPair()
+        do {
+            _ = try await manager.read(control)
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ConnectionError, .characteristicNotReadable(control))
+        }
+    }
+
+    func testReadWhenNotConnectedThrows() async {
+        makeManager()
+        do {
+            _ = try await manager.read(configStatus)
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ConnectionError, .notConnected)
+        }
+    }
+
+    func testPendingReadFailsWhenLinkDrops() async {
+        makeManager()
+        connectAndPair()
+        radio.readHandler = { _, _ in .success(Data([0x01])) }
+
+        let read = startRead(configStatus)
+        await waitForRadioWork()
+        radio.powerOff(controller.id)
+        scheduler.runUntilIdle()
+        do {
+            _ = try await read.value
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ConnectionError, .disconnected)
+        }
+    }
+
+    // MARK: Observers
+
+    func testStateObserverSeesEveryTransition() async {
+        makeManager()
+        var seen: [LinkState] = []
+        let token = manager.observeState { seen.append($0) }
+        connectAndPair()
+        manager.disconnect()
+        token.cancel()
+        manager.reconnect()
+
+        XCTAssertEqual(seen.count, 4, "\(seen)")
+        XCTAssertEqual(seen.first, .connecting(controller.id))
+        XCTAssertEqual(seen[1], .pairing(controller.id))
+        XCTAssertTrue(seen[2].isConnected)
+        XCTAssertEqual(seen.last, .disconnected(.userRequested, willReconnect: false))
+    }
+
+    func testNotificationObserversReceiveInOrderUntilCancelled() async {
+        makeManager()
+        connectAndPair()
+
+        var received: [Data] = []
+        let token = manager.observeNotifications { _, data in received.append(data) }
+        radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([0x01]))
+        radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([0x02]))
+        scheduler.runUntilIdle()
+        token.cancel()
+        radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([0x03]))
+        scheduler.runUntilIdle()
+
+        XCTAssertEqual(received, [Data([0x01]), Data([0x02])])
+    }
 }
