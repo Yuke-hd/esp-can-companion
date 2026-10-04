@@ -7,7 +7,7 @@ import PresetSync
 /// enough delay to see the upload progress and the restart.
 enum PresetPreviewSupport {
     static func link() -> FakePresetSyncLink {
-        let controller = FakeController()
+        let controller = CompanionFakes.FakeController()
         let factory = (try? PresetCatalog.resource("factory.json")) ?? Data()
         controller.factoryDocument = factory
         controller.activeDocument = factory
