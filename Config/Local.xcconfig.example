@@ -1,0 +1,8 @@
+// Copy to Config/Local.xcconfig (git-ignored) and fill in your own values
+// to install a development build on a personal device.
+
+// Your Apple Developer Team ID (Xcode > Settings > Accounts, or developer.apple.com > Membership).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Must be unique to your account; free personal teams cannot reuse com.example.*.
+APP_BUNDLE_ID = com.yourname.cancompanion
