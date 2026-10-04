@@ -25,7 +25,7 @@ struct PresetsView: View {
                     .font(Theme.Typography.display)
                     .foregroundStyle(Theme.Colors.textPrimary)
 
-                ActiveConfigCard(model: model)
+                PresetActiveConfigCard(model: model)
 
                 Text("Bundled presets").themeLabel()
                 if model.presets.isEmpty {
@@ -73,7 +73,7 @@ struct PresetsView: View {
 }
 
 /// What the controller runs now, from the last read.
-private struct ActiveConfigCard: View {
+private struct PresetActiveConfigCard: View {
     var model: PresetSyncModel
 
     var body: some View {
