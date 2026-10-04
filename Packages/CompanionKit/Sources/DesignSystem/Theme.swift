@@ -12,9 +12,9 @@ public enum Theme {
 
         public static let textPrimary = ColorToken(hex: 0xF2F3F5)
         public static let textSecondary = ColorToken(hex: 0x8A8F99)
-        /// Small uppercase labels ("CONTROLLER", "LIVE TELEMETRY"). Lower contrast by design;
-        /// never use it for values the driver needs to read.
-        public static let textTertiary = ColorToken(hex: 0x6C7079)
+        /// Small uppercase labels ("CONTROLLER", "LIVE TELEMETRY"). Slightly lighter than the
+        /// drafts' grey so 11 pt labels still meet WCAG AA (4.5:1) on every surface.
+        public static let textTertiary = ColorToken(hex: 0x80858E)
         /// Stale or unavailable values.
         public static let textDisabled = ColorToken(hex: 0x3A3E47)
         public static let textOnAccent = ColorToken(hex: 0xF2F3F5)
@@ -31,6 +31,11 @@ public enum Theme {
         public static let signalBlue = ColorToken(hex: 0x2D7DFF)
         /// Sampled state and priority markers.
         public static let signalPurple = ColorToken(hex: 0xA64DFF)
+
+        /// Lighter variants for small text in signal colors whose saturated form is
+        /// below 4.5:1 on dark surfaces. Keep the saturated form for dots, borders, and bars.
+        public static let accentText = ColorToken(hex: 0xFF5A52)
+        public static let signalBlueText = ColorToken(hex: 0x6FA3FF)
     }
 
     /// SwiftUI colors for use in views.
@@ -50,6 +55,8 @@ public enum Theme {
         public static let signalGreen = Palette.signalGreen.color
         public static let signalBlue = Palette.signalBlue.color
         public static let signalPurple = Palette.signalPurple.color
+        public static let accentText = Palette.accentText.color
+        public static let signalBlueText = Palette.signalBlueText.color
     }
 
     /// 4-point spacing scale.
@@ -69,7 +76,8 @@ public enum Theme {
         public static let md: CGFloat = 6
     }
 
-    /// Type scale built on Dynamic Type text styles so it scales with user settings.
+    /// Type scale built on Dynamic Type text styles so it scales with user settings,
+    /// except `readoutLarge` (see below).
     ///
     /// The drafts pair a condensed, heavy italic display face with a monospaced label face.
     /// These use the system fonts (SF compressed / condensed and SF Mono) so nothing needs
@@ -77,7 +85,9 @@ public enum Theme {
     public enum Typography {
         /// Screen titles such as "PIT WALL".
         public static let display = Font.system(.largeTitle).weight(.black).width(.compressed).italic()
-        /// Hero readouts such as RPM and gear.
+        /// Hero readouts such as RPM and gear. Fixed size on purpose: these sit in
+        /// layouts sized around them and are already far above body text. If a screen
+        /// needs it to scale, build it from `@ScaledMetric(relativeTo: .largeTitle)`.
         public static let readoutLarge = Font.system(size: 64).weight(.heavy).width(.compressed).italic().monospacedDigit()
         /// Tile values such as "RELEASED" or "72".
         public static let value = Font.system(.title2).weight(.bold).width(.condensed)

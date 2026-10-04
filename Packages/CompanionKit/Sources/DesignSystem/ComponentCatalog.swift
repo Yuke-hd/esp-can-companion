@@ -52,7 +52,7 @@ public struct ComponentCatalog: View {
                             HStack(alignment: .top) {
                                 field("Controller", "CAN485 · FW 0.4", Theme.Colors.textPrimary)
                                 Spacer()
-                                field("Profile", "TRACK", Theme.Colors.accent)
+                                field("Profile", "TRACK", Theme.Colors.accentText)
                                 Spacer()
                                 field("Bus", "LISTEN-ONLY", Theme.Colors.signalTeal)
                             }

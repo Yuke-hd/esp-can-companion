@@ -2,7 +2,8 @@
 
 An iOS companion app for ESP-based CAN bus accessory controllers. It talks to any
 controller that implements the companion BLE protocol
-([Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
+([spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md),
+originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
 so it is not tied to one vehicle brand.
 
 > Status: early scaffold. The app launches to a placeholder Home screen; Bluetooth

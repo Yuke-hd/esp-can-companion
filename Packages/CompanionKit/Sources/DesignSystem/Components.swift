@@ -30,16 +30,29 @@ public struct StatusPill: View {
     public enum Status: Sendable {
         case neutral, live, pending, editing, alert
 
-        var tint: Color {
+        /// Saturated color for the dot, border, and fill.
+        public var tint: ColorToken {
             switch self {
-            case .neutral: Theme.Colors.textSecondary
-            case .live: Theme.Colors.signalTeal
-            case .pending: Theme.Colors.signalYellow
-            case .editing: Theme.Colors.signalBlue
-            case .alert: Theme.Colors.accent
+            case .neutral: Theme.Palette.textSecondary
+            case .live: Theme.Palette.signalTeal
+            case .pending: Theme.Palette.signalYellow
+            case .editing: Theme.Palette.signalBlue
+            case .alert: Theme.Palette.accent
+            }
+        }
+
+        /// Label color, lighter where the saturated tint is too dark for 11 pt text.
+        public var text: ColorToken {
+            switch self {
+            case .editing: Theme.Palette.signalBlueText
+            case .alert: Theme.Palette.accentText
+            default: tint
             }
         }
     }
+
+    /// Opacity of the tint fill behind the label.
+    static let fillOpacity = 0.1
 
     private let title: String
     private let status: Status
@@ -52,17 +65,17 @@ public struct StatusPill: View {
     public var body: some View {
         HStack(spacing: Theme.Spacing.xs - 2) {
             Circle()
-                .fill(status.tint)
+                .fill(status.tint.color)
                 .frame(width: 6, height: 6)
             Text(title)
-                .themeLabel(status.tint)
+                .themeLabel(status.text.color)
         }
         .padding(.horizontal, Theme.Spacing.xs + 2)
         .padding(.vertical, Theme.Spacing.xs - 2)
-        .background(status.tint.opacity(0.1))
+        .background(status.tint.color.opacity(Self.fillOpacity))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.xs)
-                .strokeBorder(status.tint.opacity(0.6), lineWidth: 1)
+                .strokeBorder(status.tint.color.opacity(0.6), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
     }

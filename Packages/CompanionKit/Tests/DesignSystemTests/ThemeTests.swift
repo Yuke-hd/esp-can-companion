@@ -27,12 +27,33 @@ final class ThemeTests: XCTestCase {
         }
     }
 
-    /// Tertiary labels and signal colors are used for uppercase labels, large bold
-    /// values, and indicator graphics, so they need at least the 3:1 WCAG ratio for
-    /// large text and non-text UI.
-    func testLabelAndSignalColorsMeetLargeTextContrast() {
-        let colors = [P.textTertiary, P.accent, P.signalTeal, P.signalYellow,
-                      P.signalGreen, P.signalBlue, P.signalPurple]
+    /// Small (11 pt) label text: every color passed to `themeLabel()` needs WCAG AA
+    /// for normal text on every surface.
+    func testSmallLabelTextMeetsAA() {
+        let labelColors = [P.textTertiary, P.textSecondary, P.signalTeal, P.signalYellow,
+                           P.signalGreen, P.accentText, P.signalBlueText]
+        for color in labelColors {
+            for surface in surfaces {
+                XCTAssertGreaterThanOrEqual(color.contrastRatio(against: surface), 4.5)
+            }
+        }
+    }
+
+    /// Status pill labels sit on a tinted fill, which is lighter than the bare surface.
+    func testStatusPillTextMeetsAAOnItsFill() {
+        let statuses: [StatusPill.Status] = [.neutral, .live, .pending, .editing, .alert]
+        for status in statuses {
+            for surface in surfaces {
+                let fill = status.tint.blended(over: surface, opacity: StatusPill.fillOpacity)
+                XCTAssertGreaterThanOrEqual(status.text.contrastRatio(against: fill), 4.5, "\(status)")
+            }
+        }
+    }
+
+    /// Saturated signal colors are for dots, borders, bars, and large bold values, so
+    /// they need the 3:1 WCAG ratio for non-text UI and large text.
+    func testIndicatorColorsMeetNonTextContrast() {
+        let colors = [P.accent, P.signalTeal, P.signalYellow, P.signalGreen, P.signalBlue, P.signalPurple]
         for color in colors {
             for surface in surfaces {
                 XCTAssertGreaterThanOrEqual(color.contrastRatio(against: surface), 3)
@@ -40,7 +61,8 @@ final class ThemeTests: XCTestCase {
         }
     }
 
-    func testTextOnAccentIsReadable() {
-        XCTAssertGreaterThanOrEqual(P.textOnAccent.contrastRatio(against: P.accent), 4.4)
+    /// The primary button title is 20 pt heavy, which is large text under WCAG (3:1).
+    func testTextOnAccentMeetsLargeTextContrast() {
+        XCTAssertGreaterThanOrEqual(P.textOnAccent.contrastRatio(against: P.accent), 3)
     }
 }

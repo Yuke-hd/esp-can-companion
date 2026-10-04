@@ -40,7 +40,6 @@ struct HomeView: View {
                 .padding(Theme.Spacing.md)
             }
             .background(Theme.Colors.background.ignoresSafeArea())
-            .toolbarBackground(Theme.Colors.background, for: .navigationBar)
             #if DEBUG
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
