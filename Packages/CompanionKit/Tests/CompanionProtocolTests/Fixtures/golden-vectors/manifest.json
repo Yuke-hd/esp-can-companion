@@ -1,0 +1,17 @@
+{
+  "firmware_repository": "Yuke-hd/mazda-can-accessory-controller",
+  "firmware_commit": "9ba94a0e0c7aaa183a667479cb4766bed0396958",
+  "files": {
+    "config-documents/*.json": {
+      "source": "vendored",
+      "path": "docs/specs/configuration/examples/"
+    },
+    "crc32.json": { "source": "spec-derived", "spec": "docs/specs/companion/config-transfer.md#checksum" },
+    "device-info.json": { "source": "spec-derived", "spec": "docs/specs/companion/ble-protocol.md#device-info" },
+    "command.json": { "source": "spec-derived", "spec": "docs/specs/companion/ble-protocol.md#command" },
+    "config-pdus.json": { "source": "spec-derived", "spec": "docs/specs/companion/config-transfer.md#write-pdus" },
+    "config-read-page.json": { "source": "spec-derived", "spec": "docs/specs/companion/config-transfer.md#read-back" },
+    "config-status.json": { "source": "spec-derived", "spec": "docs/specs/companion/config-transfer.md#config-status-characteristic" },
+    "live-signals.json": { "source": "spec-derived", "spec": "docs/specs/companion/live-signals.md#frame-layout" }
+  }
+}

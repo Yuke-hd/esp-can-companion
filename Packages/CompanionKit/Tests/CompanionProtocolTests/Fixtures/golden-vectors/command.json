@@ -1,0 +1,14 @@
+{
+  "vectors": [
+    {
+      "name": "revert to factory",
+      "opcode": 1,
+      "hex": "01fe"
+    },
+    {
+      "name": "clear bonds",
+      "opcode": 2,
+      "hex": "02fd"
+    }
+  ]
+}
