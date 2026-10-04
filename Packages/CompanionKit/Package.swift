@@ -17,6 +17,7 @@ let package = Package(
         .target(name: "BLETransport"),
         .target(name: "CompanionProtocol"),
         .target(name: "DesignSystem"),
+        .testTarget(name: "BLETransportTests", dependencies: ["BLETransport"]),
         .testTarget(name: "CompanionProtocolTests", dependencies: ["CompanionProtocol"]),
         .testTarget(name: "DesignSystemTests", dependencies: ["DesignSystem"]),
     ]
