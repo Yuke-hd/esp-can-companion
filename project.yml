@@ -1,0 +1,68 @@
+name: CANCompanion
+options:
+  bundleIdPrefix: com.example.cancompanion
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  xcodeVersion: "16.0"
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+packages:
+  CompanionKit:
+    path: Packages/CompanionKit
+
+targets:
+  CANCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+    dependencies:
+      - package: CompanionKit
+        product: DesignSystem
+      - package: CompanionKit
+        product: CompanionProtocol
+      - package: CompanionKit
+        product: BLETransport
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: CAN Companion
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_PREVIEWS: YES
+
+  CANCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AppTests
+    dependencies:
+      - target: CANCompanion
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).tests
+
+schemes:
+  CANCompanion:
+    build:
+      targets:
+        CANCompanion: all
+        CANCompanionTests: [test]
+    test:
+      targets:
+        - CANCompanionTests
+      gatherCoverageData: true

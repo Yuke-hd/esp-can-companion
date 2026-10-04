@@ -1,0 +1,10 @@
+// Shared build settings. Personal signing values go in Config/Local.xcconfig,
+// which is git-ignored. Copy Config/Local.xcconfig.example to get started.
+
+SWIFT_VERSION = 5.0
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+APP_BUNDLE_ID = com.example.cancompanion
+
+#include? "Local.xcconfig"
