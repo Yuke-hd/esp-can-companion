@@ -1,5 +1,22 @@
 import Foundation
 
+// MARK: - Observation
+
+/// Stops an observation registered on `ConnectionManager` when cancelled.
+@MainActor
+public final class ObservationToken {
+    private var onCancel: (@MainActor () -> Void)?
+
+    init(_ onCancel: @escaping @MainActor () -> Void) {
+        self.onCancel = onCancel
+    }
+
+    public func cancel() {
+        onCancel?()
+        onCancel = nil
+    }
+}
+
 // MARK: - Scheduling
 
 /// Cancels work handed to a `BLEScheduler`.

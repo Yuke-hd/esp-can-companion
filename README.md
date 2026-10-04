@@ -6,8 +6,8 @@ controller that implements the companion BLE protocol
 originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
 so it is not tied to one vehicle brand.
 
-> Status: early. The app can scan for, pair with, and reconnect to a controller.
-> The protocol client and codecs exist but are not wired to the BLE link or any screen yet.
+> Status: early. The app can scan for, pair with, and reconnect to a controller, and
+> its Home screen shows the controller's firmware, protocol version and active config.
 
 ## Requirements
 
@@ -25,10 +25,11 @@ AppTests/                    App unit tests
 Packages/CompanionKit/       Local Swift package
   Sources/BLETransport/      CoreBluetooth link: scanning, connecting, moving bytes
   Sources/CompanionProtocol/ Protocol messages and codecs (no UI, no CoreBluetooth)
+  Sources/CompanionLink/     Protocol client over the BLE link, controller state, demo controller
   Sources/DesignSystem/      Dark theme tokens, shared components, preview catalog
 ```
 
-The app depends on the three package modules. `CompanionProtocol` stays free of
+The app depends on the four package modules. `CompanionProtocol` stays free of
 CoreBluetooth and SwiftUI so it can be tested against golden vectors on any host.
 
 ## Build and run in the Simulator
@@ -70,7 +71,9 @@ and new pairings only work for 120 seconds after the controller's user key is pr
 
 `FakeRadio` simulates controllers in memory. The app uses it automatically in the
 Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument
-to use it on a device. SwiftUI previews can use `ConnectionManager.demo()`.
+to use it on a device. Pass `-DemoScenario <name>` to start in another state:
+`notPaired`, `connecting`, `connected`, `customConfig`, `relinking`, `incompatible`,
+`bluetoothOff` or `noAccess` (see `DemoScenario`). SwiftUI previews use the same scenarios.
 
 ## Protocol client
 
@@ -85,6 +88,13 @@ an in-memory controller.
 Live signal readings keep the controller's availability code. Only code `Fresh` is
 fresh, brake is never fresh, and a stream with no frame for 2 seconds reports
 every signal as unknown.
+
+`CompanionLink` connects the two. `ConnectionManagerTransport` implements
+`CompanionTransport` over `ConnectionManager`, keeping the controller's ATT error
+codes. `ControllerSession` owns one `CompanionClient`: on every link change it
+clears the client's device info, and on every new connection it reads device
+info, Config status and the active config again. `DemoController` answers those
+reads on `FakeRadio`.
 
 Golden vectors live in
 [`Tests/CompanionProtocolTests/Fixtures/golden-vectors`](Packages/CompanionKit/Tests/CompanionProtocolTests/Fixtures/golden-vectors);

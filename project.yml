@@ -27,6 +27,8 @@ targets:
         product: CompanionProtocol
       - package: CompanionKit
         product: BLETransport
+      - package: CompanionKit
+        product: CompanionLink
     info:
       path: App/Info.plist
       properties:
