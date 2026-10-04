@@ -67,19 +67,19 @@ struct HomeView: View {
 // MARK: - Previews
 
 @MainActor
-private func preview(_ scenario: DemoScenario) -> some View {
+private func homePreview(_ scenario: DemoScenario) -> some View {
     HomeView(model: AppModel(session: scenario.makeSession()))
         .preferredColorScheme(.dark)
 }
 
-#Preview("Not paired") { preview(.notPaired) }
-#Preview("Connecting") { preview(.connecting) }
-#Preview("Connected") { preview(.connected) }
-#Preview("Custom config") { preview(.customConfig) }
-#Preview("Relinking") { preview(.relinking) }
-#Preview("Incompatible") { preview(.incompatible) }
-#Preview("Bluetooth off") { preview(.bluetoothOff) }
-#Preview("No Bluetooth access") { preview(.noAccess) }
+#Preview("Not paired") { homePreview(.notPaired) }
+#Preview("Connecting") { homePreview(.connecting) }
+#Preview("Connected") { homePreview(.connected) }
+#Preview("Custom config") { homePreview(.customConfig) }
+#Preview("Relinking") { homePreview(.relinking) }
+#Preview("Incompatible") { homePreview(.incompatible) }
+#Preview("Bluetooth off") { homePreview(.bluetoothOff) }
+#Preview("No Bluetooth access") { homePreview(.noAccess) }
 
 #Preview("First launch") {
     HomeView(model: AppModel(deferring: { DemoScenario.notPaired.makeSession() }))
@@ -87,6 +87,6 @@ private func preview(_ scenario: DemoScenario) -> some View {
 }
 
 #Preview("Large text") {
-    preview(.connected)
+    homePreview(.connected)
         .environment(\.dynamicTypeSize, .accessibility3)
 }
