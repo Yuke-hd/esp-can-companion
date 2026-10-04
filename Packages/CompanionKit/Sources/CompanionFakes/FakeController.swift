@@ -1,10 +1,13 @@
 import Foundation
-@testable import CompanionProtocol
+import CompanionProtocol
 
 /// An in-memory controller that follows the config transfer spec closely
 /// enough to drive `CompanionClient` through its success and error paths.
-final class FakeController: CompanionTransport, @unchecked Sendable {
-    enum CommitOutcome {
+///
+/// Tests and SwiftUI previews use it in place of a BLE link. It does not
+/// validate config documents; set `commitOutcome` to force a verdict.
+public final class FakeController: CompanionTransport, @unchecked Sendable {
+    public enum CommitOutcome: Sendable {
         case save
         case reject(category: UInt8, code: UInt8, validation: UInt8, index: UInt16, path: String)
         case applyReject(stage: UInt8, section: UInt8, index: UInt16, engine: UInt8)
@@ -15,57 +18,111 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
     private let lock = NSLock()
 
     // Device and link.
-    var deviceInfo = DeviceInfo(
+    public var deviceInfo = DeviceInfo(
         protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 1, liveSignalLayoutVersion: 1,
         flags: 0, maxConfigBytes: 4096, firmwareVersion: "v1.0.0", hardwareID: "weact-can485-v1.1"
     )
-    var maximumWrite = 244
-    var isConnected = true
+    public var maximumWrite = 244
+    public var isConnected = true
 
     // Config transfer state.
-    var state: UInt8 = 0
-    var result: UInt8 = 0
-    var buffer = Data()
-    var transferLength = 0
-    var transferCRC: UInt32 = 0
-    var savedLength = 0
-    var savedCRC: UInt32 = 0
-    var rejection: (category: UInt8, code: UInt8, validation: UInt8, index: UInt16, path: String)?
-    var applyRejection: (stage: UInt8, section: UInt8, index: UInt16, engine: UInt8)?
-    var commitOutcome = CommitOutcome.save
+    public var state: UInt8 = 0
+    public var result: UInt8 = 0
+    public var bootFlags: UInt8 = 0
+    public var buffer = Data()
+    public var transferLength = 0
+    public var transferCRC: UInt32 = 0
+    public var savedLength = 0
+    public var savedCRC: UInt32 = 0
+    public var rejection: (category: UInt8, code: UInt8, validation: UInt8, index: UInt16, path: String)?
+    public var applyRejection: (stage: UInt8, section: UInt8, index: UInt16, engine: UInt8)?
+    public var bootDiagnostic: (code: UInt8, validation: UInt8)?
+    public var commitOutcome = CommitOutcome.save
 
     // Active config read-back.
-    var activeSource: UInt8 = 0
-    var activeDocument = Data()
-    var readPageOffset = 0
+    public var activeSource: UInt8 = 0
+    public var activeDocument = Data()
+    public var readPageOffset = 0
+    /// The embedded factory config, active after a revert.
+    public var factoryDocument = Data()
+    /// The committed document, active after the next `restart()`.
+    public private(set) var savedDocument: Data?
+    /// A Revert to factory command was accepted; `restart()` applies it.
+    public private(set) var isRevertPending = false
 
     // Fault injection.
     /// Called before each write is handled; may change state or throw.
-    var beforeWrite: ((FakeController, CompanionCharacteristic, Data) throws -> Void)?
+    public var beforeWrite: ((FakeController, CompanionCharacteristic, Data) throws -> Void)?
     /// Called before each read; may change state.
-    var beforeRead: ((FakeController, CompanionCharacteristic) -> Void)?
+    public var beforeRead: ((FakeController, CompanionCharacteristic) -> Void)?
     /// Writes to these characteristics never complete.
-    var hangingWrites: Set<CompanionCharacteristic> = []
+    public var hangingWrites: Set<CompanionCharacteristic> = []
     /// Delay before every write completes.
-    var writeDelay: Duration?
+    public var writeDelay: Duration?
+    /// At the next restart, the persisted override fails to load with this
+    /// diagnostic and the factory config runs instead (boot flag 0).
+    public var overrideFailsAtBoot: (code: UInt8, validation: UInt8)?
+    /// At every restart, lighting setup fails (boot flag 3).
+    public var lightingFailsAtBoot = false
+    /// Revert to factory fails with `StorageFailure`.
+    public var revertFails = false
+    /// Commands perform their storage change, then the link drops before the
+    /// write response.
+    public var commandsDropLink = false
 
     // Observation.
-    private(set) var writes: [(CompanionCharacteristic, Data)] = []
+    public private(set) var writes: [(CompanionCharacteristic, Data)] = []
     private var subscribers: [CompanionCharacteristic: [UUID: @Sendable (Data) -> Void]] = [:]
 
-    func withLock<R>(_ body: () throws -> R) rethrows -> R {
+    public init() {}
+
+    public func withLock<R>(_ body: () throws -> R) rethrows -> R {
         lock.lock()
         defer { lock.unlock() }
         return try body()
     }
 
-    var configWrites: [Data] { withLock { writes.filter { $0.0 == .config }.map(\.1) } }
-    var commandWrites: [Data] { withLock { writes.filter { $0.0 == .command }.map(\.1) } }
-    var subscriberCount: Int { withLock { subscribers.values.map(\.count).reduce(0, +) } }
+    public var configWrites: [Data] { withLock { writes.filter { $0.0 == .config }.map(\.1) } }
+    public var commandWrites: [Data] { withLock { writes.filter { $0.0 == .command }.map(\.1) } }
+    public var subscriberCount: Int { withLock { subscribers.values.map(\.count).reduce(0, +) } }
+
+    /// Simulates the controlled restart after a commit or a revert: applies
+    /// the saved override or the factory config, clears transfer state and
+    /// brings the link back.
+    public func restart() {
+        withLock {
+            if isRevertPending {
+                activeSource = 0
+                activeDocument = factoryDocument
+                bootFlags = 0
+                bootDiagnostic = nil
+            } else if let savedDocument {
+                if let failure = overrideFailsAtBoot {
+                    activeSource = 0
+                    activeDocument = factoryDocument
+                    bootFlags = 0x01
+                    bootDiagnostic = failure
+                } else {
+                    activeSource = 1
+                    activeDocument = savedDocument
+                    bootFlags = 0
+                    bootDiagnostic = nil
+                }
+            }
+            if lightingFailsAtBoot { bootFlags |= 0x08 }
+            savedDocument = nil
+            isRevertPending = false
+            state = 0
+            result = 0
+            buffer = Data()
+            readPageOffset = 0
+            isConnected = true
+        }
+    }
 
     // MARK: CompanionTransport
 
-    func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
+    public func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
         try withLock {
             guard isConnected else { throw CompanionTransportError.notConnected }
             beforeRead?(self, characteristic)
@@ -78,7 +135,7 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
         }
     }
 
-    func write(_ value: Data, to characteristic: CompanionCharacteristic) async throws {
+    public func write(_ value: Data, to characteristic: CompanionCharacteristic) async throws {
         let hangs = withLock {
             writes.append((characteristic, value))
             return hangingWrites.contains(characteristic)
@@ -104,18 +161,22 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
         }
         // The controller notifies before it answers the write.
         notifications.forEach { notify(.configStatus, $0) }
-        if case .dropLink = withLock({ commitOutcome }), value == ConfigWritePDU.commit.encoded {
+        let dropsLink = withLock { () -> Bool in
+            if case .dropLink = commitOutcome, value == ConfigWritePDU.commit.encoded { return true }
+            return characteristic == .command && commandsDropLink && error == nil
+        }
+        if dropsLink {
             withLock { isConnected = false }
             throw CompanionTransportError.disconnected
         }
         if let error { throw error }
     }
 
-    func maximumWriteLength() async throws -> Int {
+    public func maximumWriteLength() async throws -> Int {
         withLock { maximumWrite }
     }
 
-    func subscribe(
+    public func subscribe(
         to characteristic: CompanionCharacteristic,
         handler: @escaping @Sendable (Data) -> Void
     ) -> CompanionSubscription {
@@ -126,7 +187,7 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
         }
     }
 
-    func notify(_ characteristic: CompanionCharacteristic, _ value: Data) {
+    public func notify(_ characteristic: CompanionCharacteristic, _ value: Data) {
         let handlers = withLock { Array((subscribers[characteristic] ?? [:]).values) }
         handlers.forEach { $0(value) }
     }
@@ -174,6 +235,7 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
             case .save, .dropLink:
                 savedLength = buffer.count
                 savedCRC = transferCRC
+                savedDocument = buffer
                 buffer = Data()
                 state = 2
                 result = 1
@@ -213,44 +275,50 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
         guard bytes[1] == bytes[0] ^ 0xFF else { throw att(.invalidPDU) }
         guard bytes[0] == 1 || bytes[0] == 2 else { throw att(.unsupportedOperation) }
         guard state != 1 else { throw att(.busy) }
+        if bytes[0] == 1 {
+            guard !revertFails else { throw att(.storageFailure) }
+            isRevertPending = true
+            state = 2
+        }
     }
 
     private func readPage() -> Data {
         var page = Data([activeSource])
-        page.appendLittleEndian(UInt16(activeDocument.count))
-        page.appendLittleEndian(activeDocument.isEmpty ? 0 : CRC32.checksum(activeDocument))
-        page.appendLittleEndian(UInt16(readPageOffset))
+        page.appendLE(UInt16(activeDocument.count))
+        page.appendLE(activeDocument.isEmpty ? 0 : CRC32.checksum(activeDocument))
+        page.appendLE(UInt16(readPageOffset))
         let end = min(activeDocument.count, readPageOffset + 200)
         page.append(activeDocument[readPageOffset..<end])
         return page
     }
 
-    func statusValue() -> Data {
-        var value = Data([state, result, 0, activeSource])
-        value.appendLittleEndian(UInt16(activeDocument.count))
-        value.appendLittleEndian(activeDocument.isEmpty ? 0 : CRC32.checksum(activeDocument))
-        value.appendLittleEndian(UInt16(state == 1 ? transferLength : 0))
-        value.appendLittleEndian(UInt16(state == 1 ? buffer.count : 0))
-        value.appendLittleEndian(UInt16(result == 1 ? savedLength : 0))
-        value.appendLittleEndian(result == 1 ? savedCRC : 0)
+    public func statusValue() -> Data {
+        var value = Data([state, result, bootFlags, activeSource])
+        value.appendLE(UInt16(activeDocument.count))
+        value.appendLE(activeDocument.isEmpty ? 0 : CRC32.checksum(activeDocument))
+        value.appendLE(UInt16(state == 1 ? transferLength : 0))
+        value.appendLE(UInt16(state == 1 ? buffer.count : 0))
+        value.appendLE(UInt16(result == 1 ? savedLength : 0))
+        value.appendLE(result == 1 ? savedCRC : 0)
         let reject = result == 2 ? rejection : nil
         value.append(contentsOf: [reject?.category ?? 0, reject?.code ?? 0, reject?.validation ?? 0])
-        value.appendLittleEndian(reject?.index ?? 0)
+        value.appendLE(reject?.index ?? 0)
         let apply = result == 3 ? applyRejection : nil
         value.append(contentsOf: [apply?.stage ?? 0, 0, apply?.section ?? 0])
-        value.appendLittleEndian(apply?.index ?? 0)
-        value.append(contentsOf: [0, apply?.engine ?? 0, 0, 0])
+        value.appendLE(apply?.index ?? 0)
+        let boot = bootFlags & 0x01 != 0 ? bootDiagnostic : nil
+        value.append(contentsOf: [0, apply?.engine ?? 0, boot?.code ?? 0, boot?.validation ?? 0])
         let path = Data((reject?.path ?? "").utf8)
         value.append(UInt8(path.count))
         value.append(path)
         return value
     }
 
-    static func encode(_ info: DeviceInfo) -> Data {
+    public static func encode(_ info: DeviceInfo) -> Data {
         var value = Data([info.protocolMajor, info.protocolMinor])
-        value.appendLittleEndian(info.configSchemaVersion)
+        value.appendLE(info.configSchemaVersion)
         value.append(contentsOf: [info.liveSignalLayoutVersion, info.flags])
-        value.appendLittleEndian(info.maxConfigBytes)
+        value.appendLE(info.maxConfigBytes)
         for string in [info.firmwareVersion, info.hardwareID] {
             value.append(UInt8(string.utf8.count))
             value.append(contentsOf: string.utf8)
@@ -262,4 +330,10 @@ final class FakeController: CompanionTransport, @unchecked Sendable {
 private struct Subscription: CompanionSubscription {
     let onCancel: @Sendable () -> Void
     func cancel() { onCancel() }
+}
+
+private extension Data {
+    mutating func appendLE<T: FixedWidthInteger>(_ value: T) {
+        Swift.withUnsafeBytes(of: value.littleEndian) { append(contentsOf: $0) }
+    }
 }

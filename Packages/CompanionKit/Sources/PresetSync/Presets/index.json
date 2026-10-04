@@ -1,0 +1,20 @@
+[
+  {
+    "id": "early-shift",
+    "name": "Early shift",
+    "summary": "The factory layout with the red zone at 5,500 rpm and the RPM bar full at 6,000 rpm, for earlier shift cues.",
+    "file": "early-shift.json"
+  },
+  {
+    "id": "track",
+    "name": "Track",
+    "summary": "A green RPM bar that starts at 2,000 rpm and fills from one end, with the red zone at 6,200 rpm.",
+    "file": "track.json"
+  },
+  {
+    "id": "calm",
+    "name": "Calm",
+    "summary": "Turn signals, hazards and brake light only. No RPM bar and no red zone.",
+    "file": "calm.json"
+  }
+]
