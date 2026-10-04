@@ -1,0 +1,19 @@
+{
+  "vectors": [
+    {
+      "name": "check value",
+      "ascii": "123456789",
+      "crc32": 3421780262
+    },
+    {
+      "name": "empty",
+      "ascii": "",
+      "crc32": 0
+    },
+    {
+      "name": "minimal config",
+      "ascii": "{\"version\":1}",
+      "crc32": 1899010611
+    }
+  ]
+}

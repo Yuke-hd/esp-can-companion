@@ -1,0 +1,57 @@
+{
+  "vectors": [
+    {
+      "name": "start",
+      "pdu": {
+        "start": {
+          "total_length": 1832,
+          "crc32": 3421780262
+        }
+      },
+      "hex": "0128072639f4cb"
+    },
+    {
+      "name": "chunk at 0",
+      "pdu": {
+        "chunk": {
+          "offset": 0,
+          "data_hex": "7b2276657273696f6e223a317d"
+        }
+      },
+      "hex": "0200007b2276657273696f6e223a317d"
+    },
+    {
+      "name": "chunk at 241",
+      "pdu": {
+        "chunk": {
+          "offset": 241,
+          "data_hex": "7d"
+        }
+      },
+      "hex": "02f1007d"
+    },
+    {
+      "name": "commit",
+      "pdu": {
+        "commit": {}
+      },
+      "hex": "03"
+    },
+    {
+      "name": "abort",
+      "pdu": {
+        "abort": {}
+      },
+      "hex": "04"
+    },
+    {
+      "name": "select read page 400",
+      "pdu": {
+        "select_read_page": {
+          "offset": 400
+        }
+      },
+      "hex": "059001"
+    }
+  ]
+}

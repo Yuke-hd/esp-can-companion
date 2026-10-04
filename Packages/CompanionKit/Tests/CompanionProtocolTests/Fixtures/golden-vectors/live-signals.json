@@ -1,0 +1,727 @@
+{
+  "signals": [
+    "engine_rpm",
+    "speed_kph",
+    "turn_state",
+    "selector_position",
+    "actual_gear",
+    "front_wiper_position",
+    "hazard_request",
+    "turn_request_left",
+    "turn_request_right",
+    "indicator_lamp_left",
+    "indicator_lamp_right",
+    "liftgate_open",
+    "door_rear_right",
+    "door_rear_left",
+    "door_front_left_rhd",
+    "door_front_right_rhd",
+    "doors_unlocked",
+    "wiper_low",
+    "brake_pressed"
+  ],
+  "vectors": [
+    {
+      "name": "driving, left turn, brake pressed but unverified",
+      "hex": "0100011127d518020507010a10bbb9bb99b9bbbbbbbb0b",
+      "sequence": 0,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "freshness_unverified",
+          "value": 2500.25
+        },
+        "speed_kph": {
+          "availability": "freshness_unverified",
+          "value": 63.57
+        },
+        "turn_state": {
+          "availability": "fresh",
+          "value": 2
+        },
+        "selector_position": {
+          "availability": "freshness_unverified",
+          "value": 5
+        },
+        "actual_gear": {
+          "availability": "freshness_unverified",
+          "value": 7
+        },
+        "front_wiper_position": {
+          "availability": "freshness_unverified",
+          "value": 1
+        },
+        "hazard_request": {
+          "availability": "fresh",
+          "value": false
+        },
+        "turn_request_left": {
+          "availability": "fresh",
+          "value": true
+        },
+        "turn_request_right": {
+          "availability": "fresh",
+          "value": false
+        },
+        "indicator_lamp_left": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "indicator_lamp_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "liftgate_open": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_rear_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_rear_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_front_left_rhd": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_front_right_rhd": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "doors_unlocked": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "wiper_low": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "brake_pressed": {
+          "availability": "freshness_unverified",
+          "value": true
+        }
+      }
+    },
+    {
+      "name": "parked, doors and liftgate open, unlocked",
+      "hex": "0111010000000001020201e007bbb9bbbbbbbbbbbbbb0b",
+      "sequence": 17,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "freshness_unverified",
+          "value": 0.0
+        },
+        "speed_kph": {
+          "availability": "freshness_unverified",
+          "value": 0.0
+        },
+        "turn_state": {
+          "availability": "fresh",
+          "value": 1
+        },
+        "selector_position": {
+          "availability": "freshness_unverified",
+          "value": 2
+        },
+        "actual_gear": {
+          "availability": "freshness_unverified",
+          "value": 2
+        },
+        "front_wiper_position": {
+          "availability": "freshness_unverified",
+          "value": 1
+        },
+        "hazard_request": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "turn_request_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "turn_request_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "indicator_lamp_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "indicator_lamp_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "liftgate_open": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "door_rear_right": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "door_rear_left": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "door_front_left_rhd": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "door_front_right_rhd": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "doors_unlocked": {
+          "availability": "freshness_unverified",
+          "value": true
+        },
+        "wiper_low": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "brake_pressed": {
+          "availability": "freshness_unverified",
+          "value": false
+        }
+      }
+    },
+    {
+      "name": "no data yet, telemetry not started",
+      "hex": "0100000000000000000000000000000000000000000000",
+      "sequence": 0,
+      "telemetry_started": false,
+      "signals": {
+        "engine_rpm": {
+          "availability": "no_data",
+          "value": null
+        },
+        "speed_kph": {
+          "availability": "no_data",
+          "value": null
+        },
+        "turn_state": {
+          "availability": "no_data",
+          "value": null
+        },
+        "selector_position": {
+          "availability": "no_data",
+          "value": null
+        },
+        "actual_gear": {
+          "availability": "no_data",
+          "value": null
+        },
+        "front_wiper_position": {
+          "availability": "no_data",
+          "value": null
+        },
+        "hazard_request": {
+          "availability": "no_data",
+          "value": null
+        },
+        "turn_request_left": {
+          "availability": "no_data",
+          "value": null
+        },
+        "turn_request_right": {
+          "availability": "no_data",
+          "value": null
+        },
+        "indicator_lamp_left": {
+          "availability": "no_data",
+          "value": null
+        },
+        "indicator_lamp_right": {
+          "availability": "no_data",
+          "value": null
+        },
+        "liftgate_open": {
+          "availability": "no_data",
+          "value": null
+        },
+        "door_rear_right": {
+          "availability": "no_data",
+          "value": null
+        },
+        "door_rear_left": {
+          "availability": "no_data",
+          "value": null
+        },
+        "door_front_left_rhd": {
+          "availability": "no_data",
+          "value": null
+        },
+        "door_front_right_rhd": {
+          "availability": "no_data",
+          "value": null
+        },
+        "doors_unlocked": {
+          "availability": "no_data",
+          "value": null
+        },
+        "wiper_low": {
+          "availability": "no_data",
+          "value": null
+        },
+        "brake_pressed": {
+          "availability": "no_data",
+          "value": null
+        }
+      }
+    },
+    {
+      "name": "stale and unavailable values keep their retained value but are not fresh",
+      "hex": "01c8019065e02e040403020100ca4aca4a444444444404",
+      "sequence": 200,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "stale",
+          "value": 6500.0
+        },
+        "speed_kph": {
+          "availability": "unavailable",
+          "value": 120.0
+        },
+        "turn_state": {
+          "availability": "stale",
+          "value": 4
+        },
+        "selector_position": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "actual_gear": {
+          "availability": "stale",
+          "value": 3
+        },
+        "front_wiper_position": {
+          "availability": "unavailable",
+          "value": 2
+        },
+        "hazard_request": {
+          "availability": "stale",
+          "value": true
+        },
+        "turn_request_left": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "turn_request_right": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "indicator_lamp_left": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "indicator_lamp_right": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "liftgate_open": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "door_rear_right": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "door_rear_left": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "door_front_left_rhd": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "door_front_right_rhd": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "doors_unlocked": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "wiper_low": {
+          "availability": "unavailable",
+          "value": null
+        },
+        "brake_pressed": {
+          "availability": "unavailable",
+          "value": null
+        }
+      }
+    },
+    {
+      "name": "read failed and not supported carry no value",
+      "hex": "01ff010000000000000000000065656566666666666606",
+      "sequence": 255,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "read_failed",
+          "value": null
+        },
+        "speed_kph": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "turn_state": {
+          "availability": "read_failed",
+          "value": null
+        },
+        "selector_position": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "actual_gear": {
+          "availability": "read_failed",
+          "value": null
+        },
+        "front_wiper_position": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "hazard_request": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "turn_request_left": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "turn_request_right": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "indicator_lamp_left": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "indicator_lamp_right": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "liftgate_open": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "door_rear_right": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "door_rear_left": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "door_front_left_rhd": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "door_front_right_rhd": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "doors_unlocked": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "wiper_low": {
+          "availability": "not_supported",
+          "value": null
+        },
+        "brake_pressed": {
+          "availability": "not_supported",
+          "value": null
+        }
+      }
+    },
+    {
+      "name": "maximum encodings, unknown choice codes, reserved availability",
+      "hex": "010101ffffffff09096307ff1fbbbbbbffffffffffff0f",
+      "sequence": 1,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "freshness_unverified",
+          "value": 16383.75
+        },
+        "speed_kph": {
+          "availability": "freshness_unverified",
+          "value": 655.35
+        },
+        "turn_state": {
+          "availability": "freshness_unverified",
+          "value": 9
+        },
+        "selector_position": {
+          "availability": "freshness_unverified",
+          "value": 9
+        },
+        "actual_gear": {
+          "availability": "freshness_unverified",
+          "value": 99
+        },
+        "front_wiper_position": {
+          "availability": "freshness_unverified",
+          "value": 7
+        },
+        "hazard_request": {
+          "availability": "unknown",
+          "value": true
+        },
+        "turn_request_left": {
+          "availability": "unknown",
+          "value": true
+        },
+        "turn_request_right": {
+          "availability": "unknown",
+          "value": true
+        },
+        "indicator_lamp_left": {
+          "availability": "unknown",
+          "value": true
+        },
+        "indicator_lamp_right": {
+          "availability": "unknown",
+          "value": true
+        },
+        "liftgate_open": {
+          "availability": "unknown",
+          "value": true
+        },
+        "door_rear_right": {
+          "availability": "unknown",
+          "value": true
+        },
+        "door_rear_left": {
+          "availability": "unknown",
+          "value": true
+        },
+        "door_front_left_rhd": {
+          "availability": "unknown",
+          "value": true
+        },
+        "door_front_right_rhd": {
+          "availability": "unknown",
+          "value": true
+        },
+        "doors_unlocked": {
+          "availability": "unknown",
+          "value": true
+        },
+        "wiper_low": {
+          "availability": "unknown",
+          "value": true
+        },
+        "brake_pressed": {
+          "availability": "unknown",
+          "value": true
+        }
+      }
+    },
+    {
+      "name": "a frame that claims fresh brake reports it as unknown",
+      "hex": "010501a00f000001020201001099999999999999999909",
+      "sequence": 5,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "fresh",
+          "value": 1000.0
+        },
+        "speed_kph": {
+          "availability": "fresh",
+          "value": 0.0
+        },
+        "turn_state": {
+          "availability": "fresh",
+          "value": 1
+        },
+        "selector_position": {
+          "availability": "fresh",
+          "value": 2
+        },
+        "actual_gear": {
+          "availability": "fresh",
+          "value": 2
+        },
+        "front_wiper_position": {
+          "availability": "fresh",
+          "value": 1
+        },
+        "hazard_request": {
+          "availability": "fresh",
+          "value": false
+        },
+        "turn_request_left": {
+          "availability": "fresh",
+          "value": false
+        },
+        "turn_request_right": {
+          "availability": "fresh",
+          "value": false
+        },
+        "indicator_lamp_left": {
+          "availability": "fresh",
+          "value": false
+        },
+        "indicator_lamp_right": {
+          "availability": "fresh",
+          "value": false
+        },
+        "liftgate_open": {
+          "availability": "fresh",
+          "value": false
+        },
+        "door_rear_right": {
+          "availability": "fresh",
+          "value": false
+        },
+        "door_rear_left": {
+          "availability": "fresh",
+          "value": false
+        },
+        "door_front_left_rhd": {
+          "availability": "fresh",
+          "value": false
+        },
+        "door_front_right_rhd": {
+          "availability": "fresh",
+          "value": false
+        },
+        "doors_unlocked": {
+          "availability": "fresh",
+          "value": false
+        },
+        "wiper_low": {
+          "availability": "fresh",
+          "value": false
+        },
+        "brake_pressed": {
+          "availability": "unknown",
+          "value": true
+        }
+      }
+    },
+    {
+      "name": "zero values with the present bit are real zeros",
+      "hex": "01030100000000000000000000bbbbbbbbbbbbbbbbbb0b",
+      "sequence": 3,
+      "telemetry_started": true,
+      "signals": {
+        "engine_rpm": {
+          "availability": "freshness_unverified",
+          "value": 0.0
+        },
+        "speed_kph": {
+          "availability": "freshness_unverified",
+          "value": 0.0
+        },
+        "turn_state": {
+          "availability": "freshness_unverified",
+          "value": 0
+        },
+        "selector_position": {
+          "availability": "freshness_unverified",
+          "value": 0
+        },
+        "actual_gear": {
+          "availability": "freshness_unverified",
+          "value": 0
+        },
+        "front_wiper_position": {
+          "availability": "freshness_unverified",
+          "value": 0
+        },
+        "hazard_request": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "turn_request_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "turn_request_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "indicator_lamp_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "indicator_lamp_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "liftgate_open": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_rear_right": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_rear_left": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_front_left_rhd": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "door_front_right_rhd": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "doors_unlocked": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "wiper_low": {
+          "availability": "freshness_unverified",
+          "value": false
+        },
+        "brake_pressed": {
+          "availability": "freshness_unverified",
+          "value": false
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "layout version 2",
+      "hex": "0200010000000000000000000000000000000000000000",
+      "error": {
+        "invalid": "layout_version"
+      }
+    },
+    {
+      "name": "short frame",
+      "hex": "01000100000000000000000000000000000000000000",
+      "error": {
+        "truncated": "frame"
+      }
+    },
+    {
+      "name": "frame with appended bytes",
+      "hex": "010001000000000000000000000000000000000000000000",
+      "error": {
+        "invalid": "frame"
+      }
+    },
+    {
+      "name": "empty",
+      "hex": "",
+      "error": {
+        "truncated": "layout_version"
+      }
+    }
+  ]
+}

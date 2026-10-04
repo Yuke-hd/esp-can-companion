@@ -1,0 +1,303 @@
+{
+  "vectors": [
+    {
+      "name": "idle after boot, factory active",
+      "hex": "000000002807cdab341200000000000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 0,
+        "result": 0,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 1832,
+        "active_crc32": 305441741,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    },
+    {
+      "name": "receiving",
+      "hex": "010000002807cdab34128403e201000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 1,
+        "result": 0,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 1832,
+        "active_crc32": 305441741,
+        "transfer_length": 900,
+        "received_length": 482,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    },
+    {
+      "name": "saved, restart pending",
+      "hex": "020100002807cdab3412000000003007efbeadde000000000000000000000000000000",
+      "fields": {
+        "state": 2,
+        "result": 1,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 1832,
+        "active_crc32": 305441741,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 1840,
+        "saved_crc32": 3735928559
+      }
+    },
+    {
+      "name": "config rejected: zone out of range",
+      "hex": "00020001f4010700000000000000000000000000030a120300000000000000000000166f7574707574735b335d2e7a6f6e652e6c656e677468",
+      "fields": {
+        "state": 0,
+        "result": 2,
+        "boot_flags": 0,
+        "active_source": 1,
+        "active_length": 500,
+        "active_crc32": 7,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "rejection": {
+        "category": 3,
+        "code": 10,
+        "validation": 18,
+        "index": 3,
+        "path": "outputs[3].zone.length",
+        "path_truncated": false
+      }
+    },
+    {
+      "name": "config rejected: malformed JSON at the root",
+      "hex": "000200000000000000000000000000000000000001010000000000000000000000000124",
+      "fields": {
+        "state": 0,
+        "result": 2,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "rejection": {
+        "category": 1,
+        "code": 1,
+        "validation": 0,
+        "index": 0,
+        "path": "$",
+        "path_truncated": false
+      }
+    },
+    {
+      "name": "config rejected: truncated 26-byte path, saturated index",
+      "hex": "0002000000000000000000000000000000000000030a15ffff0000000000000000009a6f7574707574735b36353533355d2e7a6f6e652e646972656374",
+      "fields": {
+        "state": 0,
+        "result": 2,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "rejection": {
+        "category": 3,
+        "code": 10,
+        "validation": 21,
+        "index": 65535,
+        "path": "outputs[65535].zone.direct",
+        "path_truncated": true
+      }
+    },
+    {
+      "name": "config rejected: codes from a newer firmware",
+      "hex": "0002000000000000000000000000000000000000092a6301000000000000000000000872756c65735b315d",
+      "fields": {
+        "state": 0,
+        "result": 2,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "rejection": {
+        "category": 9,
+        "code": 42,
+        "validation": 99,
+        "index": 1,
+        "path": "rules[1]",
+        "path_truncated": false
+      }
+    },
+    {
+      "name": "apply rejected: unknown signal in rule 2",
+      "hex": "0003000000000000000000000000000000000000000000000005000202000006000000",
+      "fields": {
+        "state": 0,
+        "result": 3,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "apply_rejection": {
+        "stage": 5,
+        "validation": 0,
+        "section": 2,
+        "index": 2,
+        "binding": 0,
+        "engine": 6
+      }
+    },
+    {
+      "name": "apply rejected: fill capacity exceeded",
+      "hex": "0003000000000000000000000000000000000000000000000003000308000300000000",
+      "fields": {
+        "state": 0,
+        "result": 3,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "apply_rejection": {
+        "stage": 3,
+        "validation": 0,
+        "section": 3,
+        "index": 8,
+        "binding": 3,
+        "engine": 0
+      }
+    },
+    {
+      "name": "boot fell back to factory after an invalid override",
+      "hex": "000001002807cdab3412000000000000000000000000000000000000000000000a0400",
+      "fields": {
+        "state": 0,
+        "result": 0,
+        "boot_flags": 1,
+        "active_source": 0,
+        "active_length": 1832,
+        "active_crc32": 305441741,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      },
+      "boot_diagnostic": {
+        "code": 10,
+        "validation": 4
+      }
+    },
+    {
+      "name": "lighting setup failed, no store, no config",
+      "hex": "00000cff00000000000000000000000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 0,
+        "result": 0,
+        "boot_flags": 12,
+        "active_source": 255,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    },
+    {
+      "name": "storage failed",
+      "hex": "0004000158020900000000000000000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 0,
+        "result": 4,
+        "boot_flags": 0,
+        "active_source": 1,
+        "active_length": 600,
+        "active_crc32": 9,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    },
+    {
+      "name": "timed out",
+      "hex": "0006000000000000000000000000000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 0,
+        "result": 6,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    },
+    {
+      "name": "unknown result and state from a newer firmware",
+      "hex": "07c8000000000000000000000000000000000000000000000000000000000000000000",
+      "fields": {
+        "state": 7,
+        "result": 200,
+        "boot_flags": 0,
+        "active_source": 0,
+        "active_length": 0,
+        "active_crc32": 0,
+        "transfer_length": 0,
+        "received_length": 0,
+        "saved_length": 0,
+        "saved_crc32": 0
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "fixed fields cut short",
+      "hex": "00000000000000000000000000000000000000000000000000000000000000000000",
+      "error": {
+        "truncated": "path_info"
+      }
+    },
+    {
+      "name": "path shorter than path_info says",
+      "hex": "000200000000000000000000000000000000000000000000000000000000000000000872756c65735b31",
+      "error": {
+        "truncated": "path"
+      }
+    },
+    {
+      "name": "path longer than 26 bytes",
+      "hex": "000200000000000000000000000000000000000000000000000000000000000000001b787878787878787878787878787878787878787878787878787878",
+      "error": {
+        "invalid": "path_info"
+      }
+    }
+  ]
+}

@@ -6,8 +6,8 @@ controller that implements the companion BLE protocol
 originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
 so it is not tied to one vehicle brand.
 
-> Status: early. The app can scan for, pair with, and reconnect to a controller;
-> the protocol client is not implemented yet.
+> Status: early. The app can scan for, pair with, and reconnect to a controller.
+> The protocol client and codecs exist but are not wired to the BLE link or any screen yet.
 
 ## Requirements
 
@@ -71,6 +71,24 @@ and new pairings only work for 120 seconds after the controller's user key is pr
 `FakeRadio` simulates controllers in memory. The app uses it automatically in the
 Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument
 to use it on a device. SwiftUI previews can use `ConnectionManager.demo()`.
+
+## Protocol client
+
+`CompanionProtocol` holds all wire-format knowledge, following the firmware's
+[companion spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/tree/main/docs/specs/companion):
+device info and the version check, config read-back, chunked upload with commit
+and abort, Config status diagnostics, commands, the live signals frame, and
+`ControllerConfig` (config schema version 1). `CompanionClient` runs these over a
+`CompanionTransport`, so it has no CoreBluetooth dependency and is tested against
+an in-memory controller.
+
+Live signal readings keep the controller's availability code. Only code `Fresh` is
+fresh, brake is never fresh, and a stream with no frame for 2 seconds reports
+every signal as unknown.
+
+Golden vectors live in
+[`Tests/CompanionProtocolTests/Fixtures/golden-vectors`](Packages/CompanionKit/Tests/CompanionProtocolTests/Fixtures/golden-vectors);
+its README says where each file comes from.
 
 ## Theme
 

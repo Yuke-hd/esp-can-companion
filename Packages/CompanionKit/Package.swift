@@ -18,7 +18,11 @@ let package = Package(
         .target(name: "CompanionProtocol"),
         .target(name: "DesignSystem"),
         .testTarget(name: "BLETransportTests", dependencies: ["BLETransport"]),
-        .testTarget(name: "CompanionProtocolTests", dependencies: ["CompanionProtocol"]),
+        .testTarget(
+            name: "CompanionProtocolTests",
+            dependencies: ["CompanionProtocol"],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(name: "DesignSystemTests", dependencies: ["DesignSystem"]),
     ]
 )

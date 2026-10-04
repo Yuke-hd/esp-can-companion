@@ -1,0 +1,111 @@
+{
+  "vectors": [
+    {
+      "name": "version 1, window closed",
+      "hex": "01000100010000100676312e322e331177656163742d63616e3438352d76312e31",
+      "fields": {
+        "protocol_major": 1,
+        "protocol_minor": 0,
+        "config_schema_version": 1,
+        "live_signal_layout_version": 1,
+        "flags": 0,
+        "max_config_bytes": 4096,
+        "firmware_version": "v1.2.3",
+        "hardware_id": "weact-can485-v1.1"
+      }
+    },
+    {
+      "name": "version 1, pairing window open",
+      "hex": "01000100010100101176312e322e332d342d67616263646566301177656163742d63616e3438352d76312e31",
+      "fields": {
+        "protocol_major": 1,
+        "protocol_minor": 0,
+        "config_schema_version": 1,
+        "live_signal_layout_version": 1,
+        "flags": 1,
+        "max_config_bytes": 4096,
+        "firmware_version": "v1.2.3-4-gabcdef0",
+        "hardware_id": "weact-can485-v1.1"
+      }
+    },
+    {
+      "name": "newer minor appends a field and a flag bit",
+      "hex": "01030100018100100676322e302e301177656163742d63616e3438352d76312e31aabb",
+      "fields": {
+        "protocol_major": 1,
+        "protocol_minor": 3,
+        "config_schema_version": 1,
+        "live_signal_layout_version": 1,
+        "flags": 129,
+        "max_config_bytes": 4096,
+        "firmware_version": "v2.0.0",
+        "hardware_id": "weact-can485-v1.1"
+      }
+    },
+    {
+      "name": "unsupported major",
+      "hex": "02000200020000200676392e302e300a6e6578742d626f617264",
+      "fields": {
+        "protocol_major": 2,
+        "protocol_minor": 0,
+        "config_schema_version": 2,
+        "live_signal_layout_version": 2,
+        "flags": 0,
+        "max_config_bytes": 8192,
+        "firmware_version": "v9.0.0",
+        "hardware_id": "next-board"
+      }
+    },
+    {
+      "name": "31-byte strings (the maximum)",
+      "hex": "01000100010000101f666666666666666666666666666666666666666666666666666666666666661f68686868686868686868686868686868686868686868686868686868686868",
+      "fields": {
+        "protocol_major": 1,
+        "protocol_minor": 0,
+        "config_schema_version": 1,
+        "live_signal_layout_version": 1,
+        "flags": 0,
+        "max_config_bytes": 4096,
+        "firmware_version": "fffffffffffffffffffffffffffffff",
+        "hardware_id": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "hex": "",
+      "error": {
+        "truncated": "protocol_major"
+      }
+    },
+    {
+      "name": "fixed header cut short",
+      "hex": "01000100010000",
+      "error": {
+        "truncated": "max_config_bytes"
+      }
+    },
+    {
+      "name": "firmware string cut short",
+      "hex": "01000100010000100676312e",
+      "error": {
+        "truncated": "firmware_version"
+      }
+    },
+    {
+      "name": "missing hardware id",
+      "hex": "01000100010000100676312e322e33",
+      "error": {
+        "truncated": "hardware_id"
+      }
+    },
+    {
+      "name": "firmware string not UTF-8",
+      "hex": "010001000100001001ff00",
+      "error": {
+        "invalid": "firmware_version"
+      }
+    }
+  ]
+}
