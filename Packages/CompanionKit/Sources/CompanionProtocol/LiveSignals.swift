@@ -242,6 +242,12 @@ public struct LiveSignalFeed: Sendable {
         self.stallTimeout = stallTimeout
     }
 
+    /// When the stream counts as stalled if no further frame arrives, or nil
+    /// before the first frame.
+    public var stallDeadline: ContinuousClock.Instant? {
+        lastFrameAt.map { $0 + stallTimeout }
+    }
+
     /// Records a notification. Returns the decoded frame, or nil when it was
     /// discarded (wrong layout or malformed). A discarded frame does not count
     /// as a sign of life.
