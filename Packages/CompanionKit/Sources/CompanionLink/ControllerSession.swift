@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import BLETransport
 import CompanionProtocol
+import PresetSync
 
 /// The controller as the app sees it: the link from `ConnectionManager`, plus
 /// device info, config status and the active config read with the protocol
@@ -127,8 +128,12 @@ public final class ControllerSession {
         guard let config = try? readBack.decodeConfig() else {
             return .unreadable("The active config could not be read.")
         }
-        return .summary(ConfigSummary(config))
+        let profile = ConfigSummary.profile(of: config, factory: knownConfigs.factory, presets: knownConfigs.presets)
+        return .summary(ConfigSummary(config, profile: profile))
     }
+
+    /// The factory profile and bundled presets, to name the active config.
+    private static let knownConfigs = (factory: try? PresetCatalog.factory(), presets: (try? PresetCatalog.bundled()) ?? [])
 
     static func describe(_ error: Error) -> String {
         switch error as? CompanionClientError {
