@@ -30,29 +30,30 @@ struct RootView: View {
     @State private var selection: AppTab = .pitWall
 
     var body: some View {
-        TabView(selection: $selection) {
-            PitWallView(model: model)
-                .tag(AppTab.pitWall)
+        VStack(spacing: 0) {
+            TabView(selection: $selection) {
+                PitWallView(model: model)
+                    .tag(AppTab.pitWall)
+                    .toolbar(.hidden, for: .tabBar)
+                SetupTab(model: model)
+                    .tag(AppTab.setup)
+                    .toolbar(.hidden, for: .tabBar)
+                PlaceholderScreen(
+                    eyebrow: "Track // Zone map",
+                    title: "Strip",
+                    message: "The LED strip zone editor comes next. Until then, pick a preset under Setup."
+                )
+                .tag(AppTab.strip)
                 .toolbar(.hidden, for: .tabBar)
-            SetupTab(model: model)
-                .tag(AppTab.setup)
+                PlaceholderScreen(
+                    eyebrow: "Drive monitor",
+                    title: "Drive",
+                    message: "The landscape drive dashboard comes after the Strip editor. Live values are on the Pit Wall."
+                )
+                .tag(AppTab.drive)
                 .toolbar(.hidden, for: .tabBar)
-            PlaceholderScreen(
-                eyebrow: "Track // Zone map",
-                title: "Strip",
-                message: "The LED strip zone editor comes next. Until then, pick a preset under Setup."
-            )
-            .tag(AppTab.strip)
-            .toolbar(.hidden, for: .tabBar)
-            PlaceholderScreen(
-                eyebrow: "Drive monitor",
-                title: "Drive",
-                message: "The landscape drive dashboard comes after the Strip editor. Live values are on the Pit Wall."
-            )
-            .tag(AppTab.drive)
-            .toolbar(.hidden, for: .tabBar)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             PitTabBar(selection: $selection)
         }
         .background(Theme.Colors.background.ignoresSafeArea())
