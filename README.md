@@ -1,5 +1,8 @@
 # ESP CAN Companion
 
+Contributor and agent documentation: [UI preview and verification](docs/development/ui-verification.md)
+and the [documentation index](docs/README.md).
+
 An iOS companion app for ESP-based CAN bus accessory controllers. It talks to any
 controller that implements the companion BLE protocol
 ([spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md),
