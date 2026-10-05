@@ -56,11 +56,18 @@ struct TelemetryCard: View {
         let readouts = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
             : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.xs))
+        let header = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
+            : AnyLayout(HStackLayout())
+        let boxedReadouts = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.xs))
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack {
+                header {
                     Text("Live telemetry").themeLabel()
-                    Spacer()
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                     HStack(spacing: Theme.Spacing.xxs) {
                         Circle()
                             .fill(framesPerSecond > 0 ? Theme.Colors.signalTeal : Theme.Colors.textDisabled)
@@ -87,7 +94,7 @@ struct TelemetryCard: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(readout.rpmAccessibilityText)
                     Spacer(minLength: 0)
-                    HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+                    boxedReadouts {
                         ReadoutTile(box: readout.gearBox, color: Theme.Colors.signalYellow)
                         ReadoutTile(box: readout.speedBox, color: Theme.Colors.textPrimary)
                     }
@@ -112,6 +119,7 @@ struct TelemetryCard: View {
 private struct ReadoutTile: View {
     var box: ReadoutBox
     var color: Color
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: Theme.Spacing.xxs) {
@@ -133,7 +141,7 @@ private struct ReadoutTile: View {
                 }
             }
         }
-        .frame(minWidth: 72)
+        .frame(minWidth: 72, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
         .padding(.vertical, Theme.Spacing.sm)
         .padding(.horizontal, Theme.Spacing.xs)
         .background(Theme.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.xs))
