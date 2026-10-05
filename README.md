@@ -6,8 +6,9 @@ controller that implements the companion BLE protocol
 originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
 so it is not tied to one vehicle brand.
 
-> Status: early. The app can scan for, pair with, and reconnect to a controller, and
-> its Home screen shows the controller's firmware, protocol version and active config.
+> Status: early. The app can scan for, pair with, and reconnect to a controller. Its
+> Pit Wall shows live telemetry, signal tiles and the active config's output stack,
+> and Setup sends bundled presets. The Strip and Drive tabs are placeholders.
 
 ## Requirements
 
@@ -76,6 +77,7 @@ Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argume
 to use it on a device. Pass `-DemoScenario <name>` to start in another state:
 `notPaired`, `connecting`, `connected`, `customConfig`, `relinking`, `incompatible`,
 `bluetoothOff` or `noAccess` (see `DemoScenario`). SwiftUI previews use the same scenarios.
+The demo controller also streams a synthetic drive on Live signals, so the Pit Wall moves.
 
 ## Protocol client
 
@@ -115,7 +117,7 @@ signals, hazards and the brake light stay exactly as in the factory profile.
 The app does not validate presets: the controller does, and the flow shows its
 verdict, including the error code and field when it rejects one. A push or revert
 counts as done only after the controller restarts and Config status shows the new
-config running. Home opens `PresetsView` once a controller is ready, with the
+config running. The Setup tab shows `PresetsView`, with the
 `ControllerSession` as its link. In the Simulator the demo controller refuses
 config writes, so a push there ends in an error; the previews use the fake link.
 
@@ -133,7 +135,7 @@ text and status colors meet WCAG contrast targets on every surface.
 The core components (`Card`, `StatusPill`, `PrimaryButtonStyle`, `SecondaryButtonStyle`) are shown in
 [`ComponentCatalog.swift`](Packages/CompanionKit/Sources/DesignSystem/ComponentCatalog.swift).
 Open it in Xcode to see them in the preview canvas. Debug builds also link to the
-catalog from the Home screen toolbar.
+catalog from the bottom of the Pit Wall.
 
 ## Install on your own iPhone (development signing)
 

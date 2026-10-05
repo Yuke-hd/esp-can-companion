@@ -89,6 +89,9 @@ public enum Theme {
         /// layouts sized around them and are already far above body text. If a screen
         /// needs it to scale, build it from `@ScaledMetric(relativeTo: .largeTitle)`.
         public static let readoutLarge = Font.system(size: 64).weight(.heavy).width(.compressed).italic().monospacedDigit()
+        /// Boxed readouts next to the hero, such as gear and km/h. Fixed size for the
+        /// same reason as `readoutLarge`.
+        public static let readoutMedium = Font.system(size: 36).weight(.heavy).width(.compressed).italic().monospacedDigit()
         /// Tile values such as "RELEASED" or "72".
         public static let value = Font.system(.title2).weight(.bold).width(.condensed)
         /// Card and row titles such as "RPM FILL" or "BRAKE".

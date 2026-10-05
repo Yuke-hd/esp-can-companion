@@ -41,6 +41,14 @@ public struct ConfigSummary: Equatable, Sendable {
         public var color: ControllerConfig.Color?
 
         public var id: String { "\(action)-\(kind.rawValue)-\(priority)" }
+
+        public init(action: String, title: String, priority: Int, kind: Kind, color: ControllerConfig.Color?) {
+            self.action = action
+            self.title = title
+            self.priority = priority
+            self.kind = kind
+            self.color = color
+        }
     }
 
     /// The engine RPM thresholds the config lights up at, for the shift

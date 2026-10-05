@@ -6,9 +6,9 @@ import CompanionProtocol
 /// Lists the bundled presets, shows which config the controller runs, and
 /// offers Revert to factory. Push it inside a `NavigationStack`.
 ///
-/// Home opens it over the `ControllerSession`, which is the `PresetSyncLink`.
+/// The Setup tab opens it over the `ControllerSession`, which is the `PresetSyncLink`.
 /// `onChange` lets a caller re-read the controller after a push or revert is
-/// confirmed; Home leaves it unset because the session reloads itself after
+/// confirmed; Setup leaves it unset because the session reloads itself after
 /// the restart.
 struct PresetsView: View {
     @State private var model: PresetSyncModel
