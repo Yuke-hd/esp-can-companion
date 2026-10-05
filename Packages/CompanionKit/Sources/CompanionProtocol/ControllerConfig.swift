@@ -272,6 +272,13 @@ extension ControllerConfig {
         public var length: Int
         public var direction: FillDirection
 
+        /// Last logical pixel when the zone has a positive, representable length.
+        public var lastPixel: Int? {
+            guard length > 0 else { return nil }
+            let (lastPixel, overflow) = start.addingReportingOverflow(length - 1)
+            return overflow ? nil : lastPixel
+        }
+
         public init(start: Int, length: Int, direction: FillDirection) {
             self.start = start
             self.length = length

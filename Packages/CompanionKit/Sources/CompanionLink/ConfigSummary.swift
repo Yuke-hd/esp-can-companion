@@ -207,8 +207,13 @@ public struct ConfigSummary: Equatable, Sendable {
     }
 
     static func leds(_ zone: ControllerConfig.Zone) -> String {
-        guard zone.length > 1 else { return "LED \(zone.start)" }
-        return "LEDs \(zone.start)–\(zone.start + zone.length - 1)"
+        guard zone.length > 0 else {
+            return "LED zone starting at \(zone.start) with invalid length \(zone.length)"
+        }
+        guard let lastPixel = zone.lastPixel else {
+            return "LEDs starting at \(zone.start) for \(zone.length) pixels"
+        }
+        return zone.length == 1 ? "LED \(zone.start)" : "LEDs \(zone.start)–\(lastPixel)"
     }
 
     static func direction(_ direction: ControllerConfig.FillDirection) -> String {

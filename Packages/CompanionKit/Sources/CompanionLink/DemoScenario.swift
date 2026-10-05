@@ -13,6 +13,8 @@ public enum DemoScenario: String, CaseIterable, Sendable {
     case connected
     /// Linked to a controller running a custom override.
     case customConfig
+    /// Uploads receive a synthetic controller validation rejection.
+    case validationError
     /// The link was up, then the controller lost power; the app waits for it.
     case relinking
     /// The controller speaks protocol version 2, which this app does not.
@@ -38,6 +40,8 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             peripheral.isPoweredOn = false
         case .connected, .relinking:
             break
+        case .validationError:
+            demo.rejectsConfig = true
         case .customConfig:
             demo.activeSource = .persistedOverride
             demo.activeDocument = DemoController.customDocument
@@ -51,7 +55,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
         }
 
         let radio = FakeRadio(controllers: [peripheral], state: radioState, scheduler: scheduler, latency: latency)
-        demo.attach(to: radio)
+        demo.attach(to: radio, scheduler: scheduler)
         demo.streamLiveSignals(on: radio, from: peripheral.id)
         let manager = ConnectionManager(
             radio: radio,

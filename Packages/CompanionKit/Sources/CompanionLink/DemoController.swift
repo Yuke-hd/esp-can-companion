@@ -1,28 +1,52 @@
 import Foundation
 import BLETransport
 import CompanionProtocol
+import CompanionFakes
 
-/// Answers companion protocol reads and writes for a `FakeRadio`, so the app,
-/// previews and tests can run end to end without hardware. All values are
-/// synthetic.
-///
-/// It serves Device info, Config status and paged Config reads, and with
-/// `streamLiveSignals(on:from:)` a synthetic drive on Live signals. Config
-/// uploads and commands are not simulated yet: those writes fail with
-/// Unsupported Operation (`0x81`).
+/// Runs the companion protocol on a fake radio for the Simulator and previews.
+/// Values and controller validation verdicts are synthetic. Uploads and factory
+/// reverts restart the peripheral so the real session re-reads the active config.
+/// `streamLiveSignals(on:from:)` supplies synthetic Live signals.
 @MainActor
 public final class DemoController {
-    public var deviceInfo: DeviceInfo
-    public var activeSource: ConfigSourceCode
-    /// Canonical JSON of the active config. Empty when `activeSource` is `.none`.
-    public var activeDocument: Data
-    public var bootFlags: ConfigStatus.BootFlags
-    /// The Config status `state`, such as `.restartPending` after a commit.
-    public var state: ConfigStatus.StateCode = .idle
-
-    private var readPageOffset = 0
+    private let controller = CompanionFakes.FakeController()
+    private var restartScheduled = false
     /// The demo drive started by `streamLiveSignals(on:from:)`.
     var liveSignalTask: Task<Void, Never>?
+
+    public var deviceInfo: DeviceInfo {
+        get { controller.deviceInfo }
+        set { controller.deviceInfo = newValue }
+    }
+    public var activeSource: ConfigSourceCode {
+        get { ConfigSourceCode(rawValue: controller.activeSource) ?? .none }
+        set { controller.activeSource = newValue.rawValue }
+    }
+    /// Canonical JSON of the active config. Empty when `activeSource` is `.none`.
+    public var activeDocument: Data {
+        get { controller.activeDocument }
+        set { controller.activeDocument = newValue }
+    }
+    public var bootFlags: ConfigStatus.BootFlags {
+        get { .init(rawValue: controller.bootFlags) }
+        set { controller.bootFlags = newValue.rawValue }
+    }
+    public var state: ConfigStatus.StateCode {
+        get { ConfigStatus.StateCode(rawValue: controller.state) ?? .idle }
+        set { controller.state = newValue.rawValue }
+    }
+    /// Forces the controller's validation-error demo, without client validation.
+    public var rejectsConfig: Bool {
+        get {
+            if case .reject = controller.commitOutcome { return true }
+            return false
+        }
+        set {
+            controller.commitOutcome = newValue
+                ? .reject(category: 3, code: 10, validation: 18, index: 4, path: "outputs[4].zone.length")
+                : .save
+        }
+    }
 
     public init(
         deviceInfo: DeviceInfo = DemoController.defaultDeviceInfo,
@@ -34,82 +58,68 @@ public final class DemoController {
         self.activeSource = activeSource
         self.activeDocument = activeSource == .none ? Data() : activeDocument
         self.bootFlags = bootFlags
+        controller.factoryDocument = Self.factoryDocument
     }
 
-    /// Makes `radio` answer reads and writes as this controller; the radio
-    /// keeps it alive. `FakeRadio` takes one handler of each kind, so one demo
-    /// controller serves every fake peripheral on it.
-    public func attach(to radio: FakeRadio) {
+    /// A demo controller serves all the peripherals on this radio.
+    public func attach(to radio: FakeRadio, scheduler: BLEScheduler? = nil) {
+        let scheduler = scheduler ?? MainActorScheduler()
         radio.readHandler = { _, characteristic in self.read(characteristic) }
-        radio.writeHandler = { characteristic, value in self.write(value, to: characteristic) }
+        radio.writeHandler = { [weak radio] characteristic, value in
+            guard let radio else { return .other("Demo radio unavailable") }
+            let before = self.controller.statusValue()
+            let error = self.write(value, to: characteristic)
+            let after = self.controller.statusValue()
+            if before != after {
+                for id in radio.connectedPeripherals {
+                    radio.sendNotification(from: id, characteristic: CompanionGATT.configStatus, data: after, immediately: true)
+                }
+            }
+            let commits = characteristic == CompanionGATT.config && value == ConfigWritePDU.commit.encoded
+            let reverts = characteristic == CompanionGATT.command && value == CompanionCommand.revertToFactory.encoded
+            if error == nil, self.state == .restartPending, commits || reverts {
+                self.scheduleRestart(on: radio, scheduler: scheduler)
+            }
+            return error
+        }
     }
-
-    // MARK: Protocol
 
     func read(_ characteristic: GATTUUID) -> Result<Data, RadioError> {
-        switch characteristic {
-        case CompanionGATT.deviceInfo: .success(Self.encode(deviceInfo))
-        case CompanionGATT.configStatus: .success(statusValue())
-        case CompanionGATT.config: .success(readPage())
-        default: .failure(.att(0x02)) // Read Not Permitted
-        }
+        guard let role = ConnectionManagerTransport.characteristic(for: characteristic) else { return .failure(.att(0x02)) }
+        do { return .success(try controller.readImmediately(role)) }
+        catch { return .failure(Self.radioError(error)) }
     }
 
     func write(_ value: Data, to characteristic: GATTUUID) -> RadioError? {
-        let bytes = [UInt8](value)
-        guard characteristic == CompanionGATT.config, let opcode = bytes.first else {
+        guard let role = ConnectionManagerTransport.characteristic(for: characteristic) else {
             return .att(ATTErrorCode.unsupportedOperation.rawValue)
         }
-        switch opcode {
-        case 0x04: // Abort: harmless when no transfer is open.
-            return bytes.count == 1 ? nil : .att(ATTErrorCode.invalidAttributeValueLength.rawValue)
-        case 0x05: // Select read page.
-            guard bytes.count == 3 else { return .att(ATTErrorCode.invalidAttributeValueLength.rawValue) }
-            let offset = Int(bytes[1]) | Int(bytes[2]) << 8
-            guard offset <= activeDocument.count else { return .att(ATTErrorCode.invalidPDU.rawValue) }
-            readPageOffset = offset
-            return nil
-        default:
-            return .att(ATTErrorCode.unsupportedOperation.rawValue)
+        do { try controller.writeImmediately(value, to: role); return nil }
+        catch { return Self.radioError(error) }
+    }
+
+    private func scheduleRestart(on radio: FakeRadio, scheduler: BLEScheduler) {
+        guard !restartScheduled else { return }
+        restartScheduled = true
+        let ids = radio.connectedPeripherals
+        // The write response and Saved notification arrive before the restart.
+        scheduler.schedule(after: 0.2) { [weak radio] in
+            guard let radio else { return }
+            ids.forEach { radio.powerOff($0) }
+        }
+        scheduler.schedule(after: 0.6) { [weak radio, self] in
+            controller.restart()
+            restartScheduled = false
+            ids.forEach { radio?.powerOn($0) }
         }
     }
 
-    private var activeCRC: UInt32 {
-        activeDocument.isEmpty ? 0 : CRC32.checksum(activeDocument)
+    private static func radioError(_ error: Error) -> RadioError {
+        if case .att(let att) = error as? CompanionTransportError { return .att(att.rawValue) }
+        return .other(String(describing: error))
     }
 
-    private func readPage() -> Data {
-        let offset = min(readPageOffset, activeDocument.count)
-        var page = Data([activeSource.rawValue])
-        page.appendUInt16(UInt16(activeDocument.count))
-        page.appendUInt32(activeCRC)
-        page.appendUInt16(UInt16(offset))
-        let start = activeDocument.startIndex + offset
-        let end = min(activeDocument.endIndex, start + ConfigReadPage.maximumDataLength)
-        page.append(activeDocument[start..<end])
-        return page
-    }
-
-    /// Config status with no transfer data and no diagnostics.
-    private func statusValue() -> Data {
-        var value = Data([state.rawValue, 0, bootFlags.rawValue, activeSource.rawValue])
-        value.appendUInt16(UInt16(activeDocument.count))
-        value.appendUInt32(activeCRC)
-        value.append(Data(count: ConfigStatus.minimumLength - value.count))
-        return value
-    }
-
-    static func encode(_ info: DeviceInfo) -> Data {
-        var value = Data([info.protocolMajor, info.protocolMinor])
-        value.appendUInt16(info.configSchemaVersion)
-        value.append(contentsOf: [info.liveSignalLayoutVersion, info.flags])
-        value.appendUInt16(info.maxConfigBytes)
-        for string in [info.firmwareVersion, info.hardwareID] {
-            value.append(UInt8(string.utf8.count))
-            value.append(contentsOf: string.utf8)
-        }
-        return value
-    }
+    static func encode(_ info: DeviceInfo) -> Data { CompanionFakes.FakeController.encode(info) }
 
     // MARK: Sample data
 
@@ -149,17 +159,4 @@ public final class DemoController {
         )
         return (try? config.encodedJSON()) ?? Data()
     }()
-}
-
-private extension Data {
-    mutating func appendUInt16(_ value: UInt16) {
-        append(UInt8(truncatingIfNeeded: value))
-        append(UInt8(truncatingIfNeeded: value >> 8))
-    }
-
-    mutating func appendUInt32(_ value: UInt32) {
-        for shift in stride(from: 0, to: 32, by: 8) {
-            append(UInt8(truncatingIfNeeded: value >> UInt32(shift)))
-        }
-    }
 }

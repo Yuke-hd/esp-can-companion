@@ -4,6 +4,7 @@ import CoreBluetooth
 import DesignSystem
 import BLETransport
 import CompanionLink
+import PresetSync
 
 @main
 struct CANCompanionApp: App {
@@ -25,10 +26,12 @@ struct CANCompanionApp: App {
 final class AppModel {
     /// Nil until the user allows Bluetooth on first launch.
     private(set) var session: ControllerSession? = nil
+    private(set) var presetSync: PresetSyncModel?
     @ObservationIgnored private let makeSession: @MainActor () -> ControllerSession
 
     init(session: ControllerSession) {
         self.session = session
+        presetSync = Self.makePresetSync(session)
         makeSession = { session }
     }
 
@@ -40,10 +43,22 @@ final class AppModel {
 
     var needsBluetoothPermission: Bool { session == nil }
 
+    /// Cached preset identity is confirmed only by the current session's read.
+    var hasCurrentPresetRead: Bool {
+        guard session?.phase == .ready,
+              let status = session?.configStatus, let active = presetSync?.active else { return false }
+        return status.activeSource == active.source && status.activeCRC32 == active.crc32
+    }
+
     /// Creates the session. On a device this shows the system Bluetooth prompt.
     func allowBluetooth() {
         guard session == nil else { return }
         session = makeSession()
+        if let session { presetSync = Self.makePresetSync(session) }
+    }
+
+    private static func makePresetSync(_ session: ControllerSession) -> PresetSyncModel {
+        PresetSyncModel(presets: (try? PresetCatalog.bundled()) ?? [], link: session)
     }
 
     /// The Simulator has no Bluetooth radio, so it uses the in-memory fake

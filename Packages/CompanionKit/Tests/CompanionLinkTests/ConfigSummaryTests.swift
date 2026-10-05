@@ -38,6 +38,19 @@ final class ConfigSummaryTests: XCTestCase {
         XCTAssertEqual(summary.actions[1].outputs, [])
     }
 
+    func testOutputDescriptionDoesNotOverflowForAnUnrepresentableZone() {
+        let zone = ControllerConfig.Zone(start: Int.max, length: 30, direction: .startToEnd)
+        let config = ControllerConfig(
+            actions: [.init(name: "brake")],
+            outputs: [.ledSolid(.init(action: "brake", zone: zone, color: .init(red: 255, green: 0, blue: 0)))]
+        )
+
+        XCTAssertEqual(
+            ConfigSummary(config).actions.first?.outputs,
+            ["Lights LEDs starting at \(Int.max) for 30 pixels"]
+        )
+    }
+
     func testOutputStackByPriority() throws {
         let config = try ControllerConfig(canonicalJSON: DemoController.factoryDocument)
         let stack = ConfigSummary(config).outputStack

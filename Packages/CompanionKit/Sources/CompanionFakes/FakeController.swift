@@ -125,6 +125,11 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
     // MARK: CompanionTransport
 
     public func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
+        try readImmediately(characteristic)
+    }
+
+    /// Answers a radio callback synchronously; protocol behavior matches `read`.
+    public func readImmediately(_ characteristic: CompanionCharacteristic) throws -> Data {
         try withLock {
             reads += 1
             guard isConnected else { throw CompanionTransportError.notConnected }
@@ -145,6 +150,16 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
         }
         if let writeDelay { try await Task.sleep(for: writeDelay) }
         if hangs { try await Task.sleep(for: .seconds(3600)) }
+        try completeWrite(value, to: characteristic)
+    }
+
+    /// Handles a synchronous fake-radio callback without asynchronous fault delays.
+    public func writeImmediately(_ value: Data, to characteristic: CompanionCharacteristic) throws {
+        withLock { writes.append((characteristic, value)) }
+        try completeWrite(value, to: characteristic)
+    }
+
+    private func completeWrite(_ value: Data, to characteristic: CompanionCharacteristic) throws {
         var notifications: [Data] = []
         let error: Error? = withLock {
             guard isConnected else { return CompanionTransportError.notConnected }
