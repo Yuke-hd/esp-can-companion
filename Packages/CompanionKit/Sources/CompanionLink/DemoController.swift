@@ -16,6 +16,8 @@ public final class DemoController {
     /// Canonical JSON of the active config. Empty when `activeSource` is `.none`.
     public var activeDocument: Data
     public var bootFlags: ConfigStatus.BootFlags
+    /// The Config status `state`, such as `.restartPending` after a commit.
+    public var state: ConfigStatus.StateCode = .idle
 
     private var readPageOffset = 0
 
@@ -85,9 +87,9 @@ public final class DemoController {
         return page
     }
 
-    /// Config status with an idle transfer and no diagnostics.
+    /// Config status with no transfer data and no diagnostics.
     private func statusValue() -> Data {
-        var value = Data([0, 0, bootFlags.rawValue, activeSource.rawValue])
+        var value = Data([state.rawValue, 0, bootFlags.rawValue, activeSource.rawValue])
         value.appendUInt16(UInt16(activeDocument.count))
         value.appendUInt32(activeCRC)
         value.append(Data(count: ConfigStatus.minimumLength - value.count))

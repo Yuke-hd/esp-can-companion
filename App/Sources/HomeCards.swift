@@ -276,41 +276,64 @@ struct ActiveConfigCard: View {
 
 // MARK: - Entry points
 
-/// Presets and Drive, disabled until those features land.
+/// Presets, open once a controller is ready, and Drive, disabled until it lands.
 struct EntryPointsSection: View {
+    /// Opens Presets; nil while no controller is ready.
+    var openPresets: (() -> Void)?
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Coming next").themeLabel()
+            Text("Features").themeLabel()
                 .accessibilityAddTraits(.isHeader)
-            entry("Presets", detail: "Send a ready-made lighting setup", systemImage: "square.stack.3d.up")
-            entry("Drive", detail: "Live signals while you drive", systemImage: "gauge.with.dots.needle.67percent")
+            if let openPresets {
+                Button(action: openPresets) {
+                    entryCard("Presets", detail: "Send a ready-made lighting setup", systemImage: "square.stack.3d.up", badge: nil)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Presets, send a ready-made lighting setup")
+            } else {
+                unavailable("Presets", detail: "Send a ready-made lighting setup", systemImage: "square.stack.3d.up",
+                            badge: "Connect first", hint: "Connect to a controller first")
+            }
+            unavailable("Drive", detail: "Live signals while you drive", systemImage: "gauge.with.dots.needle.67percent",
+                        badge: "Soon", hint: "Not available yet")
         }
     }
 
-    private func entry(_ title: String, detail: String, systemImage: String) -> some View {
+    private func unavailable(_ title: String, detail: String, systemImage: String, badge: String, hint: String) -> some View {
         Button {} label: {
-            Card {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: systemImage)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                        Text(title)
-                            .font(Theme.Typography.headline)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(detail)
-                            .font(Theme.Typography.body)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                    Spacer()
-                    Text("Soon").themeLabel(Theme.Colors.textSecondary)
-                }
-            }
+            entryCard(title, detail: detail, systemImage: systemImage, badge: badge)
         }
         .buttonStyle(.plain)
         .disabled(true)
         .opacity(0.5)
         .accessibilityLabel("\(title), \(detail)")
-        .accessibilityHint("Not available yet")
+        .accessibilityHint(hint)
+    }
+
+    private func entryCard(_ title: String, detail: String, systemImage: String, badge: String?) -> some View {
+        Card {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(title)
+                        .font(Theme.Typography.headline)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(detail)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                Spacer()
+                if let badge {
+                    Text(badge).themeLabel(Theme.Colors.textSecondary)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
     }
 }

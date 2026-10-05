@@ -281,6 +281,20 @@ final class PresetSyncModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .succeeded(.preset(earlyShift)))
     }
 
+    func testRefreshWaitsOutABusySync() async throws {
+        controller.writeDelay = .milliseconds(20)
+        model.requestPush(earlyShift)
+        let run = Task { await model.confirm() }
+        while !model.phase.isBusy { await Task.yield() }
+
+        let readsBefore = controller.withLock { controller.reads }
+        await model.refresh()
+        XCTAssertEqual(controller.withLock { controller.reads }, readsBefore, "No reads while busy")
+
+        await run.value
+        XCTAssertEqual(model.phase, .succeeded(.preset(earlyShift)))
+    }
+
     func testRefreshIdentifiesTheActivePreset() async throws {
         await model.refresh()
         XCTAssertEqual(model.active?.isFactory, true)

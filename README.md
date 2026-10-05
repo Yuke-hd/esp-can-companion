@@ -115,7 +115,9 @@ signals, hazards and the brake light stay exactly as in the factory profile.
 The app does not validate presets: the controller does, and the flow shows its
 verdict, including the error code and field when it rejects one. A push or revert
 counts as done only after the controller restarts and Config status shows the new
-config running. `PresetsView` is the entry point Home links to.
+config running. Home opens `PresetsView` once a controller is ready, with the
+`ControllerSession` as its link. In the Simulator the demo controller refuses
+config writes, so a push there ends in an error; the previews use the fake link.
 
 `CompanionFakes` has the in-memory `FakeController` and a `FakePresetSyncLink`
 over it, used by the tests and the Presets previews.

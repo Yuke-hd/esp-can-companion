@@ -72,6 +72,8 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
 
     // Observation.
     public private(set) var writes: [(CompanionCharacteristic, Data)] = []
+    /// How many reads were answered or refused.
+    public private(set) var reads = 0
     private var subscribers: [CompanionCharacteristic: [UUID: @Sendable (Data) -> Void]] = [:]
 
     public init() {}
@@ -124,6 +126,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
 
     public func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
         try withLock {
+            reads += 1
             guard isConnected else { throw CompanionTransportError.notConnected }
             beforeRead?(self, characteristic)
             switch characteristic {

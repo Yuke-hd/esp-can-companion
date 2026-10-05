@@ -2,11 +2,15 @@ import SwiftUI
 import DesignSystem
 import BLETransport
 import CompanionLink
+import PresetSync
 
 /// The Home ("Pit Wall") screen: the link, the controller, its active config,
 /// and entry points to the next features.
 struct HomeView: View {
     var model: AppModel
+    /// Presets is pushed by state, not by a link inside the cards, so it
+    /// stays open while the controller restarts and the link drops.
+    @State private var showingPresets = false
 
     var body: some View {
         NavigationStack {
@@ -22,11 +26,16 @@ struct HomeView: View {
                     } else {
                         BluetoothPermissionCard { model.allowBluetooth() }
                     }
-                    EntryPointsSection()
+                    EntryPointsSection(openPresets: model.session?.phase == .ready ? { showingPresets = true } : nil)
                 }
                 .padding(Theme.Spacing.md)
             }
             .background(Theme.Colors.background.ignoresSafeArea())
+            .navigationDestination(isPresented: $showingPresets) {
+                if let session = model.session {
+                    PresetsView(link: session)
+                }
+            }
             #if DEBUG
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

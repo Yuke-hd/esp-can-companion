@@ -100,7 +100,11 @@ public final class PresetSyncModel {
     }
 
     /// Reads the active config from the controller.
+    /// Does nothing while a push or revert runs: the flow reads the
+    /// controller itself, and a second reader would interleave with its
+    /// config transfer and read-back.
     public func refresh() async {
+        guard !phase.isBusy else { return }
         do {
             try await refresh(using: link.currentClient())
         } catch {
