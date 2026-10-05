@@ -75,20 +75,9 @@ struct PresetsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(spacing: Theme.Spacing.xs) {
-                Text("///").font(Theme.Typography.headline).foregroundStyle(Theme.Colors.accent)
-                Text("SETUP SHEET  //  PRESETS").themeLabel()
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack { title; Spacer(); selectionPill }
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) { title; selectionPill }
-            }
+        ScreenHeader(eyebrow: "SETUP SHEET // PRESETS", title: "Setup") {
+            selectionPill
         }
-    }
-
-    private var title: some View {
-        Text("SETUP").font(Theme.Typography.display).foregroundStyle(Theme.Colors.textPrimary)
     }
 
     private var selectionPill: some View {
