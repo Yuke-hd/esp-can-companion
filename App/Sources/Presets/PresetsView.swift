@@ -52,7 +52,9 @@ struct PresetsView: View {
             }
             .refreshable { if isConnected { await model.refresh() } }
             .scrollDismissesKeyboard(.interactively)
-            sendFooter.fixedSize(horizontal: false, vertical: true)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            sendFooter
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
