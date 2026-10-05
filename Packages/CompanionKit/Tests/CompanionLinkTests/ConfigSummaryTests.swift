@@ -1,5 +1,6 @@
 import XCTest
 import CompanionProtocol
+import PresetSync
 @testable import CompanionLink
 
 final class ConfigSummaryTests: XCTestCase {
@@ -35,5 +36,36 @@ final class ConfigSummaryTests: XCTestCase {
         XCTAssertEqual(summary.actions[0].outputs, ["Flashes LED 7 for 250 ms"])
         XCTAssertEqual(summary.actions[1].triggers, ["When engine rpm is at least 5800.5, checked periodically, releases at 5500"])
         XCTAssertEqual(summary.actions[1].outputs, [])
+    }
+
+    func testOutputStackByPriority() throws {
+        let config = try ControllerConfig(canonicalJSON: DemoController.factoryDocument)
+        let stack = ConfigSummary(config).outputStack
+        // Hazard's two effects show once; equal priorities keep config order.
+        XCTAssertEqual(stack.map(\.title), ["Brake", "Red zone", "Left turn", "Right turn", "Hazard", "Rpm fill"])
+        XCTAssertEqual(stack.map(\.priority), [200, 150, 100, 100, 100, 50])
+        XCTAssertEqual(stack.map(\.kind), [.solid, .solid, .effect, .effect, .effect, .fill])
+        XCTAssertEqual(stack[0].color, .init(red: 16, green: 0, blue: 0))
+        XCTAssertNil(stack[2].color)
+    }
+
+    func testRPMBand() throws {
+        let factory = ConfigSummary(try ControllerConfig(canonicalJSON: DemoController.factoryDocument))
+        XCTAssertEqual(factory.rpmBand.fill, .init(from: 0, to: 6500))
+        XCTAssertEqual(factory.rpmBand.redline, 6000)
+
+        let custom = ConfigSummary(try ControllerConfig(canonicalJSON: DemoController.customDocument))
+        XCTAssertNil(custom.rpmBand.fill)
+        XCTAssertEqual(custom.rpmBand.redline, 5800)
+    }
+
+    func testProfileFollowsTheControllerSource() throws {
+        let track = Preset(id: "track", name: "Track", summary: "", config: ControllerConfig(actions: [.init(name: "brake")]))
+        // The controller's factory profile differs from the app's copy: still factory.
+        XCTAssertEqual(ConfigSummary.profile(of: ControllerConfig(), source: .known(.factory), presets: [track]), .factory)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .known(.factory), presets: [track]), .factory)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .known(.persistedOverride), presets: [track]), .preset("Track"))
+        XCTAssertEqual(ConfigSummary.profile(of: ControllerConfig(), source: .known(.persistedOverride), presets: [track]), .custom)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .unknown(9), presets: [track]), .custom)
     }
 }

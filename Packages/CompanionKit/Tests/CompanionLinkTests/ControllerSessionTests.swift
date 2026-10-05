@@ -1,6 +1,7 @@
 import XCTest
 import BLETransport
 import CompanionProtocol
+import PresetSync
 @testable import CompanionLink
 
 /// A connection manager on a fake radio with a demo controller, driven by
@@ -59,6 +60,7 @@ final class ControllerSessionTests: XCTestCase {
             return XCTFail("expected a summary, got \(String(describing: session.activeConfig))")
         }
         XCTAssertEqual(summary.actions.map(\.name), ["left_turn", "right_turn", "hazard", "rpm_fill", "red_zone", "brake"])
+        XCTAssertEqual(summary.profile, .factory)
     }
 
     func testCustomOverrideIsReported() async {
@@ -70,6 +72,7 @@ final class ControllerSessionTests: XCTestCase {
         XCTAssertEqual(session.configStatus?.activeSource, .known(.persistedOverride))
         guard case .summary(let summary)? = session.activeConfig else { return XCTFail("expected a summary") }
         XCTAssertEqual(summary.actions.map(\.title), ["Brake", "Shift light"])
+        XCTAssertEqual(summary.profile, .custom)
     }
 
     func testNoActiveConfig() async {
@@ -193,5 +196,63 @@ final class ControllerSessionTests: XCTestCase {
                 XCTAssertEqual(session.phase, .ready)
             }
         }
+    }
+
+    func testLiveTelemetryFollowsTheStream() async throws {
+        let bench = Bench()
+        let session = ControllerSession(connection: bench.manager)
+        await bench.connect()
+        await bench.settle { session.phase == .ready }
+
+        let telemetry = LiveTelemetry(session: session)
+        let run = Task { await telemetry.run() }
+        var frame = DemoTelemetry()
+        frame.engineRPM = 3200
+        for sequence in 0..<200 where telemetry.frame.engineRPM.value != 3200 {
+            frame.sequence = UInt8(sequence)
+            bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(telemetry.frame.engineRPM, SignalReading(availability: .freshnessUnverified, value: 3200))
+        XCTAssertGreaterThan(telemetry.framesPerSecond, 0)
+
+        run.cancel()
+        await run.value
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertEqual(telemetry.framesPerSecond, 0)
+    }
+
+    func testLiveTelemetryWaitsForAReadySession() async {
+        let bench = Bench()
+        let session = ControllerSession(connection: bench.manager)
+        let telemetry = LiveTelemetry(session: session)
+        await telemetry.run()
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertNil(telemetry.failure)
+    }
+
+    func testStallFrameDoesNotCountAsArrival() async {
+        let bench = Bench()
+        let telemetry = LiveTelemetry(session: ControllerSession(connection: bench.manager))
+        let now = ContinuousClock.now
+        telemetry.receive(.unknown, at: now)
+        XCTAssertEqual(telemetry.framesPerSecond, 0)
+    }
+
+    func testProfileTrustsTheControllerSource() async throws {
+        // Factory source, but not the app's copy of the factory profile.
+        let factory = Bench(demo: DemoController(activeSource: .factory, activeDocument: DemoController.customDocument))
+        let factorySession = ControllerSession(connection: factory.manager)
+        await factory.connect()
+        await factory.settle { factorySession.phase == .ready }
+        guard case .summary(let factorySummary)? = factorySession.activeConfig else { return XCTFail("expected a summary") }
+        XCTAssertEqual(factorySummary.profile, .factory)
+
+        let track = Bench(demo: DemoController(activeSource: .persistedOverride, activeDocument: try PresetCatalog.resource("track.json")))
+        let trackSession = ControllerSession(connection: track.manager)
+        await track.connect()
+        await track.settle { trackSession.phase == .ready }
+        guard case .summary(let trackSummary)? = trackSession.activeConfig else { return XCTFail("expected a summary") }
+        XCTAssertEqual(trackSummary.profile, .preset("Track"))
     }
 }

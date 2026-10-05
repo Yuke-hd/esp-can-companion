@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import BLETransport
 import CompanionProtocol
+import PresetSync
 
 /// The controller as the app sees it: the link from `ConnectionManager`, plus
 /// device info, config status and the active config read with the protocol
@@ -127,8 +128,12 @@ public final class ControllerSession {
         guard let config = try? readBack.decodeConfig() else {
             return .unreadable("The active config could not be read.")
         }
-        return .summary(ConfigSummary(config))
+        let profile = ConfigSummary.profile(of: config, source: readBack.source, presets: bundledPresets)
+        return .summary(ConfigSummary(config, profile: profile))
     }
+
+    /// The bundled presets, to name a persisted override.
+    private static let bundledPresets = (try? PresetCatalog.bundled()) ?? []
 
     static func describe(_ error: Error) -> String {
         switch error as? CompanionClientError {

@@ -6,7 +6,8 @@ import CompanionProtocol
 /// previews and tests can run end to end without hardware. All values are
 /// synthetic.
 ///
-/// It serves Device info, Config status and paged Config reads. Config
+/// It serves Device info, Config status and paged Config reads, and with
+/// `streamLiveSignals(on:from:)` a synthetic drive on Live signals. Config
 /// uploads and commands are not simulated yet: those writes fail with
 /// Unsupported Operation (`0x81`).
 @MainActor
@@ -20,6 +21,8 @@ public final class DemoController {
     public var state: ConfigStatus.StateCode = .idle
 
     private var readPageOffset = 0
+    /// The demo drive started by `streamLiveSignals(on:from:)`.
+    var liveSignalTask: Task<Void, Never>?
 
     public init(
         deviceInfo: DeviceInfo = DemoController.defaultDeviceInfo,

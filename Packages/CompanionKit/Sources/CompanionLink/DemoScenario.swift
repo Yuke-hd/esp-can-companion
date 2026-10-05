@@ -52,6 +52,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
 
         let radio = FakeRadio(controllers: [peripheral], state: radioState, scheduler: scheduler, latency: latency)
         demo.attach(to: radio)
+        demo.streamLiveSignals(on: radio, from: peripheral.id)
         let manager = ConnectionManager(
             radio: radio,
             store: InMemoryDeviceStore(rememberedDeviceID: remembered),

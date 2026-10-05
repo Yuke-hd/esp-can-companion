@@ -11,7 +11,7 @@ struct CANCompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView(model: model)
+            RootView(model: model)
                 .preferredColorScheme(.dark)
                 .tint(Theme.Colors.accent)
         }

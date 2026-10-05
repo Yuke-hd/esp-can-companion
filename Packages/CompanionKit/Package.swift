@@ -37,7 +37,7 @@ let package = Package(
             dependencies: ["CompanionProtocol", "CompanionFakes"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "CompanionLinkTests", dependencies: ["CompanionLink"]),
+        .testTarget(name: "CompanionLinkTests", dependencies: ["CompanionLink", "PresetSync"]),
         .testTarget(
             name: "PresetSyncTests",
             dependencies: ["PresetSync", "CompanionFakes"]

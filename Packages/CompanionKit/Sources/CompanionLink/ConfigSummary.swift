@@ -1,5 +1,6 @@
 import Foundation
 import CompanionProtocol
+import PresetSync
 
 /// A controller config in plain language: each action with what triggers it
 /// and what it drives.
@@ -17,9 +18,59 @@ public struct ConfigSummary: Equatable, Sendable {
         public var id: String { name }
     }
 
-    public var actions: [Action]
+    /// Which known config this is, as the Pit Wall profile names it.
+    public enum Profile: Equatable, Sendable {
+        case factory
+        /// A bundled preset, by its display name.
+        case preset(String)
+        case custom
+    }
 
-    public init(_ config: ControllerConfig) {
+    /// One output of the config, for the Pit Wall output stack.
+    public struct Output: Equatable, Sendable, Identifiable {
+        public enum Kind: String, Equatable, Sendable {
+            case effect, fill, flash, solid
+        }
+
+        /// The action's persisted name.
+        public var action: String
+        public var title: String
+        public var priority: Int
+        public var kind: Kind
+        /// The binding's LED color, nil for a built-in effect.
+        public var color: ControllerConfig.Color?
+
+        public var id: String { "\(action)-\(kind.rawValue)-\(priority)" }
+
+        public init(action: String, title: String, priority: Int, kind: Kind, color: ControllerConfig.Color?) {
+            self.action = action
+            self.title = title
+            self.priority = priority
+            self.kind = kind
+            self.color = color
+        }
+    }
+
+    /// The engine RPM thresholds the config lights up at, for the shift
+    /// lights and the RPM bar.
+    public struct RPMBand: Equatable, Sendable {
+        /// The input span of the first range rule on engine RPM.
+        public var fill: ControllerConfig.Span?
+        /// The lowest threshold of an "engine RPM above" rule.
+        public var redline: Double?
+    }
+
+    public var actions: [Action]
+    public var profile: Profile
+    /// Outputs ordered by priority, highest first; one entry per action and
+    /// kind, so hazard's two turn effects show once.
+    public var outputStack: [Output]
+    public var rpmBand: RPMBand
+
+    public init(_ config: ControllerConfig, profile: Profile = .custom) {
+        self.profile = profile
+        outputStack = Self.outputStack(config)
+        rpmBand = Self.rpmBand(config)
         actions = config.actions.map { action in
             Action(
                 name: action.name,
@@ -28,6 +79,66 @@ public struct ConfigSummary: Equatable, Sendable {
                 outputs: config.outputs.filter { $0.action == action.name }.map(Self.describe)
             )
         }
+    }
+
+    /// The profile for `config` read back from `source`. The controller's
+    /// source decides factory; only a persisted override is matched against
+    /// the bundled presets, as Presets does.
+    public static func profile(of config: ControllerConfig, source: ConfigSource, presets: [Preset]) -> Profile {
+        switch source {
+        case .known(.factory):
+            return .factory
+        case .known(.persistedOverride):
+            if let preset = presets.first(where: { $0.config == config }) { return .preset(preset.name) }
+            return .custom
+        default:
+            return .custom
+        }
+    }
+
+    // MARK: Pit Wall
+
+    static func outputStack(_ config: ControllerConfig) -> [Output] {
+        var seen = Set<String>()
+        var outputs: [Output] = []
+        for binding in config.outputs {
+            let output: Output
+            switch binding {
+            case .ledEffect(let effect):
+                output = Output(action: effect.action, title: humanize(effect.action), priority: effect.priority, kind: .effect, color: nil)
+            case .ledFill(let zone):
+                output = Output(action: zone.action, title: humanize(zone.action), priority: zone.priority, kind: .fill, color: zone.color)
+            case .ledTransient(let zone, _):
+                output = Output(action: zone.action, title: humanize(zone.action), priority: zone.priority, kind: .flash, color: zone.color)
+            case .ledSolid(let zone):
+                output = Output(action: zone.action, title: humanize(zone.action), priority: zone.priority, kind: .solid, color: zone.color)
+            }
+            if seen.insert(output.id).inserted { outputs.append(output) }
+        }
+        // Stable: equal priorities keep the config's order.
+        return outputs.enumerated()
+            .sorted { $0.element.priority != $1.element.priority ? $0.element.priority > $1.element.priority : $0.offset < $1.offset }
+            .map(\.element)
+    }
+
+    static func rpmBand(_ config: ControllerConfig) -> RPMBand {
+        let rpm = "vehicle.engine_rpm"
+        var fill: ControllerConfig.Span?
+        var redline: Double?
+        for rule in config.rules {
+            switch rule {
+            case .range(let range) where range.signalKey == rpm:
+                fill = fill ?? range.input
+            case .state(let condition), .sampledState(let condition, _), .event(let condition, _):
+                guard condition.signalKey == rpm,
+                      condition.comparison == .greater || condition.comparison == .greaterOrEqual,
+                      case .number(let threshold) = condition.operand else { continue }
+                redline = min(redline ?? threshold, threshold)
+            default:
+                continue
+            }
+        }
+        return RPMBand(fill: fill, redline: redline)
     }
 
     // MARK: Rules

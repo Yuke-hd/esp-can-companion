@@ -4,7 +4,7 @@ import BLETransport
 import CompanionProtocol
 import CompanionLink
 
-// Words the Home screen shows for each state, kept apart from the views so
+// Words the link and controller cards show for each state, kept apart from the views so
 // unit tests can cover every case.
 
 extension LinkState {
@@ -60,7 +60,7 @@ extension LinkState {
 }
 
 extension ConfigSource {
-    /// Which config the controller is running, as Home names it.
+    /// Which config the controller is running, as the controller card names it.
     var title: String {
         switch self {
         case .known(.factory): "Factory default"

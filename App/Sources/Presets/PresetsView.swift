@@ -6,14 +6,19 @@ import CompanionProtocol
 /// Lists the bundled presets, shows which config the controller runs, and
 /// offers Revert to factory. Push it inside a `NavigationStack`.
 ///
-/// Home opens it over the `ControllerSession`, which is the `PresetSyncLink`.
+/// The Setup tab opens it over the `ControllerSession`, which is the `PresetSyncLink`.
 /// `onChange` lets a caller re-read the controller after a push or revert is
-/// confirmed; Home leaves it unset because the session reloads itself after
+/// confirmed; Setup leaves it unset because the session reloads itself after
 /// the restart.
 struct PresetsView: View {
     @State private var model: PresetSyncModel
+    /// False while the controller is not ready. The view stays alive so a
+    /// sync can wait out the controller's restart, but it refreshes when the
+    /// link becomes ready and offers no new revert until then.
+    private let isLinkReady: Bool
 
-    init(link: PresetSyncLink, onChange: (@MainActor () -> Void)? = nil) {
+    init(link: PresetSyncLink, isLinkReady: Bool = true, onChange: (@MainActor () -> Void)? = nil) {
+        self.isLinkReady = isLinkReady
         let model = PresetSyncModel(presets: (try? PresetCatalog.bundled()) ?? [], link: link)
         model.onChange = onChange
         _model = State(initialValue: model)
@@ -61,13 +66,15 @@ struct PresetsView: View {
 
                 Button("Revert to factory") { model.requestRevert() }
                     .buttonStyle(.secondary)
-                    .disabled(model.phase.isBusy)
+                    .disabled(model.phase.isBusy || !isLinkReady)
             }
             .padding(Theme.Spacing.md)
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.refresh() }
+        .task(id: isLinkReady) {
+            if isLinkReady { await model.refresh() }
+        }
         .refreshable { await model.refresh() }
         .presetSyncSheet(model: model) { $0 == .factory }
     }
