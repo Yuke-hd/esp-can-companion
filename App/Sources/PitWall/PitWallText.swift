@@ -53,6 +53,14 @@ extension PitWallReadout {
     var gearDisplay: String { gear ?? "—" }
     var speedText: String { speedKPH.map(String.init) ?? "—" }
 
+    var gearBox: ReadoutBox {
+        ReadoutBox(label: "Gear", value: gearDisplay, freshness: gearFreshness, isShown: gear != nil)
+    }
+
+    var speedBox: ReadoutBox {
+        ReadoutBox(label: "Km/h", value: speedText, freshness: speedFreshness, isShown: speedKPH != nil)
+    }
+
     var rpmAccessibilityText: String {
         guard let rpm else { return "Engine RPM, no value, \(rpmFreshness.title)" }
         return "Engine RPM \(Int(rpm.rounded())), \(rpmFreshness.title)"
@@ -102,5 +110,37 @@ extension ConfigSummary.Output {
 
     var accessibilityText: String {
         "\(title), priority \(priority), \(kindTitle)"
+    }
+}
+
+/// What a boxed readout such as gear or km/h shows, line by line. The view
+/// draws exactly these lines, so the freshness label is always on screen,
+/// not only in VoiceOver: on a car both values arrive unverified.
+struct ReadoutBox: Equatable {
+    enum Role: Equatable {
+        case label, value, freshness
+    }
+
+    struct Line: Equatable, Identifiable {
+        var role: Role
+        var text: String
+        var id: Role { role }
+    }
+
+    var label: String
+    var value: String
+    var freshness: PitWallReadout.Freshness
+    var isShown: Bool
+
+    var lines: [Line] {
+        [
+            Line(role: .label, text: label),
+            Line(role: .value, text: value),
+            Line(role: .freshness, text: freshness.title),
+        ]
+    }
+
+    var accessibilityText: String {
+        "\(label), \(isShown ? value : "no value"), \(freshness.title)"
     }
 }

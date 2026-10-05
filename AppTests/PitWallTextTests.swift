@@ -56,4 +56,33 @@ final class PitWallTextTests: XCTestCase {
         XCTAssertEqual(AppTab.allCases.map(\.number), ["01", "02", "03", "04"])
         XCTAssertEqual(AppTab.allCases.map(\.title), ["Pit Wall", "Setup", "Strip", "Drive"])
     }
+
+    func testGearAndSpeedBoxesShowFreshnessOnScreen() throws {
+        var telemetry = DemoTelemetry()
+        telemetry.speedKPH = 72
+        telemetry.actualGear = .fourth
+        let cases: [(DemoTelemetry.Status, String, Bool)] = [
+            (.fresh, "Fresh", true),
+            (.unverified, "Unverified", true),
+            (.stale, "Stale", false),
+            (.noData, "No data", false),
+        ]
+        for (status, title, isShown) in cases {
+            telemetry.statuses[1] = status
+            telemetry.statuses[4] = status
+            let readout = PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded))
+            for box in [readout.gearBox, readout.speedBox] {
+                XCTAssertEqual(box.lines.map(\.role), [.label, .value, .freshness])
+                XCTAssertEqual(box.lines.last?.text, title, box.label)
+                XCTAssertEqual(box.isShown, isShown, box.label)
+                XCTAssertTrue(box.accessibilityText.hasSuffix(title), box.label)
+            }
+            XCTAssertEqual(readout.gearBox.lines[1].text, isShown ? "4" : "—")
+            XCTAssertEqual(readout.speedBox.lines[1].text, isShown ? "72" : "—")
+        }
+
+        let stalled = PitWallReadout(frame: .unknown)
+        XCTAssertEqual(stalled.gearBox.lines.map(\.text), ["Gear", "—", "Unknown"])
+        XCTAssertEqual(stalled.speedBox.lines.map(\.text), ["Km/h", "—", "Unknown"])
+    }
 }

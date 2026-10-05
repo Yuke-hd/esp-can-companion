@@ -49,8 +49,13 @@ struct TelemetryCard: View {
     var readout: PitWallReadout
     var framesPerSecond: Int
     var failure: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // At accessibility sizes the readouts stack, so labels keep their width.
+        let readouts = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.xs))
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 HStack {
@@ -69,7 +74,7 @@ struct TelemetryCard: View {
 
                 ShiftLights(lit: readout.litShiftLights, firstRed: readout.firstRedShiftLight)
 
-                HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+                readouts {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(readout.rpmText)
                             .font(Theme.Typography.readoutLarge)
@@ -82,10 +87,10 @@ struct TelemetryCard: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(readout.rpmAccessibilityText)
                     Spacer(minLength: 0)
-                    ReadoutTile(label: "Gear", value: readout.gearDisplay, color: Theme.Colors.signalYellow,
-                                freshness: readout.gearFreshness, isShown: readout.gear != nil)
-                    ReadoutTile(label: "Km/h", value: readout.speedText, color: Theme.Colors.textPrimary,
-                                freshness: readout.speedFreshness, isShown: readout.speedKPH != nil)
+                    HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+                        ReadoutTile(box: readout.gearBox, color: Theme.Colors.signalYellow)
+                        ReadoutTile(box: readout.speedBox, color: Theme.Colors.textPrimary)
+                    }
                 }
 
                 RPMBar(fraction: readout.rpmFraction, redline: readout.redlineFraction)
@@ -103,29 +108,37 @@ struct TelemetryCard: View {
     }
 }
 
-/// A small boxed readout such as gear or speed.
+/// A small boxed readout such as gear or speed, with its freshness on screen.
 private struct ReadoutTile: View {
-    var label: String
-    var value: String
+    var box: ReadoutBox
     var color: Color
-    var freshness: PitWallReadout.Freshness
-    var isShown: Bool
 
     var body: some View {
         VStack(spacing: Theme.Spacing.xxs) {
-            Text(label).themeLabel()
-            Text(value)
-                .font(Theme.Typography.readoutMedium)
-                .foregroundStyle(isShown ? color : Theme.Colors.textDisabled)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            ForEach(box.lines) { line in
+                switch line.role {
+                case .label:
+                    Text(line.text).themeLabel()
+                case .value:
+                    Text(line.text)
+                        .font(Theme.Typography.readoutMedium)
+                        .foregroundStyle(box.isShown ? color : Theme.Colors.textDisabled)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                case .freshness:
+                    Text(line.text)
+                        .themeLabel(box.freshness.color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
         }
-        .frame(minWidth: 64)
+        .frame(minWidth: 72)
         .padding(.vertical, Theme.Spacing.sm)
         .padding(.horizontal, Theme.Spacing.xs)
         .background(Theme.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.xs))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label), \(isShown ? value : "no value"), \(freshness.title)")
+        .accessibilityLabel(box.accessibilityText)
     }
 }
 

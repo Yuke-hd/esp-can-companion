@@ -117,25 +117,36 @@ public struct PitWallReadout: Equatable, Sendable {
         speedFreshness = Freshness(frame.speedKPH.availability)
         speedKPH = speedFreshness.showsValue ? frame.speedKPH.value.map { Int($0.rounded()) } : nil
 
+        // A config may use any finite threshold, however large, so all of
+        // this stays in floating point and only bounded values become Int.
         let scale = Self.scale(band)
         let low = band?.fill?.from ?? 0
         // Without a fill range, light up to the bar's scale, so a redline
         // still falls inside the row and its lights turn red.
         let high = max(band?.fill?.to ?? scale, low + 1)
+        let span = high - low
+        let lights = Double(Self.shiftLightCount)
+        /// Where `value` falls along the row, in lights; nil when the row
+        /// cannot place it.
+        func position(_ value: Double) -> Double? {
+            let position = (value - low) / span * lights
+            return position.isFinite ? position : nil
+        }
         if let rpm {
-            let level = (rpm - low) / (high - low)
-            litShiftLights = Int((min(max(level, 0), 1) * Double(Self.shiftLightCount)).rounded())
-            rpmFraction = min(max(rpm / scale, 0), 1)
+            litShiftLights = position(rpm).map { Int(min(max($0, 0), lights).rounded()) } ?? 0
+            rpmFraction = Self.fraction(rpm / scale)
         } else {
             litShiftLights = 0
             rpmFraction = 0
         }
         if let redline = band?.redline {
-            let step = (high - low) / Double(Self.shiftLightCount)
             // A light is red when the top of its span passes the redline.
-            let index = Int(((redline - low) / step).rounded(.down))
-            firstRedShiftLight = index < Self.shiftLightCount ? max(index, 0) : nil
-            redlineFraction = min(max(redline / scale, 0), 1)
+            if let red = position(redline)?.rounded(.down), red < lights {
+                firstRedShiftLight = Int(max(red, 0))
+            } else {
+                firstRedShiftLight = nil
+            }
+            redlineFraction = Self.fraction(redline / scale)
         } else {
             firstRedShiftLight = nil
             redlineFraction = nil
@@ -148,8 +159,14 @@ public struct PitWallReadout: Equatable, Sendable {
     /// The RPM bar's full scale: a little past the highest RPM the config uses.
     static func scale(_ band: ConfigSummary.RPMBand?) -> Double {
         let top = max(band?.fill?.to ?? 0, band?.redline ?? 0)
-        guard top > 0 else { return defaultRPMScale }
-        return (top * 1.08 / 500).rounded(.up) * 500
+        guard top > 0, top.isFinite else { return defaultRPMScale }
+        let scale = (top * 1.08 / 500).rounded(.up) * 500
+        return scale.isFinite ? scale : top
+    }
+
+    /// `value` clamped to `0...1`, or 0 when it is not a number.
+    static func fraction(_ value: Double) -> Double {
+        value.isFinite ? min(max(value, 0), 1) : (value > 0 ? 1 : 0)
     }
 
     /// A reported gear. `unknown` is a value the vehicle sent, not a missing

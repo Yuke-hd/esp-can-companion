@@ -177,4 +177,52 @@ final class PitWallReadoutTests: XCTestCase {
         XCTAssertEqual(readout.rpmFraction, 0.5, accuracy: 0.0001)
         XCTAssertEqual(readout.litShiftLights, 8)
     }
+
+    func testHugeThresholdsDoNotCrash() throws {
+        // The controller accepts any finite operand, so a config can carry a
+        // threshold far beyond Int's range.
+        let config = ControllerConfig(
+            actions: [.init(name: "rpm_fill"), .init(name: "red_zone")],
+            rules: [
+                .range(.init(action: "rpm_fill", signalKey: "vehicle.engine_rpm", input: .init(from: 0, to: 6500), output: .init(from: 0, to: 1))),
+                .sampledState(.init(action: "red_zone", signalKey: "vehicle.engine_rpm", comparison: .greater, operand: .number(1e30))),
+            ]
+        )
+        let decoded = try ControllerConfig(canonicalJSON: config.encodedJSON())
+        let band = ConfigSummary(decoded).rpmBand
+        XCTAssertEqual(band.redline, 1e30)
+
+        let stalled = PitWallReadout(frame: .unknown, band: band)
+        XCTAssertNil(stalled.firstRedShiftLight)
+        XCTAssertEqual(stalled.litShiftLights, 0)
+
+        let live = PitWallReadout(frame: try frame { $0.engineRPM = 4000 }, band: band)
+        XCTAssertNil(live.firstRedShiftLight)
+        XCTAssertEqual(live.litShiftLights, 9)
+        XCTAssertGreaterThanOrEqual(live.rpmFraction, 0)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(live.redlineFraction), 1)
+    }
+
+    func testExtremeBandsStayInRange() throws {
+        let bands: [ConfigSummary.RPMBand] = [
+            .init(fill: .init(from: 0, to: 1e30), redline: 6000),
+            .init(fill: .init(from: -1e30, to: 1e30), redline: -1e30),
+            .init(fill: .init(from: 1e30, to: 1e30), redline: 1e30),
+            .init(fill: nil, redline: .greatestFiniteMagnitude),
+            .init(fill: .init(from: -.greatestFiniteMagnitude, to: .greatestFiniteMagnitude), redline: .greatestFiniteMagnitude),
+        ]
+        for band in bands {
+            for rpm in [0.0, 4000, 8500] {
+                let readout = PitWallReadout(frame: try frame { $0.engineRPM = rpm }, band: band)
+                XCTAssertTrue((0...PitWallReadout.shiftLightCount).contains(readout.litShiftLights), "\(band)")
+                if let red = readout.firstRedShiftLight {
+                    XCTAssertTrue((0..<PitWallReadout.shiftLightCount).contains(red), "\(band)")
+                }
+                XCTAssertTrue((0...1).contains(readout.rpmFraction), "\(band)")
+                if let redline = readout.redlineFraction {
+                    XCTAssertTrue((0...1).contains(redline), "\(band)")
+                }
+            }
+        }
+    }
 }

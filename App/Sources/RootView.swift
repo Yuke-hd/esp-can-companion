@@ -96,6 +96,9 @@ struct PitTabBar: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.Colors.separator).frame(height: 1)
         }
+        // Like the system tab bar, the titles stop growing at the largest
+        // standard size; four tabs do not fit side by side beyond it.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 }
 
@@ -148,9 +151,14 @@ struct ScreenHeader<Trailing: View>: View {
     var eyebrow: String
     var title: String
     @ViewBuilder var trailing: Trailing
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .bottom) {
+        // At accessibility sizes the pill goes under the title, so neither is cut.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
+            : AnyLayout(HStackLayout(alignment: .bottom))
+        layout {
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 HStack(spacing: Theme.Spacing.xs) {
                     BrandMark()
@@ -161,6 +169,8 @@ struct ScreenHeader<Trailing: View>: View {
                 Text(title.uppercased())
                     .font(Theme.Typography.display)
                     .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: Theme.Spacing.xs)
