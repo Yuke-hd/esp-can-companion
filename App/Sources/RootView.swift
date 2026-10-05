@@ -107,7 +107,7 @@ private struct SetupTab: View {
     var body: some View {
         if let session = model.session {
             NavigationStack {
-                PresetsView(link: session)
+                PresetsView(link: session, isLinkReady: session.phase == .ready)
             }
         } else {
             PlaceholderScreen(

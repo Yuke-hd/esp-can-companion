@@ -34,7 +34,7 @@ final class PitWallTextTests: XCTestCase {
         XCTAssertTrue(live.rpmText.hasSuffix("820"))
         XCTAssertEqual(live.gearDisplay, "4")
         XCTAssertEqual(live.speedText, "72")
-        XCTAssertEqual(live.rpmAccessibilityText, "Engine RPM 4820, Fresh")
+        XCTAssertEqual(live.rpmAccessibilityText, "Engine RPM 4820, Unverified")
 
         telemetry.isTelemetryStarted = false
         XCTAssertEqual(PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded)).busTitle, "Not started")

@@ -1,6 +1,7 @@
 import XCTest
 import BLETransport
 import CompanionProtocol
+import PresetSync
 @testable import CompanionLink
 
 /// A connection manager on a fake radio with a demo controller, driven by
@@ -212,7 +213,7 @@ final class ControllerSessionTests: XCTestCase {
             bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
             try await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTAssertEqual(telemetry.frame.engineRPM, SignalReading(availability: .fresh, value: 3200))
+        XCTAssertEqual(telemetry.frame.engineRPM, SignalReading(availability: .freshnessUnverified, value: 3200))
         XCTAssertGreaterThan(telemetry.framesPerSecond, 0)
 
         run.cancel()
@@ -236,5 +237,22 @@ final class ControllerSessionTests: XCTestCase {
         let now = ContinuousClock.now
         telemetry.receive(.unknown, at: now)
         XCTAssertEqual(telemetry.framesPerSecond, 0)
+    }
+
+    func testProfileTrustsTheControllerSource() async throws {
+        // Factory source, but not the app's copy of the factory profile.
+        let factory = Bench(demo: DemoController(activeSource: .factory, activeDocument: DemoController.customDocument))
+        let factorySession = ControllerSession(connection: factory.manager)
+        await factory.connect()
+        await factory.settle { factorySession.phase == .ready }
+        guard case .summary(let factorySummary)? = factorySession.activeConfig else { return XCTFail("expected a summary") }
+        XCTAssertEqual(factorySummary.profile, .factory)
+
+        let track = Bench(demo: DemoController(activeSource: .persistedOverride, activeDocument: try PresetCatalog.resource("track.json")))
+        let trackSession = ControllerSession(connection: track.manager)
+        await track.connect()
+        await track.settle { trackSession.phase == .ready }
+        guard case .summary(let trackSummary)? = trackSession.activeConfig else { return XCTFail("expected a summary") }
+        XCTAssertEqual(trackSummary.profile, .preset("Track"))
     }
 }

@@ -128,12 +128,12 @@ public final class ControllerSession {
         guard let config = try? readBack.decodeConfig() else {
             return .unreadable("The active config could not be read.")
         }
-        let profile = ConfigSummary.profile(of: config, factory: knownConfigs.factory, presets: knownConfigs.presets)
+        let profile = ConfigSummary.profile(of: config, source: readBack.source, presets: bundledPresets)
         return .summary(ConfigSummary(config, profile: profile))
     }
 
-    /// The factory profile and bundled presets, to name the active config.
-    private static let knownConfigs = (factory: try? PresetCatalog.factory(), presets: (try? PresetCatalog.bundled()) ?? [])
+    /// The bundled presets, to name a persisted override.
+    private static let bundledPresets = (try? PresetCatalog.bundled()) ?? []
 
     static func describe(_ error: Error) -> String {
         switch error as? CompanionClientError {

@@ -42,7 +42,7 @@ public struct PitWallReadout: Equatable, Sendable {
         /// True when a value with this freshness may be shown.
         public var showsValue: Bool { self == .fresh || self == .unverified }
 
-        /// Worst first, to combine several signals into one tile.
+        /// Higher is worse, to combine several signals into one tile.
         var rank: Int {
             switch self {
             case .fresh: 0
@@ -112,14 +112,16 @@ public struct PitWallReadout: Equatable, Sendable {
         rpm = rpmFreshness.showsValue ? frame.engineRPM.value : nil
 
         gearFreshness = Freshness(frame.actualGear.availability)
-        gear = gearFreshness.showsValue ? frame.actualGear.value.flatMap(Self.gearText) : nil
+        gear = gearFreshness.showsValue ? frame.actualGear.value.map(Self.gearText) : nil
 
         speedFreshness = Freshness(frame.speedKPH.availability)
         speedKPH = speedFreshness.showsValue ? frame.speedKPH.value.map { Int($0.rounded()) } : nil
 
         let scale = Self.scale(band)
         let low = band?.fill?.from ?? 0
-        let high = max(band?.fill?.to ?? band?.redline ?? scale, low + 1)
+        // Without a fill range, light up to the bar's scale, so a redline
+        // still falls inside the row and its lights turn red.
+        let high = max(band?.fill?.to ?? scale, low + 1)
         if let rpm {
             let level = (rpm - low) / (high - low)
             litShiftLights = Int((min(max(level, 0), 1) * Double(Self.shiftLightCount)).rounded())
@@ -150,10 +152,13 @@ public struct PitWallReadout: Equatable, Sendable {
         return (top * 1.08 / 500).rounded(.up) * 500
     }
 
-    static func gearText(_ gear: WireValue<ActualGear>) -> String? {
-        guard case .known(let gear) = gear else { return nil }
+    /// A reported gear. `unknown` is a value the vehicle sent, not a missing
+    /// one, so it shows as "?".
+    static func gearText(_ gear: WireValue<ActualGear>) -> String {
+        guard case .known(let gear) = gear else { return "?" }
         switch gear {
-        case .unknown, .shifting: return nil
+        case .unknown: return "?"
+        case .shifting: return "Shift"
         case .parkOrNeutral: return "P/N"
         case .park: return "P"
         case .neutral: return "N"
@@ -196,10 +201,15 @@ public struct PitWallReadout: Equatable, Sendable {
         ]
     }
 
+    /// `describe` returns nil for a reported `unknown` choice or a code this
+    /// app does not know; that is still a value, so it shows as "Unknown".
     static func tile<V>(_ title: String, _ reading: SignalReading<V>, _ describe: (V) -> (String, Tone)?) -> Tile {
         let freshness = Freshness(reading.availability)
-        guard freshness.showsValue, let value = reading.value, let (text, tone) = describe(value) else {
+        guard freshness.showsValue, let value = reading.value else {
             return Tile(title: title, value: nil, tone: .muted, freshness: freshness)
+        }
+        guard let (text, tone) = describe(value) else {
+            return Tile(title: title, value: "Unknown", tone: .muted, freshness: freshness)
         }
         return Tile(title: title, value: text, tone: tone, freshness: freshness)
     }

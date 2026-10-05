@@ -25,11 +25,15 @@ public struct DemoTelemetry: Equatable, Sendable {
     /// Bit per Boolean signal, in the spec's bit order.
     public var booleans: UInt16 = 0
     /// One status per signal index, 0...18.
-    public var statuses: [Status] = Array(repeating: .fresh, count: 19)
+    public var statuses: [Status] = Array(repeating: .unverified, count: 19)
+
+    /// As on the car: only turn state, hazard and the turn requests have a
+    /// freshness timeout, so only they can be fresh. Everything else,
+    /// brake included, arrives unverified.
+    public static let freshIndices = [2, 6, 7, 8]
 
     public init() {
-        // The protocol defines no brake timeout, so brake is never fresh.
-        statuses[18] = .unverified
+        for index in Self.freshIndices { statuses[index] = .fresh }
         // A wiper sensor that went quiet.
         statuses[5] = .stale
         statuses[17] = .stale

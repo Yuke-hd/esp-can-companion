@@ -81,11 +81,19 @@ public struct ConfigSummary: Equatable, Sendable {
         }
     }
 
-    /// The profile for `config`: factory, a bundled preset, or custom.
-    public static func profile(of config: ControllerConfig, factory: ControllerConfig?, presets: [Preset]) -> Profile {
-        if config == factory { return .factory }
-        if let preset = presets.first(where: { $0.config == config }) { return .preset(preset.name) }
-        return .custom
+    /// The profile for `config` read back from `source`. The controller's
+    /// source decides factory; only a persisted override is matched against
+    /// the bundled presets, as Presets does.
+    public static func profile(of config: ControllerConfig, source: ConfigSource, presets: [Preset]) -> Profile {
+        switch source {
+        case .known(.factory):
+            return .factory
+        case .known(.persistedOverride):
+            if let preset = presets.first(where: { $0.config == config }) { return .preset(preset.name) }
+            return .custom
+        default:
+            return .custom
+        }
     }
 
     // MARK: Pit Wall

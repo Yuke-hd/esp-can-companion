@@ -21,7 +21,9 @@ final class PitWallReadoutTests: XCTestCase {
         }
         XCTAssertEqual(decoded.sequence, 7)
         XCTAssertTrue(decoded.isTelemetryStarted)
-        XCTAssertEqual(decoded.engineRPM, SignalReading(availability: .fresh, value: 4820))
+        // As on the car, RPM has no freshness timeout; turn state does.
+        XCTAssertEqual(decoded.engineRPM, SignalReading(availability: .freshnessUnverified, value: 4820))
+        XCTAssertEqual(decoded.turnState.availability, .fresh)
         XCTAssertEqual(decoded.speedKPH.value, 72.4)
         XCTAssertEqual(decoded.actualGear.value, .known(.fourth))
         XCTAssertEqual(decoded.turnState.value, .known(.left))
@@ -37,7 +39,7 @@ final class PitWallReadoutTests: XCTestCase {
         }, band: factoryBand)
 
         XCTAssertEqual(readout.rpm, 4820)
-        XCTAssertEqual(readout.rpmFreshness, .fresh)
+        XCTAssertEqual(readout.rpmFreshness, .unverified)
         XCTAssertEqual(readout.gear, "4")
         XCTAssertEqual(readout.speedKPH, 72)
         XCTAssertEqual(readout.isTelemetryStarted, true)
@@ -143,8 +145,29 @@ final class PitWallReadoutTests: XCTestCase {
         XCTAssertEqual(PitWallReadout.gearText(.known(.reverse)), "R")
         XCTAssertEqual(PitWallReadout.gearText(.known(.parkOrNeutral)), "P/N")
         XCTAssertEqual(PitWallReadout.gearText(.known(.sixth)), "6")
-        XCTAssertNil(PitWallReadout.gearText(.known(.shifting)))
-        XCTAssertNil(PitWallReadout.gearText(.unknown(42)))
+        XCTAssertEqual(PitWallReadout.gearText(.known(.shifting)), "Shift")
+        XCTAssertEqual(PitWallReadout.gearText(.known(.unknown)), "?")
+        XCTAssertEqual(PitWallReadout.gearText(.unknown(42)), "?")
+    }
+
+    func testReportedUnknownChoiceIsAValue() throws {
+        let readout = PitWallReadout(frame: try frame {
+            $0.turnState = .unknown
+            $0.actualGear = .unknown
+        })
+        let turn = try XCTUnwrap(readout.tiles.first { $0.title == "Turn" })
+        XCTAssertEqual(turn.value, "Unknown")
+        XCTAssertEqual(turn.tone, .muted)
+        XCTAssertEqual(turn.freshness, .fresh)
+        XCTAssertEqual(readout.gear, "?")
+    }
+
+    func testRedlineWithoutFillRangeStillTurnsLightsRed() throws {
+        let band = ConfigSummary.RPMBand(fill: nil, redline: 5800)
+        let readout = PitWallReadout(frame: try frame { $0.engineRPM = 6000 }, band: band)
+        // Scale is 5800 × 1.08 rounded up to 6500; the row spans 0–6500.
+        XCTAssertEqual(readout.firstRedShiftLight, 13)
+        XCTAssertEqual(readout.litShiftLights, 14)
     }
 
     func testNoRPMRulesUsesDefaultScale() throws {

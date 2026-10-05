@@ -59,11 +59,13 @@ final class ConfigSummaryTests: XCTestCase {
         XCTAssertEqual(custom.rpmBand.redline, 5800)
     }
 
-    func testProfile() throws {
-        let factory = try ControllerConfig(canonicalJSON: DemoController.factoryDocument)
+    func testProfileFollowsTheControllerSource() throws {
         let track = Preset(id: "track", name: "Track", summary: "", config: ControllerConfig(actions: [.init(name: "brake")]))
-        XCTAssertEqual(ConfigSummary.profile(of: factory, factory: factory, presets: [track]), .factory)
-        XCTAssertEqual(ConfigSummary.profile(of: track.config, factory: factory, presets: [track]), .preset("Track"))
-        XCTAssertEqual(ConfigSummary.profile(of: ControllerConfig(), factory: factory, presets: [track]), .custom)
+        // The controller's factory profile differs from the app's copy: still factory.
+        XCTAssertEqual(ConfigSummary.profile(of: ControllerConfig(), source: .known(.factory), presets: [track]), .factory)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .known(.factory), presets: [track]), .factory)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .known(.persistedOverride), presets: [track]), .preset("Track"))
+        XCTAssertEqual(ConfigSummary.profile(of: ControllerConfig(), source: .known(.persistedOverride), presets: [track]), .custom)
+        XCTAssertEqual(ConfigSummary.profile(of: track.config, source: .unknown(9), presets: [track]), .custom)
     }
 }
