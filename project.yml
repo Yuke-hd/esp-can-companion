@@ -75,3 +75,16 @@ schemes:
       targets:
         - CANCompanionTests
       gatherCoverageData: true
+  CANCompanion Demo:
+    build:
+      targets:
+        CANCompanion: all
+        CANCompanionTests: [test]
+    run:
+      commandLineArguments:
+        "-DemoScenario": true
+        connected: true
+    test:
+      targets:
+        - CANCompanionTests
+      gatherCoverageData: true
