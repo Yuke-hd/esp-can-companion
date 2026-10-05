@@ -57,6 +57,30 @@ final class ConfigDescriberTests: XCTestCase {
         XCTAssertEqual(descriptions[1].detail, "Shows nothing. No rule turns it on.")
     }
 
+    func testDescribesZonesWithUnrepresentableEndpointsWithoutOverflowing() {
+        func detail(start: Int, length: Int) -> String? {
+            let zone = ControllerConfig.Zone(start: start, length: length, direction: .startToEnd)
+            let config = ControllerConfig(
+                actions: [.init(name: "brake")],
+                outputs: [.ledSolid(.init(action: "brake", zone: zone, color: .init(red: 255, green: 0, blue: 0)))]
+            )
+            return ConfigDescriber.describe(config).first?.detail
+        }
+
+        XCTAssertEqual(
+            detail(start: Int.max, length: 30),
+            "Lights LEDs starting at \(Int.max) for 30 pixels solid red. No rule turns it on."
+        )
+        XCTAssertEqual(
+            detail(start: 2, length: Int.max),
+            "Lights LEDs starting at 2 for \(Int.max) pixels solid red. No rule turns it on."
+        )
+        XCTAssertEqual(
+            detail(start: 0, length: 0),
+            "Lights LED zone starting at 0 with invalid length 0 solid red. No rule turns it on."
+        )
+    }
+
     func testColorNames() {
         func name(_ red: Int, _ green: Int, _ blue: Int) -> String {
             ConfigDescriber.colorName(.init(red: red, green: green, blue: blue))

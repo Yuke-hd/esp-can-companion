@@ -31,7 +31,7 @@ final class DemoSyncTests: XCTestCase {
         XCTAssertEqual(model.active?.presetID, preset.id)
         XCTAssertEqual(bench.demo.activeDocument, try preset.config.encodedJSON())
         XCTAssertEqual(session.configStatus?.activeSource, .known(.persistedOverride))
-        XCTAssertEqual(session.activeConfig, .summary(ConfigSummary(preset.config)))
+        XCTAssertEqual(session.activeConfig, .summary(ConfigSummary(preset.config, profile: .preset(preset.name))))
         XCTAssertEqual(changes, 1)
         XCTAssertGreaterThan(bench.radio.receivedWrites.filter { $0.data.first == 0x02 }.count, 1)
         XCTAssertGreaterThan(statuses.filter { $0.receivedLength > 0 }.count, 1)
@@ -53,7 +53,7 @@ final class DemoSyncTests: XCTestCase {
         XCTAssertEqual(model.active?.isFactory, true)
         XCTAssertEqual(bench.demo.activeDocument, DemoController.factoryDocument)
         XCTAssertEqual(session.configStatus?.activeSource, .known(.factory))
-        XCTAssertEqual(session.activeConfig, .summary(ConfigSummary(try PresetCatalog.factory())))
+        XCTAssertEqual(session.activeConfig, .summary(ConfigSummary(try PresetCatalog.factory(), profile: .factory)))
     }
 
     func testRejectedPresetReportsControllerFieldAndCodeWithoutRestart() async throws {

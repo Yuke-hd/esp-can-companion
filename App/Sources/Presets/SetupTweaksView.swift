@@ -253,6 +253,7 @@ private struct SetupNumberField<Value: Numeric & LosslessStringConvertible>: Vie
                     .accessibilityIdentifier("\(id).error")
             }
         }
+        .onAppear { onValidityChanged(isRepresentable) }
         .onDisappear { onValidityChanged(true) }
     }
 

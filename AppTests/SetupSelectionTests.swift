@@ -171,6 +171,26 @@ final class SetupSelectionTests: XCTestCase {
         XCTAssertTrue(selection.canSend(isConnected: true, phase: .idle))
     }
 
+    func testReturningToSetupRestoresSendGuardForRetainedInvalidEntry() throws {
+        let selection = SetupSelection()
+        selection.select(try XCTUnwrap(PresetCatalog.bundled().first))
+        let fieldID = "setup.rpm.from"
+        let retainedText = "-"
+        let parsedValue: Int? = SetupNumericEntry.parse(retainedText, integerOnly: true)
+
+        selection.setFieldValidity(fieldID, isValid: parsedValue != nil)
+        XCTAssertFalse(selection.canSend(isConnected: true, phase: .idle))
+
+        // SetupNumberField clears its registration when its tab disappears.
+        selection.setFieldValidity(fieldID, isValid: true)
+        XCTAssertTrue(selection.canSend(isConnected: true, phase: .idle))
+
+        // On reappearance, it registers the validity of its retained text again.
+        selection.setFieldValidity(fieldID, isValid: parsedValue != nil)
+        XCTAssertTrue(selection.hasInputErrors)
+        XCTAssertFalse(selection.canSend(isConnected: true, phase: .idle))
+    }
+
     func testDiscardingDraftClearsItsInvalidFieldState() throws {
         let presets = try PresetCatalog.bundled()
         let selection = SetupSelection()

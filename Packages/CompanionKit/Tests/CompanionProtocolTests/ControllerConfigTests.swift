@@ -80,4 +80,17 @@ final class ControllerConfigTests: XCTestCase {
         XCTAssertEqual(ControllerConfig.LedEffect.allCases.map(\.rawValue), ["left_turn", "right_turn", "brake"])
         XCTAssertEqual(ControllerConfig.FillDirection.allCases.map(\.rawValue), ["start_to_end", "end_to_start", "center_out"])
     }
+
+    func testZoneLastPixelUsesCheckedArithmetic() {
+        func zone(_ start: Int, _ length: Int) -> ControllerConfig.Zone {
+            .init(start: start, length: length, direction: .startToEnd)
+        }
+
+        XCTAssertEqual(zone(0, 1).lastPixel, 0)
+        XCTAssertEqual(zone(Int.max - 29, 30).lastPixel, Int.max)
+        XCTAssertNil(zone(Int.max, 30).lastPixel)
+        XCTAssertNil(zone(2, Int.max).lastPixel)
+        XCTAssertNil(zone(0, 0).lastPixel)
+        XCTAssertNil(zone(0, -1).lastPixel)
+    }
 }

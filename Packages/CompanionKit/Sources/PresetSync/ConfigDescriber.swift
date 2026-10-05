@@ -74,7 +74,13 @@ public enum ConfigDescriber {
     }
 
     static func pixels(_ zone: ControllerConfig.Zone) -> String {
-        zone.length == 1 ? "pixel \(zone.start)" : "pixels \(zone.start)–\(zone.start + zone.length - 1)"
+        guard zone.length > 0 else {
+            return "LED zone starting at \(zone.start) with invalid length \(zone.length)"
+        }
+        guard let lastPixel = zone.lastPixel else {
+            return "LEDs starting at \(zone.start) for \(zone.length) pixels"
+        }
+        return zone.length == 1 ? "pixel \(zone.start)" : "pixels \(zone.start)–\(lastPixel)"
     }
 
     static func direction(_ direction: ControllerConfig.FillDirection) -> String {
