@@ -102,15 +102,17 @@ struct PitTabBar: View {
     }
 }
 
-/// Setup: the bundled presets for now. The drafts' tweak editor and Send to
-/// car bar come with their own issue.
+/// Setup owns its draft and presents it over the app-wide sync model.
 private struct SetupTab: View {
     var model: AppModel
+    @State private var selection = SetupSelection()
 
     var body: some View {
-        if let session = model.session {
+        if let session = model.session, let sync = model.presetSync {
             NavigationStack {
-                PresetsView(link: session, isLinkReady: session.phase == .ready)
+                PresetsView(model: sync, selection: selection,
+                            isConnected: session.phase == .ready,
+                            isActiveConfigCurrent: model.hasCurrentPresetRead)
             }
         } else {
             PlaceholderScreen(

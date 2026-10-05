@@ -1,5 +1,8 @@
 # ESP CAN Companion
 
+Contributor and agent documentation: [UI preview and verification](docs/development/ui-verification.md)
+and the [documentation index](docs/README.md).
+
 An iOS companion app for ESP-based CAN bus accessory controllers. It talks to any
 controller that implements the companion BLE protocol
 ([spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md),
@@ -76,8 +79,11 @@ and new pairings only work for 120 seconds after the controller's user key is pr
 Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument
 to use it on a device. Pass `-DemoScenario <name>` to start in another state:
 `notPaired`, `connecting`, `connected`, `customConfig`, `relinking`, `incompatible`,
-`bluetoothOff` or `noAccess` (see `DemoScenario`). SwiftUI previews use the same scenarios.
-The demo controller also streams a synthetic drive on Live signals, so the Pit Wall moves.
+`bluetoothOff`, `noAccess` or `validationError` (see `DemoScenario`). SwiftUI previews use the same scenarios.
+The demo controller streams synthetic Live signals, so the Pit Wall moves, and
+supports successful preset uploads, factory reverts and peripheral restarts.
+The `validationError` scenario rejects preset commits with a synthetic controller
+validation code and field, while leaving the active config unchanged.
 
 ## Protocol client
 
@@ -114,15 +120,35 @@ signals, hazards and the brake light stay exactly as in the factory profile.
 `ConfigDescriber` explains each action in plain language.
 
 `PresetSyncModel` pushes a preset or reverts to factory over a `PresetSyncLink`.
-The app does not validate presets: the controller does, and the flow shows its
-verdict, including the error code and field when it rejects one. A push or revert
-counts as done only after the controller restarts and Config status shows the new
-config running. The Setup tab shows `PresetsView`, with the
-`ControllerSession` as its link. In the Simulator the demo controller refuses
-config writes, so a push there ends in an error; the previews use the fake link.
+The app checks whole-number RPM bounds (0–12,000), minimum below maximum,
+red-line below maximum, and release below the red-line trigger before sending.
+Invalid drafts stay editable with inline errors and Send to car disabled, including
+edits through the advanced rule editor. The controller validates the complete
+setup, and the flow shows its verdict, including the error code and field when it
+rejects one. A push or revert counts as done only after the controller restarts
+and Config status shows the new
+config running. The bottom navigation opens Pit Wall and Setup; Strip and Drive
+are available placeholder screens. Setup keeps a selected preset separate from
+the config confirmed on the car. RPM input range, red-zone trigger/release,
+colours, LED zones, direction and priority can be adjusted in the draft. RPM
+sliders move in steps of 100; text fields allow any whole-number RPM. The
+advanced rule editor supports adding, removing and editing all schema v1 rule
+fields, using existing named actions. Brake rules retain `fresh_or_unverified`.
+Each action can also be inspected in plain language. Send to car and Revert to
+factory both require confirmation. The app retains one sync model across routes,
+using `ControllerSession` as its link. The Simulator demo supports uploads,
+factory revert and peripheral restart, so the session re-reads the config shown
+on Pit Wall after a successful change. The previews use the fake link. Changes
+stay local until Send to car and are confirmed against the controller's active
+CRC after restart. Switching presets asks before discarding unsent tweaks; Reset
+tweaks restores the bundled preset. User-saved presets remain out of scope.
 
 `CompanionFakes` has the in-memory `FakeController` and a `FakePresetSyncLink`
 over it, used by the tests and the Presets previews.
+
+Simulator and fake-device results do not establish hardware compatibility. Issue
+#5 still requires separate controller validation after firmware issues #165 and
+#167; no hardware result is implied by these demos or tests.
 
 ## Theme
 
