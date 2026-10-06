@@ -478,10 +478,10 @@ private struct GaugeArc: Shape {
         let halfChord = rect.height / 2
         let radius = (halfChord * halfChord + sagitta * sagitta) / (2 * sagitta)
         let center = CGPoint(x: rect.minX + inset + radius, y: rect.midY)
-        let sweep = asin(min(1, halfChord / radius))
+        let sweep = Double(asin(min(1, halfChord / radius)))
 
         func point(_ angle: Double, _ r: CGFloat) -> CGPoint {
-            CGPoint(x: center.x + r * cos(angle), y: center.y + r * sin(angle))
+            CGPoint(x: center.x + r * CGFloat(cos(angle)), y: center.y + r * CGFloat(sin(angle)))
         }
 
         var path = Path()
@@ -573,8 +573,8 @@ private struct BoostDial: Shape {
             let angle = Double.pi + Double.pi * Double(step) / 8
             let outer = radius - 6
             let inner = radius - (step.isMultiple(of: 2) ? 12 : 9)
-            path.move(to: CGPoint(x: center.x + outer * cos(angle), y: center.y + outer * sin(angle)))
-            path.addLine(to: CGPoint(x: center.x + inner * cos(angle), y: center.y + inner * sin(angle)))
+            path.move(to: CGPoint(x: center.x + outer * CGFloat(cos(angle)), y: center.y + outer * CGFloat(sin(angle))))
+            path.addLine(to: CGPoint(x: center.x + inner * CGFloat(cos(angle)), y: center.y + inner * CGFloat(sin(angle))))
         }
         return path
     }
