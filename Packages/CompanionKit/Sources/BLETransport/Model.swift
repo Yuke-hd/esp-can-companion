@@ -99,7 +99,7 @@ extension CompanionServiceConfiguration {
         readableCharacteristicUUIDs: [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus],
         notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals],
         liveSignalsCharacteristicUUID: CompanionGATT.liveSignals,
-        supportedLiveSignalLayouts: [1]
+        supportedLiveSignalLayouts: [1, 2]
     )
 }
 

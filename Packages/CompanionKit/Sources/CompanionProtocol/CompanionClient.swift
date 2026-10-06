@@ -299,10 +299,11 @@ public actor CompanionClient {
             throw CompanionClientError.unsupportedLiveSignalLayout(info.liveSignalLayoutVersion)
         }
         let transport = transport
+        let layoutVersion = info.liveSignalLayoutVersion
         // Keep only the newest value: a slow consumer sees current frames, not a backlog.
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let clock = ContinuousClock()
-            let feed = LockedValue((feed: LiveSignalFeed(stallTimeout: stallTimeout), reportedStall: true))
+            let feed = LockedValue((feed: LiveSignalFeed(stallTimeout: stallTimeout, layoutVersion: layoutVersion), reportedStall: true))
             continuation.yield(.unknown)
 
             let subscription = transport.subscribe(to: .liveSignals) { value in

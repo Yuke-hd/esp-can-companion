@@ -59,12 +59,26 @@ final class CompanionClientTests: XCTestCase {
 
     func testUnsupportedSchemaAndLayoutAreReported() {
         let info = DeviceInfo(
-            protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 2, liveSignalLayoutVersion: 2,
+            protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 2, liveSignalLayoutVersion: 3,
             flags: 0, maxConfigBytes: 4096, firmwareVersion: "", hardwareID: ""
         )
         XCTAssertEqual(info.compatibility(), Compatibility(
             isProtocolSupported: true, hasNewerMinor: false, canEditConfig: false, canDecodeLiveSignals: false
         ))
+    }
+
+    func testLiveSignalLayoutsOneAndTwoAreDecodableButNotOthers() {
+        func canDecode(layout: UInt8) -> Bool {
+            DeviceInfo(
+                protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 1, liveSignalLayoutVersion: layout,
+                flags: 0, maxConfigBytes: 4096, firmwareVersion: "", hardwareID: ""
+            ).compatibility().canDecodeLiveSignals
+        }
+        XCTAssertTrue(canDecode(layout: 1))
+        XCTAssertTrue(canDecode(layout: 2))
+        XCTAssertFalse(canDecode(layout: 0))
+        XCTAssertFalse(canDecode(layout: 3))
+        XCTAssertEqual(CompanionProtocol.supportedLiveSignalLayouts, [1, 2])
     }
 
     func testEveryOperationNeedsDeviceInfoFirst() async throws {
@@ -505,9 +519,56 @@ final class CompanionClientTests: XCTestCase {
     }
 
     func testLiveSignalsRefuseUnsupportedLayout() async throws {
+        controller.deviceInfo.liveSignalLayoutVersion = 3
+        try await connect()
+        await assertThrows(.unsupportedLiveSignalLayout(3)) { try await self.client.liveSignals() }
+        XCTAssertEqual(controller.subscriberCount, 0)
+    }
+
+    /// A 28-byte layout 2 frame with longitudinal +1.00 m/s² and lateral -0.500 m/s², both fresh.
+    private func layout2Frame(sequence: UInt8) -> Data {
+        var frame = Data([2, sequence, 1]) + Data(count: 25)
+        frame[22] = 0x91 // Status nibble 19 (longitudinal) fresh with value; nibble 18 (brake) fresh.
+        frame[23] = 0x09 // Status nibble 20 (lateral) fresh with value.
+        frame[24] = 100
+        frame[26] = 0x0C
+        frame[27] = 0xFE // -500 = 0xFE0C
+        return frame
+    }
+
+    func testLayout2ControllerStreamsAcceleration() async throws {
         controller.deviceInfo.liveSignalLayoutVersion = 2
         try await connect()
-        await assertThrows(.unsupportedLiveSignalLayout(2)) { try await self.client.liveSignals() }
-        XCTAssertEqual(controller.subscriberCount, 0)
+        let stream = try await client.liveSignals(stallTimeout: .seconds(5))
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+        controller.notify(.liveSignals, layout2Frame(sequence: 3))
+        let frame = await iterator.next()
+        XCTAssertEqual(frame?.longitudinalAcceleration, SignalReading(availability: .fresh, value: 1.0))
+        XCTAssertEqual(frame?.lateralAcceleration, SignalReading(availability: .fresh, value: -0.5))
+    }
+
+    func testLayout2ControllerDropsLayout1Frames() async throws {
+        controller.deviceInfo.liveSignalLayoutVersion = 2
+        try await connect()
+        let stream = try await client.liveSignals(stallTimeout: .seconds(5))
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+        controller.notify(.liveSignals, Data([1, 2, 1]) + Data(count: 20))
+        controller.notify(.liveSignals, layout2Frame(sequence: 4))
+        let next = await iterator.next()
+        XCTAssertEqual(next?.sequence, 4)
+    }
+
+    func testLayout1ControllerDropsLayout2Frames() async throws {
+        try await connect()
+        let stream = try await client.liveSignals(stallTimeout: .seconds(5))
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+        controller.notify(.liveSignals, layout2Frame(sequence: 2))
+        controller.notify(.liveSignals, Data([1, 5, 1]) + Data(count: 20))
+        let next = await iterator.next()
+        XCTAssertEqual(next?.sequence, 5)
+        XCTAssertEqual(next?.longitudinalAcceleration, .unknown)
     }
 }
