@@ -1,6 +1,6 @@
 name: Claude review
 
-# Reviews every non-draft PR to main as claude[bot] (the Claude GitHub App) and
+# Reviews every non-draft PR to main from a cloud/* branch as claude[bot] (the Claude GitHub App) and
 # submits APPROVE, COMMENT or REQUEST_CHANGES. It never merges.
 # Setup (repo admin): install https://github.com/apps/claude on this repo and add
 # a CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret.
@@ -18,8 +18,10 @@ jobs:
   review:
     name: Claude review
     # Fork PRs get no secrets or OIDC token, so only same-repo PRs are reviewed.
+    # Only PRs from cloud/* head branches are reviewed.
     if: >-
       !github.event.pull_request.draft &&
+      startsWith(github.head_ref, 'cloud/') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 90
