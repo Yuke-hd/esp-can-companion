@@ -53,13 +53,82 @@ final class MotorsportDriveTextTests: XCTestCase {
         let value = try readout()
 
         XCTAssertEqual(value.throttleDisplayText, "NO SIGNAL")
-        XCTAssertEqual(value.boostDisplayText, "PLACEHOLDER")
         XCTAssertEqual(value.throttleAccessibilityText, "Throttle, Not supported")
-        XCTAssertEqual(value.boostAccessibilityText, "Turbo, placeholder, Not supported")
 
         let stalled = DriveReadout(frame: .unknown)
         XCTAssertEqual(stalled.throttleDisplayText, "UNKNOWN")
-        XCTAssertEqual(stalled.boostDisplayText, "UNKNOWN")
+    }
+
+    // MARK: G-meter
+
+    func testGMeterLiveTextNamesEachDirection() throws {
+        let value = try readout {
+            $0.longitudinalAcceleration = -4
+            $0.lateralAcceleration = 7
+        }
+        // Text follows the smoothed value the meter shows, not the raw sample.
+        let smoothed = GForce(longitudinal: -0.42, lateral: 0.71)
+
+        XCTAssertNil(value.gMeterStatusText)
+        XCTAssertEqual(value.gMeterValueText(smoothed), "0.8")
+        XCTAssertEqual(value.gMeterAccessibilityText(smoothed), "G-meter, 0.4 g braking, 0.7 g right")
+    }
+
+    func testGMeterAccessibilityNamesAccelerationAndLeft() throws {
+        let value = try readout {
+            $0.longitudinalAcceleration = 3
+            $0.lateralAcceleration = -5
+        }
+
+        XCTAssertEqual(
+            value.gMeterAccessibilityText(GForce(longitudinal: 0.3, lateral: -0.5)),
+            "G-meter, 0.3 g accelerating, 0.5 g left"
+        )
+        // A component that rounds to zero is left out rather than read as "0.0 g left".
+        XCTAssertEqual(
+            value.gMeterAccessibilityText(GForce(longitudinal: 0.21, lateral: -0.02)),
+            "G-meter, 0.2 g accelerating"
+        )
+        XCTAssertEqual(value.gMeterAccessibilityText(GForce(longitudinal: 0.01, lateral: -0.04)), "G-meter, 0.0 g")
+        XCTAssertEqual(value.gMeterValueText(GForce(longitudinal: -0.01, lateral: 0.02)), "0.0")
+    }
+
+    func testGMeterNoDataNeverShowsZero() throws {
+        let stalled = DriveReadout(frame: .unknown)
+        var layout1 = DemoTelemetry()
+        layout1.layoutVersion = LiveSignalFrame.layoutVersion
+        let layout1Readout = DriveReadout(
+            frame: try LiveSignalFrame(decoding: layout1.encoded, layoutVersion: layout1.layoutVersion)
+        )
+        let dropout = try readout {
+            $0.statuses[19] = .stale
+            $0.statuses[20] = .stale
+        }
+
+        for value in [stalled, layout1Readout, dropout] {
+            XCTAssertNil(value.acceleration)
+            XCTAssertEqual(value.gMeterValueText(nil), "—")
+            XCTAssertEqual(value.gMeterStatusText, "NO DATA")
+            XCTAssertEqual(value.gMeterAccessibilityText(nil), "G-meter, no data")
+        }
+    }
+
+    func testGMeterNoDataNamesTheMissingAxis() throws {
+        let longitudinalMissing = try readout {
+            $0.statuses[19] = .noData
+            $0.lateralAcceleration = 0.5
+        }
+        let lateralUnverified = try readout {
+            $0.statuses[20] = .unverified
+            $0.longitudinalAcceleration = 2
+        }
+
+        XCTAssertEqual(longitudinalMissing.gMeterStatusText, "LONG NO DATA")
+        XCTAssertEqual(longitudinalMissing.gMeterAccessibilityText(nil), "G-meter, no data, longitudinal no data")
+        XCTAssertEqual(lateralUnverified.gMeterStatusText, "LAT UNVERIFIED")
+        XCTAssertEqual(lateralUnverified.gMeterAccessibilityText(nil), "G-meter, no data, lateral unverified")
+        // Even if a stale smoothed value were passed, a missing axis wins.
+        XCTAssertEqual(lateralUnverified.gMeterValueText(GForce(longitudinal: 0.2, lateral: 0)), "—")
     }
 
     private func signals(_ change: (inout DemoTelemetry) -> Void) throws -> MotorsportSignals {

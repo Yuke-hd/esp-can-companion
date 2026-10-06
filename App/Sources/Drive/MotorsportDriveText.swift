@@ -79,16 +79,75 @@ extension DriveReadout {
 
     var brakeAccessibilityText: String { tileAccessibility(brake) }
     var turnAccessibilityText: String { tileAccessibility(turn) }
-    // Throttle and boost have no layout v1 signal. Their wording follows the
-    // readout's placeholder tiles, so a future signal changes it in one place.
+    // Throttle has no live signal. Its wording follows the readout's
+    // placeholder tile, so a future signal changes it in one place.
     var throttleDisplayText: String {
         throttle.freshness == .unsupported ? "NO SIGNAL" : throttle.freshness.title.uppercased()
     }
-    var boostDisplayText: String {
-        boost.freshness == .unsupported ? "PLACEHOLDER" : boost.freshness.title.uppercased()
-    }
     var throttleAccessibilityText: String { ["Throttle", throttle.freshness.title].joined(separator: ", ") }
-    var boostAccessibilityText: String { ["Turbo, placeholder", boost.freshness.title].joined(separator: ", ") }
+
+    // MARK: G-meter
+
+    /// Why the g-meter shows no dot, or nil while both axes are live. When
+    /// only one axis is missing it is named with its state, since the dot
+    /// cannot be placed from the other alone.
+    var gMeterStatusText: String? {
+        guard acceleration == nil else { return nil }
+        guard let (axis, freshness) = gMeterMissingAxis else { return "NO DATA" }
+        return "\(axis.short) \(freshness.title.uppercased())"
+    }
+
+    /// Total g under the dial, one decimal, from the smoothed value the
+    /// meter shows. A dash, never zero, while there is no live data.
+    func gMeterValueText(_ smoothed: GForce?) -> String {
+        guard acceleration != nil, let smoothed else { return "—" }
+        return Self.gText(smoothed.magnitude)
+    }
+
+    /// One combined label, for example "G-meter, 0.4 g braking, 0.7 g right".
+    /// Directions name the car's acceleration (positive lateral is a right
+    /// turn), not where the dot sits. A component that rounds to zero is
+    /// left out.
+    func gMeterAccessibilityText(_ smoothed: GForce?) -> String {
+        guard acceleration != nil, let smoothed else {
+            guard let (axis, freshness) = gMeterMissingAxis else { return "G-meter, no data" }
+            return "G-meter, no data, \(axis.name) \(freshness.title.lowercased())"
+        }
+        let parts = [
+            Self.gComponent(smoothed.longitudinal, positive: "accelerating", negative: "braking"),
+            Self.gComponent(smoothed.lateral, positive: "right", negative: "left"),
+        ].compactMap { $0 }
+        return (["G-meter"] + (parts.isEmpty ? ["0.0 g"] : parts)).joined(separator: ", ")
+    }
+
+    private enum GMeterAxis {
+        case longitudinal, lateral
+
+        var short: String { self == .longitudinal ? "LONG" : "LAT" }
+        var name: String { self == .longitudinal ? "longitudinal" : "lateral" }
+    }
+
+    /// The one non-live axis while the other is live; nil when both are
+    /// missing (or neither, which cannot plot either).
+    private var gMeterMissingAxis: (GMeterAxis, PitWallReadout.Freshness)? {
+        let longitudinalLive = longitudinalAccelerationFreshness == .fresh
+        let lateralLive = lateralAccelerationFreshness == .fresh
+        switch (longitudinalLive, lateralLive) {
+        case (false, true): return (.longitudinal, longitudinalAccelerationFreshness)
+        case (true, false): return (.lateral, lateralAccelerationFreshness)
+        default: return nil
+        }
+    }
+
+    private static func gText(_ value: Double) -> String {
+        String(format: "%.1f", abs(value))
+    }
+
+    private static func gComponent(_ value: Double, positive: String, negative: String) -> String? {
+        let text = gText(value)
+        guard text != "0.0" else { return nil }
+        return "\(text) g \(value > 0 ? positive : negative)"
+    }
 
     var linkDisplayText: String { linkDisplayText(telemetryFailure: nil) }
 

@@ -40,7 +40,7 @@ struct MotorsportDriveView: View {
                 ) },
                 gear: { MotorsportGear(readout: readout, selector: signals.selector, shifting: signals.isShifting) },
                 sideMeters: { MotorsportSideMeters(readout: readout, brakePressed: signals.brakePressed) },
-                auxiliary: { MotorsportBoostPlaceholder(readout: readout) },
+                auxiliary: { MotorsportGMeter(readout: readout) },
                 link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
             ),
             onExit: onExit
@@ -268,7 +268,7 @@ private struct MotorsportGear: View {
     /// Largest gear numeral, so it stays inside the side arcs on big phones.
     private static let maxNumeralSize: CGFloat = 240
     /// Share of the gauge height the gear numeral takes, leaving room for
-    /// its label above and the boost dial below.
+    /// its label above and the link line below.
     private static let numeralShareOfGauge: CGFloat = 0.74
 
     let readout: DriveReadout
@@ -593,69 +593,7 @@ private struct GaugeArc: Shape {
     }
 }
 
-// MARK: - Boost and link
-
-private struct MotorsportBoostPlaceholder: View {
-    let readout: DriveReadout
-
-    var body: some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            HStack(spacing: Theme.Spacing.xs) {
-                Text("BOOST")
-                    .font(Theme.DriveTypography.label(10))
-                    .tracking(1.4)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                Text(readout.boostDisplayText)
-                    .font(Theme.DriveTypography.label(8))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Theme.Radius.xs)
-                            .stroke(Theme.Colors.textDisabled, lineWidth: 1)
-                    }
-            }
-            BoostDial()
-                .stroke(Theme.Colors.surfaceRaised, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .frame(width: 104, height: 52)
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
-                Text("—")
-                    .font(Theme.DriveTypography.numerals(20))
-                    .foregroundStyle(Theme.Colors.textDisabled)
-                Text("BAR")
-                    .font(Theme.DriveTypography.label(9))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-            }
-        }
-        .padding(Theme.Spacing.sm)
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.xs)
-                .stroke(Theme.Colors.textDisabled, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(readout.boostAccessibilityText)
-        .accessibilityIdentifier("drive.boost")
-    }
-}
-
-/// An empty half dial with ticks; there is no boost signal to drive a needle.
-private struct BoostDial: Shape {
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.maxY)
-        let radius = min(rect.width / 2, rect.height) - 2
-        var path = Path()
-        path.addArc(center: center, radius: radius, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-        for step in 0...8 {
-            let angle = Double.pi + Double.pi * Double(step) / 8
-            let outer = radius - 6
-            let inner = radius - (step.isMultiple(of: 2) ? 12 : 9)
-            path.move(to: CGPoint(x: center.x + outer * CGFloat(cos(angle)), y: center.y + outer * CGFloat(sin(angle))))
-            path.addLine(to: CGPoint(x: center.x + inner * CGFloat(cos(angle)), y: center.y + inner * CGFloat(sin(angle))))
-        }
-        return path
-    }
-}
+// MARK: - Link
 
 /// The controller link, set quietly under the gauges in place of the
 /// draft's status strip.

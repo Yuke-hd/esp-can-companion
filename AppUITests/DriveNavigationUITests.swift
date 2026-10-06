@@ -55,7 +55,7 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.rpm", matchingAny: ["2", "3", "4", "5", "6"])
         assertText(for: "drive.speed", matchingAny: ["3", "5", "7", "9"])
         assertText(for: "drive.throttle", containing: "Not supported")
-        assertText(for: "drive.boost", containing: "Not supported")
+        assertText(for: "drive.gmeter", containing: "g accelerating")
         captureLandscape("drive-readouts-and-unsupported-signals")
     }
 
@@ -156,7 +156,7 @@ final class DriveNavigationUITests: XCTestCase {
             "drive.speed",
             "drive.brake",
             "drive.throttle",
-            "drive.boost",
+            "drive.gmeter",
             "drive.link"
         ]
 
@@ -168,16 +168,16 @@ final class DriveNavigationUITests: XCTestCase {
             XCTAssertTrue(windowFrame.contains(frame), "\(identifier) is clipped by window \(windowFrame): \(frame)", file: file, line: line)
         }
 
-        let gaugeIdentifiers = ["drive.gear", "drive.brake", "drive.throttle", "drive.boost"]
+        let gaugeIdentifiers = ["drive.gear", "drive.brake", "drive.throttle", "drive.gmeter"]
         let gaugeFrames = Dictionary(uniqueKeysWithValues: gaugeIdentifiers.map {
             ($0, app.descendants(matching: .any)[$0].frame)
         })
         for (left, right) in [
             ("drive.gear", "drive.brake"),
             ("drive.gear", "drive.throttle"),
-            ("drive.gear", "drive.boost"),
+            ("drive.gear", "drive.gmeter"),
             ("drive.brake", "drive.throttle"),
-            ("drive.throttle", "drive.boost")
+            ("drive.throttle", "drive.gmeter")
         ] {
             XCTAssertFalse(
                 gaugeFrames[left]!.intersects(gaugeFrames[right]!),

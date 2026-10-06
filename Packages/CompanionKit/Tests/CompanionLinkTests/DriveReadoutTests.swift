@@ -200,7 +200,9 @@ final class DriveReadoutTests: XCTestCase {
     }
 
     func testReadoutHasNoAccelerationForLayout1OrAStalledStream() throws {
-        let layout1 = try LiveSignalFrame(decoding: DemoTelemetry().encoded)
+        var telemetry = DemoTelemetry()
+        telemetry.layoutVersion = LiveSignalFrame.layoutVersion
+        let layout1 = try LiveSignalFrame(decoding: telemetry.encoded)
         XCTAssertNil(DriveReadout(frame: layout1).acceleration)
 
         let stalled = DriveReadout(frame: .unknown)
