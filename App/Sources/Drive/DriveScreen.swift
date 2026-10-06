@@ -56,10 +56,13 @@ struct DriveScreen: View {
     }
 
     var body: some View {
+        // Read the insets from a reader that respects the safe area, then lay
+        // the content out across the whole screen. A reader that ignores the
+        // safe area reports zero insets, which put content under the island.
         GeometryReader { proxy in
+            let insets = proxy.safeAreaInsets
             ZStack(alignment: .topTrailing) {
                 Theme.Colors.background
-                    .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: Theme.Spacing.sm) {
@@ -107,9 +110,13 @@ struct DriveScreen: View {
                 .padding(.top, max(Theme.Spacing.xs, proxy.safeAreaInsets.top))
                 .padding(.trailing, max(Theme.Spacing.sm, proxy.safeAreaInsets.trailing))
             }
+            .frame(
+                width: proxy.size.width + insets.leading + insets.trailing,
+                height: proxy.size.height + insets.top + insets.bottom
+            )
+            .offset(x: -insets.leading, y: -insets.top)
         }
         .background(Theme.Colors.background.ignoresSafeArea())
-        .ignoresSafeArea()
         .statusBarHidden(true)
     }
 }
