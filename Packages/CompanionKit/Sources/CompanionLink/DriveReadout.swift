@@ -52,6 +52,12 @@ public struct DriveReadout: Equatable, Sendable {
     public let throttle: PitWallReadout.Tile
     public let brakePressure: PitWallReadout.Tile
     public let boost: PitWallReadout.Tile
+    /// Acceleration in g, only when both axes are fresh with values. Nil
+    /// otherwise, never zero: a lone axis would put the g-meter dot in the
+    /// wrong place, and layout 1 or a stalled stream has no acceleration.
+    public let acceleration: GForce?
+    public let longitudinalAccelerationFreshness: PitWallReadout.Freshness
+    public let lateralAccelerationFreshness: PitWallReadout.Freshness
 
     /// Builds the Drive readout from one frame and the active controller
     /// summary. `linkState` and `framesPerSecond` are supplied by the owning
@@ -91,6 +97,20 @@ public struct DriveReadout: Equatable, Sendable {
         throttle = Self.placeholder(title: "Throttle", freshness: unsupported)
         brakePressure = Self.placeholder(title: "Brake pressure", freshness: unsupported)
         boost = Self.placeholder(title: "Boost", freshness: unsupported)
+
+        let longitudinal = frame.longitudinalAcceleration
+        let lateral = frame.lateralAcceleration
+        longitudinalAccelerationFreshness = PitWallReadout.Freshness(longitudinal.availability)
+        lateralAccelerationFreshness = PitWallReadout.Freshness(lateral.availability)
+        if longitudinal.isLive, lateral.isLive,
+           let longitudinalValue = longitudinal.value, let lateralValue = lateral.value {
+            acceleration = GForce(
+                longitudinalMetersPerSecondSquared: longitudinalValue,
+                lateralMetersPerSecondSquared: lateralValue
+            )
+        } else {
+            acceleration = nil
+        }
     }
 
     // MARK: Live aliases
