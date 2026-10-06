@@ -72,10 +72,18 @@ public enum FrontWiperPosition: UInt8, Equatable, Sendable {
     case unknown = 0, off, on, high, intermittent
 }
 
-/// One Live signals notification, decoded. Layout version 1.
+/// One Live signals notification, decoded. Layout version 1 (23 bytes) or 2
+/// (28 bytes, adding acceleration).
 public struct LiveSignalFrame: Equatable, Sendable {
+    /// Layout 1, the original frame, and what `init(decoding:)` decodes.
     public static let layoutVersion: UInt8 = 1
     public static let length = 23
+    /// Layout 2 appends longitudinal and lateral acceleration.
+    public static let layout2Version: UInt8 = 2
+    public static let layout2Length = 28
+
+    /// Each decodable layout version with its exact frame length.
+    static let lengths: [UInt8: Int] = [layoutVersion: length, layout2Version: layout2Length]
 
     /// Wrapping frame counter; restarts at 0 on each connection.
     public var sequence: UInt8
@@ -103,6 +111,10 @@ public struct LiveSignalFrame: Equatable, Sendable {
     /// Never fresh: the protocol defines no brake timeout. A frame that claims
     /// otherwise is reported as `unknown`.
     public var brakePressed: SignalReading<Bool>
+    /// Longitudinal acceleration in m/s²; `.unknown` in layout 1 frames.
+    public var longitudinalAcceleration: SignalReading<Double>
+    /// Lateral acceleration in m/s²; `.unknown` in layout 1 frames.
+    public var lateralAcceleration: SignalReading<Double>
 
     /// Every signal unknown with no values: what the app shows before the
     /// first frame and while the stream is stalled.
@@ -115,7 +127,8 @@ public struct LiveSignalFrame: Equatable, Sendable {
         indicatorLampLeft: .unknown, indicatorLampRight: .unknown, liftgateOpen: .unknown,
         doorRearRight: .unknown, doorRearLeft: .unknown, doorFrontLeftRHD: .unknown,
         doorFrontRightRHD: .unknown, doorsUnlocked: .unknown, wiperLow: .unknown,
-        brakePressed: .unknown
+        brakePressed: .unknown,
+        longitudinalAcceleration: .unknown, lateralAcceleration: .unknown
     )
 
     init(
@@ -139,7 +152,9 @@ public struct LiveSignalFrame: Equatable, Sendable {
         doorFrontRightRHD: SignalReading<Bool>,
         doorsUnlocked: SignalReading<Bool>,
         wiperLow: SignalReading<Bool>,
-        brakePressed: SignalReading<Bool>
+        brakePressed: SignalReading<Bool>,
+        longitudinalAcceleration: SignalReading<Double>,
+        lateralAcceleration: SignalReading<Double>
     ) {
         self.sequence = sequence
         self.isTelemetryStarted = isTelemetryStarted
@@ -162,16 +177,28 @@ public struct LiveSignalFrame: Equatable, Sendable {
         self.doorsUnlocked = doorsUnlocked
         self.wiperLow = wiperLow
         self.brakePressed = brakePressed
+        self.longitudinalAcceleration = longitudinalAcceleration
+        self.lateralAcceleration = lateralAcceleration
     }
 
     /// Decodes a layout version 1 frame. A frame of another layout or length is rejected.
     public init(decoding value: Data) throws {
-        var reader = ByteReader(value)
-        guard try reader.u8("layout_version") == Self.layoutVersion else {
+        try self.init(decoding: value, layoutVersion: Self.layoutVersion)
+    }
+
+    /// Decodes a frame of exactly `layoutVersion`, the version the controller
+    /// reported in Device info. The frame's own version byte and its length
+    /// must both match, so a layout 2 frame never decodes as layout 1 or back.
+    public init(decoding value: Data, layoutVersion: UInt8) throws {
+        guard let length = Self.lengths[layoutVersion] else {
             throw ProtocolDecodingError.invalidValue(field: "layout_version")
         }
-        guard value.count == Self.length else {
-            throw value.count < Self.length
+        var reader = ByteReader(value)
+        guard try reader.u8("layout_version") == layoutVersion else {
+            throw ProtocolDecodingError.invalidValue(field: "layout_version")
+        }
+        guard value.count == length else {
+            throw value.count < length
                 ? ProtocolDecodingError.truncated(field: "frame")
                 : ProtocolDecodingError.invalidValue(field: "frame")
         }
@@ -184,7 +211,8 @@ public struct LiveSignalFrame: Equatable, Sendable {
         let gearRaw = try reader.u8("actual_gear")
         let wiperRaw = try reader.u8("front_wiper_position")
         let booleans = try reader.u16("booleans")
-        let status = Array(try reader.bytes(10, "status"))
+        // One nibble per signal: 19 in layout 1, 21 in layout 2.
+        let status = Array(try reader.bytes(layoutVersion == Self.layout2Version ? 11 : 10, "status"))
 
         /// Signal `index`'s status nibble: low nibble for even, high for odd.
         func nibble(_ index: Int) -> (availability: SignalAvailability, hasValue: Bool) {
@@ -223,6 +251,16 @@ public struct LiveSignalFrame: Equatable, Sendable {
         if brakePressed.availability == .fresh {
             brakePressed.availability = .unknown
         }
+
+        if layoutVersion == Self.layout2Version {
+            let longitudinalRaw = Int16(bitPattern: try reader.u16("acceleration_longitudinal"))
+            let lateralRaw = Int16(bitPattern: try reader.u16("acceleration_lateral"))
+            longitudinalAcceleration = reading(19, Double(longitudinalRaw) / 100)
+            lateralAcceleration = reading(20, Double(lateralRaw) / 1000)
+        } else {
+            longitudinalAcceleration = .unknown
+            lateralAcceleration = .unknown
+        }
     }
 }
 
@@ -235,11 +273,17 @@ public struct LiveSignalFeed: Sendable {
     public static let defaultStallTimeout: Duration = .seconds(2)
 
     public let stallTimeout: Duration
+    /// The layout the controller reported in Device info; frames of any other layout are discarded.
+    public let layoutVersion: UInt8
     private var latest: LiveSignalFrame?
     private var lastFrameAt: ContinuousClock.Instant?
 
-    public init(stallTimeout: Duration = Self.defaultStallTimeout) {
+    public init(
+        stallTimeout: Duration = Self.defaultStallTimeout,
+        layoutVersion: UInt8 = LiveSignalFrame.layoutVersion
+    ) {
         self.stallTimeout = stallTimeout
+        self.layoutVersion = layoutVersion
     }
 
     /// When the stream counts as stalled if no further frame arrives, or nil
@@ -253,7 +297,7 @@ public struct LiveSignalFeed: Sendable {
     /// as a sign of life.
     @discardableResult
     public mutating func receive(_ value: Data, at now: ContinuousClock.Instant) -> LiveSignalFrame? {
-        guard let frame = try? LiveSignalFrame(decoding: value) else { return nil }
+        guard let frame = try? LiveSignalFrame(decoding: value, layoutVersion: layoutVersion) else { return nil }
         latest = frame
         lastFrameAt = now
         return frame

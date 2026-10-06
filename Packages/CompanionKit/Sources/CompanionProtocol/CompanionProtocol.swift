@@ -16,5 +16,5 @@ public enum CompanionProtocol {
     /// Controller config schema versions `ControllerConfig` models.
     public static let supportedConfigSchemaVersions: Set<UInt16> = [1]
     /// Live signals frame layouts `LiveSignalFrame` decodes.
-    public static let supportedLiveSignalLayouts: Set<UInt8> = [LiveSignalFrame.layoutVersion]
+    public static let supportedLiveSignalLayouts: Set<UInt8> = Set(LiveSignalFrame.lengths.keys)
 }

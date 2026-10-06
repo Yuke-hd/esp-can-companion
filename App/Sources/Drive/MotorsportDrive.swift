@@ -691,7 +691,8 @@ private enum MotorsportDrivePreview {
         case .stalled, .notPaired, .connecting:
             frame = .unknown
         default:
-            frame = (try? LiveSignalFrame(decoding: DemoTelemetry.drive(at: seconds, sequence: 1).encoded)) ?? .unknown
+            let telemetry = DemoTelemetry.drive(at: seconds, sequence: 1)
+            frame = (try? LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)) ?? .unknown
         }
         let link: LinkState = scenario == .notPaired
             ? .unknown
