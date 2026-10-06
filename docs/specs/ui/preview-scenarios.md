@@ -55,6 +55,11 @@ Pick checks relevant to the change rather than every row for every PR.
 - **Layout:** use the [drafts](design-reference.md), a small supported phone, and
   larger text for affected screens. Numeric editing and keyboard-dismissal checks
   apply once those controls are implemented.
+- **Drive container:** with `connected`, select Drive and verify the landscape
+  shell replaces the tab bar with an Exit Drive control, then returns to the tab
+  that was selected before Drive. The container currently shows named
+  placeholders for gear, RPM, speed, side meters, turn indicators, warnings,
+  and the status strip; live readouts and styles are tracked by [#25](https://github.com/Yuke-hd/esp-can-companion/issues/25).
 
 Once full-app send/restart and `validationError` are available, check success only
 after active-configuration read-back, and structured rejection without changing

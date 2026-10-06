@@ -28,6 +28,18 @@ enum AppTab: Int, CaseIterable, Identifiable {
 struct RootView: View {
     var model: AppModel
     @State private var selection: AppTab = .pitWall
+    @State private var previousTab: AppTab = .pitWall
+    @State private var driveLifecycle: DriveLifecycleCoordinator
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(model: AppModel, appDelegate: CANCompanionAppDelegate? = nil) {
+        self.model = model
+        let appDelegate = appDelegate ?? CANCompanionAppDelegate()
+        _driveLifecycle = State(initialValue: DriveLifecycleCoordinator(
+            setOrientation: appDelegate.setOrientation,
+            setIdleTimerDisabled: appDelegate.setIdleTimerDisabled
+        ))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,18 +57,41 @@ struct RootView: View {
                 )
                 .tag(AppTab.strip)
                 .toolbar(.hidden, for: .tabBar)
-                PlaceholderScreen(
-                    eyebrow: "Drive monitor",
-                    title: "Drive",
-                    message: "The landscape drive dashboard comes after the Strip editor. Live values are on the Pit Wall."
-                )
+                // Drive is created only while selected so a future live
+                // telemetry task cannot run alongside PitWallLive.
+                Group {
+                    if selection == .drive {
+                        DriveScreen(onExit: { selection = previousTab })
+                    } else {
+                        Color.clear
+                    }
+                }
                 .tag(AppTab.drive)
                 .toolbar(.hidden, for: .tabBar)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            PitTabBar(selection: $selection)
+            if selection != .drive {
+                PitTabBar(selection: $selection)
+            }
         }
         .background(Theme.Colors.background.ignoresSafeArea())
+        .onAppear {
+            driveLifecycle.setAppActive(scenePhase == .active)
+            driveLifecycle.setDriveVisible(selection == .drive)
+        }
+        .onChange(of: selection) { oldSelection, newSelection in
+            if newSelection == .drive, oldSelection != .drive {
+                previousTab = oldSelection
+            }
+            driveLifecycle.setDriveVisible(newSelection == .drive)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            driveLifecycle.setAppActive(newPhase == .active)
+        }
+        .onDisappear {
+            driveLifecycle.setDriveVisible(false)
+            driveLifecycle.setAppActive(false)
+        }
     }
 }
 

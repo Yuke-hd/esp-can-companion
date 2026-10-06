@@ -6,13 +6,46 @@ import BLETransport
 import CompanionLink
 import PresetSync
 
+@MainActor
+final class CANCompanionAppDelegate: NSObject, UIApplicationDelegate {
+    private(set) var orientationMask: UIInterfaceOrientationMask = .portrait
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        orientationMask
+    }
+
+    func setOrientation(_ orientation: DriveOrientation) {
+        orientationMask = orientation == .landscape ? .landscape : .portrait
+        requestGeometryUpdate()
+    }
+
+    func setIdleTimerDisabled(_ disabled: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = disabled
+    }
+
+    private func requestGeometryUpdate() {
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return
+        }
+        windowScene.requestGeometryUpdate(
+            .iOS(interfaceOrientations: orientationMask)
+        ) { _ in }
+    }
+}
+
 @main
 struct CANCompanionApp: App {
     @State private var model = AppModel.launch()
+    @UIApplicationDelegateAdaptor(CANCompanionAppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model)
+            RootView(model: model, appDelegate: appDelegate)
                 .preferredColorScheme(.dark)
                 .tint(Theme.Colors.accent)
         }
