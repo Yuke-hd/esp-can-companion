@@ -105,11 +105,11 @@ private struct MotorsportTurnArrow: View {
 
     var body: some View {
         BlockArrow()
-            .fill(active ? Theme.Colors.signalYellow : Theme.Colors.surfaceRaised)
+            .fill(active ? MotorsportTurnGlow.amber : Theme.Colors.surfaceRaised)
             .scaleEffect(x: direction == .left ? -1 : 1)
             .frame(width: 64, height: 44)
             .shadow(
-                color: Theme.Colors.signalYellow.opacity(active && !reduceMotion ? 0.6 : 0),
+                color: MotorsportTurnGlow.amber.opacity(active && !reduceMotion ? 0.6 : 0),
                 radius: active && !reduceMotion ? 10 : 0
             )
             .accessibilityElement(children: .ignore)
@@ -119,7 +119,8 @@ private struct MotorsportTurnArrow: View {
 }
 
 /// Amber washing in from the screen edge on the side that is signalling,
-/// fading out about a quarter of the way across, and pulsing.
+/// fading out about a quarter of the way across, and pulsing like a halogen
+/// bulb: a near-instant flash to full, then a slow fade.
 private struct MotorsportTurnGlow: View {
     let left: Bool
     let right: Bool
@@ -128,6 +129,9 @@ private struct MotorsportTurnGlow: View {
     /// Share of the screen width each glow fades across: about a quarter,
     /// as the owner asked, so it reaches the side gauges but not the gear.
     private static let reach: CGFloat = 0.26
+
+    /// Orange-leaning amber, like a tail-light lens rather than a yellow warning.
+    static let amber = Color(red: 1.0, green: 0.45, blue: 0.0)
 
     var body: some View {
         ZStack {
@@ -141,7 +145,7 @@ private struct MotorsportTurnGlow: View {
 
     @ViewBuilder private func glow(from start: UnitPoint, to end: UnitPoint) -> some View {
         let gradient = LinearGradient(
-            colors: [Theme.Colors.signalYellow.opacity(0.32), Theme.Colors.signalYellow.opacity(0)],
+            colors: [Self.amber.opacity(0.32), Self.amber.opacity(0)],
             startPoint: start,
             endPoint: end
         )
@@ -149,10 +153,11 @@ private struct MotorsportTurnGlow: View {
             gradient.opacity(0.6).transition(.opacity)
         } else {
             gradient
-                .phaseAnimator([1.0, 0.25]) { content, phase in
+                .phaseAnimator([1.0, 0.08]) { content, phase in
                     content.opacity(phase)
-                } animation: { _ in
-                    .easeInOut(duration: 0.4)
+                } animation: { phase in
+                    // Halogen filament: near-instant flash to full, slow cool-down.
+                    phase == 1.0 ? .linear(duration: 0.04) : .easeOut(duration: 0.6)
                 }
                 .transition(.opacity)
         }
