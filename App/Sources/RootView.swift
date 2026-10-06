@@ -44,7 +44,7 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $selection) {
-                PitWallView(model: model)
+                PitWallView(model: model, isLive: selection == .pitWall)
                     .tag(AppTab.pitWall)
                     .toolbar(.hidden, for: .tabBar)
                 SetupTab(model: model)
@@ -61,7 +61,7 @@ struct RootView: View {
                 // telemetry task cannot run alongside PitWallLive.
                 Group {
                     if selection == .drive {
-                        DriveScreen(onExit: { selection = previousTab })
+                        DriveTab(model: model, onExit: { selection = previousTab })
                     } else {
                         Color.clear
                     }

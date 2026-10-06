@@ -12,7 +12,7 @@ that scope.
 | [01 Pit Wall](reference/01-pit-wall.png) | Home dashboard appearance. Basic implementation is tracked in [#14](https://github.com/Yuke-hd/esp-can-companion/issues/14). |
 | [02 Setup](reference/02-setup.png) | Intended presets, local adjustments, and explicit Send to car. Main currently has preset selection; working-copy editing exists only in local unmerged work. |
 | [03 Strip](reference/03-strip.png) | Future zone-map direction; not an implemented feature commitment. |
-| [04 Drive](reference/04-drive.png) | Future landscape, read-only dashboard direction. |
+| [04 Drive](reference/04-drive.png) | Landscape, read-only dashboard direction; the initial Motorsport implementation is tracked in [#25](https://github.com/Yuke-hd/esp-can-companion/issues/25). |
 | [05 Drive — Eva style](reference/05-drive-eva.png) | Alternative Drive exploration; not a second required theme. |
 
 ## Appearance to preserve
@@ -21,16 +21,24 @@ that scope.
 - Race red for action/brake, teal for live/OK, yellow for turn/warning, purple for
   high RPM, blue for fill/information, and carbon-colored surfaces.
 - Preset rings, light-strip illustration, RPM bar, small corners, and fine borders.
-- Visible freshness, with text or symbols as well as color.
-- Drive's intended monitoring view is landscape and read-only. Its entry/exit
-  behavior and final visual variant remain future design work.
+- Visible freshness, with text or symbols as well as color. Stale or unknown
+  telemetry clears to placeholders. By owner direction, Drive shows no freshness
+  words: a value that is not current clears to a dash, and accessibility labels
+  still state its freshness.
+- Drive's monitoring view is landscape and read-only. The Motorsport variant is
+  the initial implementation; alternative visual variants remain future work.
 
 ## Adaptation and limits
 
-The draft names Barlow Condensed Bold Italic and JetBrains Mono. The current
-design system uses system-font approximations. Exact custom fonts have not been
-agreed as a requirement. Explain meaningful differences in verification evidence;
-this workflow does not require a font migration.
+The draft names Barlow Condensed Bold Italic and JetBrains Mono. Drive bundles
+both (SIL Open Font License, under `DesignSystem/Fonts`) through
+`Theme.DriveTypography`. The other screens still use system-font
+approximations until an app-wide migration is agreed; explain meaningful
+differences in verification evidence.
+
+Drive omits the draft's bottom status strip by owner direction. Brake and turn
+already show on the gauges and arrows; only the link state remains, as a quiet
+line under the gear. Doors, hazard and profile stay on Pit Wall.
 
 Layout must accommodate supported phone sizes and larger text. Preserve intent
 rather than fixed image coordinates: wrapping, scrolling, and rearranging are

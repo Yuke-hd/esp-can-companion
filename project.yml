@@ -67,21 +67,36 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).tests
 
+  CANCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - AppUITests
+    dependencies:
+      - target: CANCompanion
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).ui-tests
+
 schemes:
   CANCompanion:
     build:
       targets:
         CANCompanion: all
         CANCompanionTests: [test]
+        CANCompanionUITests: [test]
     test:
       targets:
         - CANCompanionTests
+        - CANCompanionUITests
       gatherCoverageData: true
   CANCompanion Demo:
     build:
       targets:
         CANCompanion: all
         CANCompanionTests: [test]
+        CANCompanionUITests: [test]
     run:
       commandLineArguments:
         "-DemoScenario": true
@@ -89,4 +104,5 @@ schemes:
     test:
       targets:
         - CANCompanionTests
+        - CANCompanionUITests
       gatherCoverageData: true
