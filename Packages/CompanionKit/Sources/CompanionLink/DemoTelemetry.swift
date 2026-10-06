@@ -167,12 +167,18 @@ public struct DemoTelemetry: Equatable, Sendable {
         return frame
     }
 
-    /// The encoded frame: 28 bytes for layout 2, otherwise the 23-byte layout 1.
+    /// The encoded frame: 28 bytes for layout 2, 23 bytes for layout 1.
+    /// `layoutVersion` must be 1 or 2. Values beyond a field's wire range
+    /// saturate, and NaN encodes as 0.
     public var encoded: Data {
+        precondition(
+            layoutVersion == LiveSignalFrame.layoutVersion || layoutVersion == LiveSignalFrame.layout2Version,
+            "DemoTelemetry encodes only Live signals layouts 1 and 2, not \(layoutVersion)"
+        )
         let isLayout2 = layoutVersion == LiveSignalFrame.layout2Version
         var value = Data([layoutVersion, sequence, isTelemetryStarted ? 1 : 0])
-        Self.append(UInt16((engineRPM * 4).rounded()), to: &value)
-        Self.append(UInt16((speedKPH * 100).rounded()), to: &value)
+        Self.append(Self.wire(engineRPM * 4) as UInt16, to: &value)
+        Self.append(Self.wire(speedKPH * 100) as UInt16, to: &value)
         value.append(contentsOf: [turnState.rawValue, selectorPosition.rawValue, actualGear.rawValue, frontWiperPosition.rawValue])
         Self.append(booleans, to: &value)
         // 19 signals in layout 1, 21 in layout 2; unused nibbles are zero.
@@ -182,10 +188,20 @@ public struct DemoTelemetry: Equatable, Sendable {
             value.append(nibble(pair) | nibble(pair + 1) << 4)
         }
         if isLayout2 {
-            Self.append(UInt16(bitPattern: Int16(clamping: Int((longitudinalAcceleration * 100).rounded()))), to: &value)
-            Self.append(UInt16(bitPattern: Int16(clamping: Int((lateralAcceleration * 1000).rounded()))), to: &value)
+            Self.append(UInt16(bitPattern: Self.wire(longitudinalAcceleration * 100) as Int16), to: &value)
+            Self.append(UInt16(bitPattern: Self.wire(lateralAcceleration * 1000) as Int16), to: &value)
         }
         return value
+    }
+
+    /// `scaled` rounded to the nearest wire integer, saturating at the type's
+    /// bounds (infinities included); NaN becomes 0.
+    static func wire<Integer: FixedWidthInteger>(_ scaled: Double) -> Integer {
+        guard !scaled.isNaN else { return 0 }
+        let rounded = scaled.rounded()
+        if rounded <= Double(Integer.min) { return .min }
+        if rounded >= Double(Integer.max) { return .max }
+        return Integer(rounded)
     }
 
     private static func append(_ value: UInt16, to data: inout Data) {
