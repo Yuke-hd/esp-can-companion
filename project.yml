@@ -85,18 +85,26 @@ schemes:
       targets:
         CANCompanion: all
         CANCompanionTests: [test]
-        CANCompanionUITests: [test]
     test:
       targets:
         - CANCompanionTests
-        - CANCompanionUITests
       gatherCoverageData: true
+  # UI tests launch and rotate the app, so they take minutes rather than
+  # seconds. They live in their own scheme (and CI job) to keep ⌘U fast and
+  # to report layout failures separately from logic failures.
+  CANCompanion UI Tests:
+    build:
+      targets:
+        CANCompanion: all
+        CANCompanionUITests: [test]
+    test:
+      targets:
+        - CANCompanionUITests
   CANCompanion Demo:
     build:
       targets:
         CANCompanion: all
         CANCompanionTests: [test]
-        CANCompanionUITests: [test]
     run:
       commandLineArguments:
         "-DemoScenario": true
@@ -104,5 +112,4 @@ schemes:
     test:
       targets:
         - CANCompanionTests
-        - CANCompanionUITests
       gatherCoverageData: true
