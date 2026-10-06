@@ -9,7 +9,7 @@ final class PitWallReadoutTests: XCTestCase {
         return try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)
     }
 
-    private let factoryBand = ConfigSummary.RPMBand(fill: .init(from: 0, to: 6500), redline: 6000)
+    private let factoryBand = RPMBand(fill: .init(from: 0, to: 6500), redline: 6000)
 
     func testDemoFrameDecodes() throws {
         let decoded = try frame {
@@ -163,7 +163,7 @@ final class PitWallReadoutTests: XCTestCase {
     }
 
     func testRedlineWithoutFillRangeStillTurnsLightsRed() throws {
-        let band = ConfigSummary.RPMBand(fill: nil, redline: 5800)
+        let band = RPMBand(fill: nil, redline: 5800)
         let readout = PitWallReadout(frame: try frame { $0.engineRPM = 6000 }, band: band)
         // Scale is 5800 × 1.08 rounded up to 6500; the row spans 0–6500.
         XCTAssertEqual(readout.firstRedShiftLight, 13)
@@ -179,18 +179,8 @@ final class PitWallReadoutTests: XCTestCase {
     }
 
     func testHugeThresholdsDoNotCrash() throws {
-        // The controller accepts any finite operand, so a config can carry a
-        // threshold far beyond Int's range.
-        let config = ControllerConfig(
-            actions: [.init(name: "rpm_fill"), .init(name: "red_zone")],
-            rules: [
-                .range(.init(action: "rpm_fill", signalKey: "vehicle.engine_rpm", input: .init(from: 0, to: 6500), output: .init(from: 0, to: 1))),
-                .sampledState(.init(action: "red_zone", signalKey: "vehicle.engine_rpm", comparison: .greater, operand: .number(1e30))),
-            ]
-        )
-        let decoded = try ControllerConfig(canonicalJSON: config.encodedJSON())
-        let band = ConfigSummary(decoded).rpmBand
-        XCTAssertEqual(band.redline, 1e30)
+        // The app config accepts any finite threshold, however large.
+        let band = RPMBand(fill: .init(from: 0, to: 6500), redline: 1e30)
 
         let stalled = PitWallReadout(frame: .unknown, band: band)
         XCTAssertNil(stalled.firstRedShiftLight)
@@ -204,7 +194,7 @@ final class PitWallReadoutTests: XCTestCase {
     }
 
     func testExtremeBandsStayInRange() throws {
-        let bands: [ConfigSummary.RPMBand] = [
+        let bands: [RPMBand] = [
             .init(fill: .init(from: 0, to: 1e30), redline: 6000),
             .init(fill: .init(from: -1e30, to: 1e30), redline: -1e30),
             .init(fill: .init(from: 1e30, to: 1e30), redline: 1e30),

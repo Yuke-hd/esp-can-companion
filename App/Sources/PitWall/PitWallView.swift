@@ -92,7 +92,7 @@ private struct PitWallLive: View {
 
     var body: some View {
         let summary = session.activeConfig?.configSummary
-        let readout = PitWallReadout(frame: telemetry.frame, band: summary?.rpmBand)
+        let readout = PitWallReadout(frame: telemetry.frame, band: AppConfig.default.rpmBand)
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             ControllerStrip(
                 firmware: session.deviceInfo?.firmwareVersion,

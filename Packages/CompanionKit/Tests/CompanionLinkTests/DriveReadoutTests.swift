@@ -59,7 +59,8 @@ final class DriveReadoutTests: XCTestCase {
     func testRPMScalingAndRedlineUsePitWallBoundary() throws {
         let atBoundary = DriveReadout(
             frame: try frame { $0.engineRPM = 6000 },
-            activeConfig: activeConfig
+            activeConfig: activeConfig,
+            rpmBand: AppConfig.default.rpmBand
         )
         XCTAssertEqual(atBoundary.rpm, 6000)
         XCTAssertEqual(atBoundary.litShiftLights, 14)
@@ -69,7 +70,8 @@ final class DriveReadoutTests: XCTestCase {
 
         let belowBoundary = DriveReadout(
             frame: try frame { $0.engineRPM = 5999 },
-            activeConfig: activeConfig
+            activeConfig: activeConfig,
+            rpmBand: AppConfig.default.rpmBand
         )
         XCTAssertEqual(belowBoundary.redlineState, .standby)
     }

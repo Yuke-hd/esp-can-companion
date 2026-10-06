@@ -22,6 +22,7 @@ struct DriveTab: View {
         let readout = DriveReadout(
             frame: frame,
             activeConfig: summary,
+            rpmBand: AppConfig.default.rpmBand,
             linkState: session?.connection.state ?? .unknown,
             framesPerSecond: telemetry?.framesPerSecond ?? 0
         )

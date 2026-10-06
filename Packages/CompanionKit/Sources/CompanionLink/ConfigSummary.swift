@@ -51,26 +51,15 @@ public struct ConfigSummary: Equatable, Sendable {
         }
     }
 
-    /// The engine RPM thresholds the config lights up at, for the shift
-    /// lights and the RPM bar.
-    public struct RPMBand: Equatable, Sendable {
-        /// The input span of the first range rule on engine RPM.
-        public var fill: ControllerConfig.Span?
-        /// The lowest threshold of an "engine RPM above" rule.
-        public var redline: Double?
-    }
-
     public var actions: [Action]
     public var profile: Profile
     /// Outputs ordered by priority, highest first; one entry per action and
     /// kind, so hazard's two turn effects show once.
     public var outputStack: [Output]
-    public var rpmBand: RPMBand
 
     public init(_ config: ControllerConfig, profile: Profile = .custom) {
         self.profile = profile
         outputStack = Self.outputStack(config)
-        rpmBand = Self.rpmBand(config)
         actions = config.actions.map { action in
             Action(
                 name: action.name,
@@ -119,26 +108,6 @@ public struct ConfigSummary: Equatable, Sendable {
         return outputs.enumerated()
             .sorted { $0.element.priority != $1.element.priority ? $0.element.priority > $1.element.priority : $0.offset < $1.offset }
             .map(\.element)
-    }
-
-    static func rpmBand(_ config: ControllerConfig) -> RPMBand {
-        let rpm = "vehicle.engine_rpm"
-        var fill: ControllerConfig.Span?
-        var redline: Double?
-        for rule in config.rules {
-            switch rule {
-            case .range(let range) where range.signalKey == rpm:
-                fill = fill ?? range.input
-            case .state(let condition), .sampledState(let condition, _), .event(let condition, _):
-                guard condition.signalKey == rpm,
-                      condition.comparison == .greater || condition.comparison == .greaterOrEqual,
-                      case .number(let threshold) = condition.operand else { continue }
-                redline = min(redline ?? threshold, threshold)
-            default:
-                continue
-            }
-        }
-        return RPMBand(fill: fill, redline: redline)
     }
 
     // MARK: Rules
