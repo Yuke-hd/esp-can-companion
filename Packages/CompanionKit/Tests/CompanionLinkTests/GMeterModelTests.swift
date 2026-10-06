@@ -1,5 +1,4 @@
 import XCTest
-import CompanionProtocol
 @testable import CompanionLink
 
 final class GMeterModelTests: XCTestCase {
@@ -8,69 +7,6 @@ final class GMeterModelTests: XCTestCase {
 
     private func at(_ milliseconds: Int) -> ContinuousClock.Instant {
         start + .milliseconds(milliseconds)
-    }
-
-    // MARK: Conversion and the both-axes-live rule (DriveReadout)
-
-    private func frame(
-        longitudinal: SignalReading<Double>,
-        lateral: SignalReading<Double>
-    ) -> LiveSignalFrame {
-        var frame = LiveSignalFrame.unknown
-        frame.longitudinalAcceleration = longitudinal
-        frame.lateralAcceleration = lateral
-        return frame
-    }
-
-    private func fresh(_ value: Double) -> SignalReading<Double> {
-        SignalReading(availability: .fresh, value: value)
-    }
-
-    func testReadoutConvertsMetresPerSecondSquaredToG() throws {
-        let readout = DriveReadout(frame: frame(longitudinal: fresh(-9.80665), lateral: fresh(4.903325)))
-
-        let acceleration = try XCTUnwrap(readout.acceleration)
-        XCTAssertEqual(acceleration.longitudinal, -1.0, accuracy: accuracy)
-        XCTAssertEqual(acceleration.lateral, 0.5, accuracy: accuracy)
-        XCTAssertEqual(GForce.standardGravity, 9.80665)
-        XCTAssertEqual(readout.longitudinalAccelerationFreshness, .fresh)
-        XCTAssertEqual(readout.lateralAccelerationFreshness, .fresh)
-    }
-
-    func testReadoutHasNoAccelerationUnlessBothAxesAreFreshWithValues() {
-        let notLive: [SignalReading<Double>] = [
-            SignalReading(availability: .fresh, value: nil),
-            SignalReading(availability: .freshnessUnverified, value: 1),
-            SignalReading(availability: .stale, value: 1),
-            SignalReading(availability: .noData, value: nil),
-            SignalReading(availability: .unavailable, value: nil),
-            SignalReading(availability: .readFailed, value: nil),
-            SignalReading(availability: .notSupported, value: nil),
-            .unknown,
-        ]
-        for reading in notLive {
-            let lonOnly = DriveReadout(frame: frame(longitudinal: fresh(2), lateral: reading))
-            XCTAssertNil(lonOnly.acceleration, "lateral \(reading)")
-            let latOnly = DriveReadout(frame: frame(longitudinal: reading, lateral: fresh(2)))
-            XCTAssertNil(latOnly.acceleration, "longitudinal \(reading)")
-        }
-
-        let oneStale = DriveReadout(frame: frame(
-            longitudinal: fresh(2),
-            lateral: SignalReading(availability: .stale, value: 1)
-        ))
-        XCTAssertEqual(oneStale.longitudinalAccelerationFreshness, .fresh)
-        XCTAssertEqual(oneStale.lateralAccelerationFreshness, .stale)
-    }
-
-    func testReadoutHasNoAccelerationForLayout1OrAStalledStream() throws {
-        let layout1 = try LiveSignalFrame(decoding: DemoTelemetry().encoded)
-        XCTAssertNil(DriveReadout(frame: layout1).acceleration)
-
-        let stalled = DriveReadout(frame: .unknown)
-        XCTAssertNil(stalled.acceleration)
-        XCTAssertEqual(stalled.longitudinalAccelerationFreshness, .unknown)
-        XCTAssertEqual(stalled.lateralAccelerationFreshness, .unknown)
     }
 
     // MARK: Smoothing
@@ -99,7 +35,7 @@ final class GMeterModelTests: XCTestCase {
         XCTAssertEqual(GMeterModel.Configuration.standard.smoothingTimeConstant, .milliseconds(150))
     }
 
-    func testSameFrameRateIndependenceForOneLargeStep() throws {
+    func testOneLargeStepMatchesManySmallSteps() throws {
         var model = GMeterModel()
         model.update(GForce(longitudinal: 0, lateral: 0), at: at(0))
         model.update(GForce(longitudinal: 1, lateral: 0), at: at(150))
@@ -199,6 +135,32 @@ final class GMeterModelTests: XCTestCase {
         XCTAssertEqual(model.peaks.right, 0.9, accuracy: 0.01)
     }
 
+    func testALowerSampleDuringTheHoldDoesNotRestartIt() {
+        var model = GMeterModel()
+        model.update(GForce(longitudinal: -0.8, lateral: 0), at: at(0))
+        model.update(GForce(longitudinal: -0.5, lateral: 0), at: at(1000))
+        model.update(GForce(longitudinal: 0, lateral: 0), at: at(3000))
+
+        // The hold started at 0 ms, so 3 s in the 0.8 g peak is halfway through
+        // its decay; a restarted hold would still read 0.8 or 0.5.
+        XCTAssertEqual(model.peaks.brake, 0.4, accuracy: 0.01)
+    }
+
+    func testAPeakAboveTheRingDecaysFromItsRealValue() {
+        var model = GMeterModel()
+        let calm = GForce(longitudinal: 0, lateral: 0)
+        model.update(GForce(longitudinal: -1.6, lateral: 0), at: at(0))
+        XCTAssertEqual(model.peaks.brake, 1.0, accuracy: accuracy, "presented at the rim")
+
+        // The stored peak is 1.6 g, so the marker dwells on the rim until the
+        // decay brings it below the ring: 1.6 × (1 − 0.25) = 1.2 is still clamped.
+        model.update(calm, at: at(2500))
+        XCTAssertEqual(model.peaks.brake, 1.0, accuracy: accuracy, "still on the rim")
+
+        model.update(calm, at: at(3000))
+        XCTAssertEqual(model.peaks.brake, 0.8, accuracy: accuracy, "1.6 g halfway through the decay")
+    }
+
     func testPeakPositionsFollowTheDotDirectionAndClampToTheRing() throws {
         var model = GMeterModel()
         model.update(GForce(longitudinal: -1.5, lateral: 0.5), at: at(0))
@@ -236,6 +198,30 @@ final class GMeterModelTests: XCTestCase {
         XCTAssertEqual(GMeterModel.Configuration.standard.trailCapacity, 12)
         XCTAssertEqual(model.trail.count, 12)
         XCTAssertEqual(model.trail.first?.age, .milliseconds(220), "oldest points are dropped first")
+    }
+
+    func testNonPositiveTrailCapacityKeepsNoTrailWithoutTrapping() {
+        for capacity in [-1, 0] {
+            var configuration = GMeterModel.Configuration.standard
+            configuration.trailCapacity = capacity
+            var model = GMeterModel(configuration: configuration)
+            model.update(GForce(longitudinal: 0.1, lateral: 0), at: at(0))
+            model.update(GForce(longitudinal: 0.2, lateral: 0), at: at(20))
+
+            XCTAssertTrue(model.trail.isEmpty, "capacity \(capacity)")
+            XCTAssertNotNil(model.dot, "capacity \(capacity)")
+        }
+
+        let viaInit = GMeterModel.Configuration(
+            smoothingTimeConstant: .milliseconds(150),
+            peakHold: .seconds(2),
+            peakDecay: .seconds(2),
+            trailWindow: .milliseconds(750),
+            trailCapacity: -1,
+            ringRange: 1.0,
+            dotDirection: .feltForce
+        )
+        XCTAssertEqual(viaInit.trailCapacity, 0, "the initialiser clamps a negative capacity")
     }
 
     func testTrailPointsClampToTheRing() throws {
@@ -296,5 +282,17 @@ final class GMeterModelTests: XCTestCase {
         let before = try XCTUnwrap(first.smoothed)
         first.update(GForce(longitudinal: 1, lateral: 1), at: at(250))
         XCTAssertEqual(first.smoothed, before)
+    }
+
+    func testAStrictlyEarlierInstantIsIgnored() {
+        var model = GMeterModel()
+        model.update(GForce(longitudinal: -0.3, lateral: 0), at: at(100))
+        model.update(GForce(longitudinal: -0.3, lateral: 0), at: at(200))
+        let before = model
+
+        model.update(GForce(longitudinal: -0.9, lateral: 0.9), at: at(150))
+
+        XCTAssertEqual(model, before)
+        XCTAssertEqual(model.trail.last?.age, .zero)
     }
 }

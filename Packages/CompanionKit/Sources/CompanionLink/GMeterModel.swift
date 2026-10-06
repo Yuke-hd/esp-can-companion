@@ -60,7 +60,8 @@ public struct GMeterModel: Equatable, Sendable {
         public var peakDecay: Duration
         /// How far back the trail reaches.
         public var trailWindow: Duration
-        /// The most trail points kept, newest included.
+        /// The most trail points kept, newest included. Zero or less keeps no
+        /// trail; the initialiser clamps negative values to zero.
         public var trailCapacity: Int
         /// The ring's radius in g; presentation values clamp to it.
         public var ringRange: Double
@@ -80,7 +81,7 @@ public struct GMeterModel: Equatable, Sendable {
             self.peakHold = peakHold
             self.peakDecay = peakDecay
             self.trailWindow = trailWindow
-            self.trailCapacity = trailCapacity
+            self.trailCapacity = max(0, trailCapacity)
             self.ringRange = ringRange
             self.dotDirection = dotDirection
         }
@@ -112,14 +113,30 @@ public struct GMeterModel: Equatable, Sendable {
     public struct TrailPoint: Equatable, Sendable {
         public var position: Point
         public var age: Duration
+
+        public init(position: Point, age: Duration) {
+            self.position = position
+            self.age = age
+        }
     }
 
+    /// The direction of the vehicle's acceleration a peak belongs to, not where
+    /// its marker sits on the face: `right` is a right turn and `brake` is
+    /// braking. With the default `.feltForce` dot direction the `right` marker
+    /// is drawn on the left of the face and the `brake` marker at the top; use
+    /// `peakPosition(_:)` for the on-screen position.
     public enum PeakDirection: CaseIterable, Equatable, Sendable {
         case accel, brake, left, right
     }
 
     /// Recent maximum magnitudes in g per direction, each non-negative and
     /// clamped to the ring.
+    ///
+    /// Peaks follow the smoothed value, not raw samples, so a brief spike is
+    /// recorded at its smoothed height. The held peaks are stored unclamped
+    /// and clamped only here, in presentation: a peak above the ring decays
+    /// from its real value, so its marker dwells on the rim until the decay
+    /// brings it inside the ring.
     public struct Peaks: Equatable, Sendable {
         public var accel: Double
         public var brake: Double
@@ -217,8 +234,10 @@ public struct GMeterModel: Equatable, Sendable {
         let window = configuration.trailWindow
         trailSamples.append(TrailSample(position: position(of: next), at: now))
         trailSamples.removeAll { now - $0.at > window }
-        if trailSamples.count > configuration.trailCapacity {
-            trailSamples.removeFirst(trailSamples.count - configuration.trailCapacity)
+        // Clamped again here because `trailCapacity` is a mutable property.
+        let capacity = max(0, configuration.trailCapacity)
+        if trailSamples.count > capacity {
+            trailSamples.removeFirst(trailSamples.count - capacity)
         }
     }
 

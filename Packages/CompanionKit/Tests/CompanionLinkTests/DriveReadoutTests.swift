@@ -145,4 +145,67 @@ final class DriveReadoutTests: XCTestCase {
             XCTAssertEqual(tile.freshness, .unknown, tile.title)
         }
     }
+
+    // MARK: Acceleration conversion and the both-axes-live rule
+
+    private func accelerationFrame(
+        longitudinal: SignalReading<Double>,
+        lateral: SignalReading<Double>
+    ) -> LiveSignalFrame {
+        var frame = LiveSignalFrame.unknown
+        frame.longitudinalAcceleration = longitudinal
+        frame.lateralAcceleration = lateral
+        return frame
+    }
+
+    private func fresh(_ value: Double) -> SignalReading<Double> {
+        SignalReading(availability: .fresh, value: value)
+    }
+
+    func testReadoutConvertsMetresPerSecondSquaredToG() throws {
+        let readout = DriveReadout(frame: accelerationFrame(longitudinal: fresh(-9.80665), lateral: fresh(4.903325)))
+
+        let acceleration = try XCTUnwrap(readout.acceleration)
+        XCTAssertEqual(acceleration.longitudinal, -1.0, accuracy: 0.0001)
+        XCTAssertEqual(acceleration.lateral, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(GForce.standardGravity, 9.80665)
+        XCTAssertEqual(readout.longitudinalAccelerationFreshness, .fresh)
+        XCTAssertEqual(readout.lateralAccelerationFreshness, .fresh)
+    }
+
+    func testReadoutHasNoAccelerationUnlessBothAxesAreFreshWithValues() {
+        let notLive: [SignalReading<Double>] = [
+            SignalReading(availability: .fresh, value: nil),
+            SignalReading(availability: .freshnessUnverified, value: 1),
+            SignalReading(availability: .stale, value: 1),
+            SignalReading(availability: .noData, value: nil),
+            SignalReading(availability: .unavailable, value: nil),
+            SignalReading(availability: .readFailed, value: nil),
+            SignalReading(availability: .notSupported, value: nil),
+            .unknown,
+        ]
+        for reading in notLive {
+            let lonOnly = DriveReadout(frame: accelerationFrame(longitudinal: fresh(2), lateral: reading))
+            XCTAssertNil(lonOnly.acceleration, "lateral \(reading)")
+            let latOnly = DriveReadout(frame: accelerationFrame(longitudinal: reading, lateral: fresh(2)))
+            XCTAssertNil(latOnly.acceleration, "longitudinal \(reading)")
+        }
+
+        let oneStale = DriveReadout(frame: accelerationFrame(
+            longitudinal: fresh(2),
+            lateral: SignalReading(availability: .stale, value: 1)
+        ))
+        XCTAssertEqual(oneStale.longitudinalAccelerationFreshness, .fresh)
+        XCTAssertEqual(oneStale.lateralAccelerationFreshness, .stale)
+    }
+
+    func testReadoutHasNoAccelerationForLayout1OrAStalledStream() throws {
+        let layout1 = try LiveSignalFrame(decoding: DemoTelemetry().encoded)
+        XCTAssertNil(DriveReadout(frame: layout1).acceleration)
+
+        let stalled = DriveReadout(frame: .unknown)
+        XCTAssertNil(stalled.acceleration)
+        XCTAssertEqual(stalled.longitudinalAccelerationFreshness, .unknown)
+        XCTAssertEqual(stalled.lateralAccelerationFreshness, .unknown)
+    }
 }
