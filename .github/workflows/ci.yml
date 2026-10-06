@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  # Fixed device: skips the slow `simctl list` lookup and keeps results comparable.
+  DESTINATION: platform=iOS Simulator,name=iPhone 16 Pro
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -32,25 +36,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Pick a simulator
-        id: sim
-        run: |
-          udid=$(xcrun simctl list devices available -j \
-            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
-          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
-            echo "No iPhone simulator available" >&2
-            xcrun simctl list devices available
-            exit 1
-          fi
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
       - name: Test CompanionKit package
         working-directory: Packages/CompanionKit
         run: |
           set -o pipefail
           xcodebuild test \
             -scheme CompanionKit-Package \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
       - name: Build and test app
@@ -59,7 +52,8 @@ jobs:
           xcodebuild test \
             -project CANCompanion.xcodeproj \
             -scheme CANCompanion \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
   ui-tests:
@@ -86,25 +80,13 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Pick a simulator
-        id: sim
-        run: |
-          udid=$(xcrun simctl list devices available -j \
-            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
-          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
-            echo "No iPhone simulator available" >&2
-            xcrun simctl list devices available
-            exit 1
-          fi
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
       - name: Run UI tests
         run: |
           set -o pipefail
           xcodebuild test \
             -project CANCompanion.xcodeproj \
             -scheme "CANCompanion UI Tests" \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -destination "$DESTINATION" \
             -resultBundlePath UITests.xcresult \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
