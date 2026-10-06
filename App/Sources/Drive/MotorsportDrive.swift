@@ -314,6 +314,9 @@ private struct MotorsportGear: View {
         }
         .onAppear { remember(selector) }
         .onChange(of: selector) { _, new in remember(new) }
+        .onChange(of: shifting) { _, isShifting in
+            if isShifting { beginShift() }
+        }
         .onDisappear { flyInTask?.cancel() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.gearAccessibilityText)
@@ -323,24 +326,50 @@ private struct MotorsportGear: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// Flies the selector in over the gear, slides it to the new position,
-    /// holds it briefly, then flies it back out. A change while it shows
-    /// slides on from where it is and restarts the hold.
     /// Animates from the last strip position to `new`. Shifting and unknown
-    /// codes leave the memory alone; a stale gear group clears it so a later
-    /// value is not animated from a position the screen never showed live.
+    /// codes leave the memory alone; a stale gear group clears it (and any
+    /// strip on screen) so a later value is not animated from a position the
+    /// screen never showed live.
     private func remember(_ new: SelectorPosition?) {
         guard let new else {
             lastKnownSelector = nil
+            if flyInSelector != nil { hideSelector() }
             return
         }
         guard MotorsportSelectorStrip.order.contains(new) else { return }
         if let last = lastKnownSelector, last != new {
             showSelector(from: last, to: new)
+        } else if flyInSelector != nil {
+            // Shifted back to where it started: settle, hold, fly out.
+            showSelector(from: new, to: new)
         }
         lastKnownSelector = new
     }
 
+    /// Flies the strip in at the last position as soon as a shift starts, so
+    /// the gear slot is never empty while the lever moves. The new position
+    /// slides it on; if none arrives, it flies out after a timeout.
+    private func beginShift() {
+        guard let last = lastKnownSelector else { return }
+        flyInTask?.cancel()
+        flyInTask = Task { @MainActor in
+            if flyInSelector == nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { flyInSelector = last }
+            }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { flyInSelector = nil }
+        }
+    }
+
+    private func hideSelector() {
+        flyInTask?.cancel()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { flyInSelector = nil }
+    }
+
+    /// Flies the selector in over the gear, slides it to the new position,
+    /// holds it briefly, then flies it back out. A change while it shows
+    /// slides on from where it is and restarts the hold.
     private func showSelector(from old: SelectorPosition, to new: SelectorPosition) {
         flyInTask?.cancel()
         flyInTask = Task { @MainActor in
