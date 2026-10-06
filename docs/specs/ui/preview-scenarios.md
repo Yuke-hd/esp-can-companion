@@ -17,6 +17,8 @@ These names currently exist in `DemoScenario` and can be passed as
 | `connecting` | Remembered controller is unavailable. | Waiting state without false success. |
 | `connected` | Controller running factory configuration; upload/command writes fail with Unsupported Operation. | Configuration read, confirmations, and send/revert error presentation. |
 | `customConfig` | Controller running a custom override. | Confirmed custom configuration presentation. |
+| `selectorCycle` | Parked car whose selector steps P, R, N, D, N, R every 2.5 seconds, reporting "shifting" for 0.4 seconds before each position. | Drive's selector animation replaces the gear briefly on each change, animating from the last position across the shifting window. |
+| `stalled` | Controller streams valid frames, then stops while remaining linked. | The two-second watchdog clears RPM, speed, and gear to Unknown. |
 | `relinking` | Connection succeeds and then the fake controller powers off. | Waiting to reconnect. |
 | `incompatible` | Synthetic controller reports unsupported protocol major. | Clear incompatibility state. |
 | `bluetoothOff` | Fake radio reports powered off. | Bluetooth-unavailable presentation. |

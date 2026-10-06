@@ -57,6 +57,26 @@ public struct DemoTelemetry: Equatable, Sendable {
         return frame
     }
 
+    /// A parked car moved through the selector at `seconds` since it started:
+    /// P, R, N, D, N, R, one step every 2.5 s, looping.
+    public static func selectorCycle(at seconds: Double, sequence: UInt8) -> DemoTelemetry {
+        var frame = DemoTelemetry()
+        frame.sequence = sequence
+        let steps: [(SelectorPosition, ActualGear)] = [
+            (.park, .park), (.reverse, .reverse), (.neutral, .neutral),
+            (.drive, .first), (.neutral, .neutral), (.reverse, .reverse),
+        ]
+        let step = steps[Int(seconds / 2.5) % steps.count]
+        // Each change passes through a short shifting window, as the car
+        // reports between positions, so Drive must animate across it.
+        let isShifting = seconds.truncatingRemainder(dividingBy: 2.5) < 0.4
+        frame.selectorPosition = isShifting ? .shifting : step.0
+        frame.actualGear = isShifting ? .shifting : step.1
+        frame.engineRPM = 800
+        frame.speedKPH = 0
+        return frame
+    }
+
     /// The 23-byte layout version 1 frame.
     public var encoded: Data {
         var value = Data([LiveSignalFrame.layoutVersion, sequence, isTelemetryStarted ? 1 : 0])
@@ -79,9 +99,16 @@ public struct DemoTelemetry: Equatable, Sendable {
 }
 
 extension DemoController {
-    /// Sends the demo drive to `peripheral` on `radio` at 10 Hz while it is
-    /// connected. Stops when the radio goes away.
-    public func streamLiveSignals(on radio: FakeRadio, from peripheral: PeripheralID) {
+    /// Sends `frames` (the demo drive by default) to `peripheral` on `radio` at 10 Hz while it is
+    /// connected. Stops when the radio goes away or `stopAfter` elapses,
+    /// leaving the link connected so the normal live-signal stall timeout can
+    /// clear the last frame.
+    public func streamLiveSignals(
+        on radio: FakeRadio,
+        from peripheral: PeripheralID,
+        stopAfter: Duration? = nil,
+        frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = DemoTelemetry.drive
+    ) {
         liveSignalTask?.cancel()
         liveSignalTask = Task { @MainActor [weak radio] in
             let start = ContinuousClock.now
@@ -90,8 +117,9 @@ extension DemoController {
                 // Hold the radio only while sending, so it can go away while this sleeps.
                 guard let radio else { return }
                 let elapsed = ContinuousClock.now - start
+                if let stopAfter, elapsed >= stopAfter { return }
                 let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-                let frame = DemoTelemetry.drive(at: seconds, sequence: sequence)
+                let frame = frames(seconds, sequence)
                 radio.sendNotification(from: peripheral, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
                 sequence &+= 1
                 try? await Task.sleep(for: .milliseconds(100))

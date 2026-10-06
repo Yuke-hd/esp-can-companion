@@ -9,6 +9,7 @@ import CompanionLink
 /// it shows how to connect instead.
 struct PitWallView: View {
     var model: AppModel
+    var isLive = true
     @State private var showingConnection = false
 
     var body: some View {
@@ -19,9 +20,9 @@ struct PitWallView: View {
                         linkPill
                     }
                     if let session = model.session {
-                        if session.phase == .ready {
+                        if session.phase == .ready, isLive {
                             PitWallLive(session: session)
-                        } else {
+                        } else if session.phase != .ready {
                             ConnectionCard(connection: session.connection)
                             ControllerCard(session: session)
                         }

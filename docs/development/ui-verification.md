@@ -138,6 +138,14 @@ xcodebuild test -project CANCompanion.xcodeproj -scheme CANCompanion \
   -destination "id=$preview_simulator_id" CODE_SIGNING_ALLOWED=NO
 ```
 
+UI tests (navigation, rotation, on-screen layout and demo readouts) are in a
+separate scheme because they take a few minutes:
+
+```sh
+xcodebuild test -project CANCompanion.xcodeproj -scheme "CANCompanion UI Tests" \
+  -destination "id=$preview_simulator_id" CODE_SIGNING_ALLOWED=NO
+```
+
 For package changes, run from `Packages/CompanionKit`:
 
 ```sh

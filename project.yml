@@ -67,6 +67,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).tests
 
+  CANCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - AppUITests
+    dependencies:
+      - target: CANCompanion
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).ui-tests
+
 schemes:
   CANCompanion:
     build:
@@ -77,6 +89,17 @@ schemes:
       targets:
         - CANCompanionTests
       gatherCoverageData: true
+  # UI tests launch and rotate the app, so they take minutes rather than
+  # seconds. They live in their own scheme (and CI job) to keep ⌘U fast and
+  # to report layout failures separately from logic failures.
+  CANCompanion UI Tests:
+    build:
+      targets:
+        CANCompanion: all
+        CANCompanionUITests: [test]
+    test:
+      targets:
+        - CANCompanionUITests
   CANCompanion Demo:
     build:
       targets:

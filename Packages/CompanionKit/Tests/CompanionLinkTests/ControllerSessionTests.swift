@@ -175,6 +175,8 @@ final class ControllerSessionTests: XCTestCase {
             .connecting: { if case .connecting = $0 { true } else { false } },
             .connected: { $0.isConnected },
             .customConfig: { $0.isConnected },
+            .stalled: { $0.isConnected },
+            .selectorCycle: { $0.isConnected },
             .validationError: { $0.isConnected },
             .relinking: { $0 == .disconnected(.connectionLost("The connection has timed out unexpectedly."), willReconnect: true) },
             .incompatible: { $0 == .disconnected(.unsupportedProtocol(major: 2), willReconnect: false) },

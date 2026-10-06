@@ -13,6 +13,10 @@ public enum DemoScenario: String, CaseIterable, Sendable {
     case connected
     /// Linked to a controller running a custom override.
     case customConfig
+    /// Linked to a controller whose live stream stops after valid frames.
+    case stalled
+    /// Linked to a parked car whose selector steps through P, R, N and D.
+    case selectorCycle
     /// Uploads receive a synthetic controller validation rejection.
     case validationError
     /// The link was up, then the controller lost power; the app waits for it.
@@ -38,7 +42,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             remembered = nil
         case .connecting:
             peripheral.isPoweredOn = false
-        case .connected, .relinking:
+        case .connected, .relinking, .stalled, .selectorCycle:
             break
         case .validationError:
             demo.rejectsConfig = true
@@ -56,7 +60,12 @@ public enum DemoScenario: String, CaseIterable, Sendable {
 
         let radio = FakeRadio(controllers: [peripheral], state: radioState, scheduler: scheduler, latency: latency)
         demo.attach(to: radio, scheduler: scheduler)
-        demo.streamLiveSignals(on: radio, from: peripheral.id)
+        demo.streamLiveSignals(
+            on: radio,
+            from: peripheral.id,
+            stopAfter: self == .stalled ? .seconds(3) : nil,
+            frames: self == .selectorCycle ? DemoTelemetry.selectorCycle : DemoTelemetry.drive
+        )
         let manager = ConnectionManager(
             radio: radio,
             store: InMemoryDeviceStore(rememberedDeviceID: remembered),

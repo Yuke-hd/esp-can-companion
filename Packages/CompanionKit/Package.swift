@@ -30,7 +30,7 @@ let package = Package(
             resources: [.copy("Presets")]
         ),
         .target(name: "CompanionFakes", dependencies: ["CompanionProtocol", "PresetSync"]),
-        .target(name: "DesignSystem"),
+        .target(name: "DesignSystem", resources: [.copy("Fonts")]),
         .testTarget(name: "BLETransportTests", dependencies: ["BLETransport"]),
         .testTarget(
             name: "CompanionProtocolTests",
