@@ -18,6 +18,8 @@ These names currently exist in `DemoScenario` and can be passed as
 | `connected` | Controller running factory configuration; upload/command writes fail with Unsupported Operation. | Configuration read, confirmations, and send/revert error presentation. |
 | `customConfig` | Controller running a custom override. | Confirmed custom configuration presentation. |
 | `selectorCycle` | Parked car whose selector steps P, R, N, D, N, R every 2.5 seconds, reporting "shifting" for 0.4 seconds before each position. | Drive's selector animation replaces the gear briefly on each change, animating from the last position across the shifting window. |
+| `driveLaps` | Controller reports Live signals layout 2 and streams 28-byte frames at 10 Hz: a 24-second lap that loops. See [driveLaps lap](#drivelaps-lap) below. | Acceleration readings for the g-meter, including no-data windows. |
+| `driveLapsLayout1` | The same lap from a controller that reports layout 1, so it streams 23-byte frames with no acceleration. | A layout 1 controller: RPM, speed and gear still move; acceleration stays unknown. |
 | `stalled` | Controller streams valid frames, then stops while remaining linked. | The two-second watchdog clears RPM, speed, and gear to Unknown. |
 | `relinking` | Connection succeeds and then the fake controller powers off. | Waiting to reconnect. |
 | `incompatible` | Synthetic controller reports unsupported protocol major. | Clear incompatibility state. |
@@ -41,6 +43,29 @@ Retaining saved phone data does not retain that controller's in-memory state.
 For future relaunch checks, define the controller's starting configuration
 explicitly as well as the phone's saved working copy.
 
+The demo controller reports Live signals layout 2 in Device info for every
+scenario except `driveLapsLayout1`. It encodes each frame in the layout it
+reports, and the app decodes it with the normal decoder. Other drives carry plain
+acceleration values: longitudinal follows each gear pull and lateral is zero.
+
+### driveLaps lap
+
+Seconds from the start of each 24-second lap. "Live" means fresh with a value.
+Signs follow the demo's assumption: positive longitudinal is accelerating and
+positive lateral is a right turn. Like the protocol's axis and sign, this is an
+unvalidated reference candidate, not vehicle behavior.
+
+| Time (s) | Phase | Longitudinal (m/s²) | Lateral (m/s²) |
+| --- | --- | --- | --- |
+| 0–4 | Launch from standstill, gears 1–2 | Live, +4.5 easing to +2.5 | Live, about 0 |
+| 4–6.5 | Hard braking, brake pressed | Live, −7.5 easing to −5 | Live, 0 |
+| 6.5–10.5 | Left-hander | Live, −0.5 to +1.5 | Live, peak −6.5 |
+| 10.5–11.5 | Acceleration source dropout | Stale, no value | Stale, no value |
+| 11.5–15.5 | Right-hander | Live, +1 | Live, peak +6 |
+| 15.5–17.5 | Lateral unverified | Live, +2 | Freshness unverified, value −0.8 |
+| 17.5–19.5 | Longitudinal missing | No data | Live, +0.5 |
+| 19.5–24 | Braking to a stop, then waiting | Live, −3 then 0 | Live, 0 |
+
 ## Current checks
 
 Pick checks relevant to the change rather than every row for every PR.
@@ -62,6 +87,12 @@ Pick checks relevant to the change rather than every row for every PR.
   that was selected before Drive. The container currently shows named
   placeholders for gear, RPM, speed, side meters, turn indicators, warnings,
   and the status strip; live readouts and styles are tracked by [#25](https://github.com/Yuke-hd/esp-can-companion/issues/25).
+- **Acceleration data:** launch `driveLaps` to supply acceleration for the
+  planned Drive g-meter ([#33](https://github.com/Yuke-hd/esp-can-companion/issues/33)
+  and the following UI issue). Check that it is plotted only while both axes are
+  live, and shows no data during the dropout, unverified and missing windows. Use
+  `driveLapsLayout1` to check a layout 1 controller: no data, with the rest of
+  Drive unaffected. The g-meter view itself does not exist yet.
 
 Once full-app send/restart and `validationError` are available, check success only
 after active-configuration read-back, and structured rejection without changing

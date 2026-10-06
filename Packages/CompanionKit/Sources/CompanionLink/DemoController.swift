@@ -124,7 +124,7 @@ public final class DemoController {
     // MARK: Sample data
 
     nonisolated public static let defaultDeviceInfo = DeviceInfo(
-        protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 1, liveSignalLayoutVersion: 1,
+        protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 1, liveSignalLayoutVersion: 2,
         flags: 0, maxConfigBytes: 4096, firmwareVersion: "0.4.0-demo", hardwareID: "weact-can485-v1.1"
     )
 

@@ -6,7 +6,7 @@ final class PitWallReadoutTests: XCTestCase {
     private func frame(_ change: (inout DemoTelemetry) -> Void = { _ in }) throws -> LiveSignalFrame {
         var telemetry = DemoTelemetry()
         change(&telemetry)
-        return try LiveSignalFrame(decoding: telemetry.encoded)
+        return try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)
     }
 
     private let factoryBand = ConfigSummary.RPMBand(fill: .init(from: 0, to: 6500), redline: 6000)

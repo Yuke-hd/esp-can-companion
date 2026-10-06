@@ -17,6 +17,12 @@ public enum DemoScenario: String, CaseIterable, Sendable {
     case stalled
     /// Linked to a parked car whose selector steps through P, R, N and D.
     case selectorCycle
+    /// Linked to a layout 2 controller driving laps for the g-meter: launch,
+    /// braking, left and right corners, with acceleration dropouts.
+    case driveLaps
+    /// The same laps from a controller that reports layout 1, so frames carry
+    /// no acceleration.
+    case driveLapsLayout1
     /// Uploads receive a synthetic controller validation rejection.
     case validationError
     /// The link was up, then the controller lost power; the app waits for it.
@@ -42,8 +48,10 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             remembered = nil
         case .connecting:
             peripheral.isPoweredOn = false
-        case .connected, .relinking, .stalled, .selectorCycle:
+        case .connected, .relinking, .stalled, .selectorCycle, .driveLaps:
             break
+        case .driveLapsLayout1:
+            demo.deviceInfo.liveSignalLayoutVersion = LiveSignalFrame.layoutVersion
         case .validationError:
             demo.rejectsConfig = true
         case .customConfig:
@@ -60,11 +68,16 @@ public enum DemoScenario: String, CaseIterable, Sendable {
 
         let radio = FakeRadio(controllers: [peripheral], state: radioState, scheduler: scheduler, latency: latency)
         demo.attach(to: radio, scheduler: scheduler)
+        let frames: @Sendable (Double, UInt8) -> DemoTelemetry = switch self {
+        case .selectorCycle: DemoTelemetry.selectorCycle
+        case .driveLaps, .driveLapsLayout1: DemoTelemetry.driveLaps
+        default: DemoTelemetry.drive
+        }
         demo.streamLiveSignals(
             on: radio,
             from: peripheral.id,
             stopAfter: self == .stalled ? .seconds(3) : nil,
-            frames: self == .selectorCycle ? DemoTelemetry.selectorCycle : DemoTelemetry.drive
+            frames: frames
         )
         let manager = ConnectionManager(
             radio: radio,

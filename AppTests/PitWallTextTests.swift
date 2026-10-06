@@ -28,7 +28,7 @@ final class PitWallTextTests: XCTestCase {
         telemetry.engineRPM = 4820
         telemetry.speedKPH = 72
         telemetry.actualGear = .fourth
-        let live = PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded))
+        let live = PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion))
         XCTAssertEqual(live.busTitle, "Listen-only")
         XCTAssertTrue(live.rpmText.hasPrefix("4"))
         XCTAssertTrue(live.rpmText.hasSuffix("820"))
@@ -37,7 +37,7 @@ final class PitWallTextTests: XCTestCase {
         XCTAssertEqual(live.rpmAccessibilityText, "Engine RPM 4820, Unverified")
 
         telemetry.isTelemetryStarted = false
-        XCTAssertEqual(PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded)).busTitle, "Not started")
+        XCTAssertEqual(PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)).busTitle, "Not started")
     }
 
     func testOutputSwatchIsFullBrightness() {
@@ -70,7 +70,7 @@ final class PitWallTextTests: XCTestCase {
         for (status, title, isShown) in cases {
             telemetry.statuses[1] = status
             telemetry.statuses[4] = status
-            let readout = PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded))
+            let readout = PitWallReadout(frame: try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion))
             for box in [readout.gearBox, readout.speedBox] {
                 XCTAssertEqual(box.lines.map(\.role), [.label, .value, .freshness])
                 XCTAssertEqual(box.lines.last?.text, title, box.label)
