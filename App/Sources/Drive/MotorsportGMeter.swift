@@ -38,22 +38,30 @@ struct MotorsportGMeter: View {
             valueRow(live: live)
         }
         .frame(width: Self.width)
-        .task {
+        // The clock only runs while there is data: with no sample the model
+        // is already cleared and there is nothing to smooth or decay, so an
+        // idle meter does not redraw. The id restarts the loop when data returns.
+        .task(id: sample == nil) {
+            guard sample != nil else { return }
             // Feed on a clock rather than on frame changes: equal successive
             // samples must still advance smoothing and peak decay.
             let clock = ContinuousClock()
             while !Task.isCancelled {
-                model.update(sample, at: clock.now)
+                if sample != nil || model.smoothed != nil {
+                    model.update(sample, at: clock.now)
+                }
                 try? await clock.sleep(for: Self.tick)
             }
         }
         .onChange(of: readout.acceleration, initial: true) { _, new in
             sample = new
-            // Clear immediately when data goes missing rather than on the next tick.
-            if new == nil { model.update(nil, at: .now) }
+            // Apply at once rather than on the next tick: a new sample shows
+            // without a dash frame, and missing data clears immediately.
+            if new != nil || model.smoothed != nil { model.update(new, at: .now) }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.gMeterAccessibilityText(model.smoothed))
+        .accessibilityAddTraits(.updatesFrequently)
         .accessibilityIdentifier("drive.gmeter")
     }
 

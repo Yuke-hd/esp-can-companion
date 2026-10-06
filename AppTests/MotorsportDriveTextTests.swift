@@ -93,6 +93,31 @@ final class MotorsportDriveTextTests: XCTestCase {
         XCTAssertEqual(value.gMeterValueText(GForce(longitudinal: -0.01, lateral: 0.02)), "0.0")
     }
 
+    func testGMeterSpokenTotalMatchesVisibleNumberWhenComponentsRoundToZero() throws {
+        let value = try readout {
+            $0.longitudinalAcceleration = 0.4
+            $0.lateralAcceleration = 0.4
+        }
+        // Each axis rounds to 0.0 but the total shown under the dial is 0.1;
+        // the label must not contradict the visible number.
+        let small = GForce(longitudinal: 0.04, lateral: 0.04)
+        XCTAssertEqual(value.gMeterValueText(small), "0.1")
+        XCTAssertEqual(value.gMeterAccessibilityText(small), "G-meter, 0.1 g")
+    }
+
+    func testGMeterRoundingBoundaryAtFiveHundredths() throws {
+        let value = try readout {
+            $0.longitudinalAcceleration = 0.5
+            $0.lateralAcceleration = 0
+        }
+        // Pins current one-decimal rounding: 0.05 (as a Double, just above
+        // the half) reads 0.1; just below reads 0.0 and is left out.
+        XCTAssertEqual(value.gMeterValueText(GForce(longitudinal: 0.05, lateral: 0)), "0.1")
+        XCTAssertEqual(value.gMeterAccessibilityText(GForce(longitudinal: 0.05, lateral: 0)), "G-meter, 0.1 g accelerating")
+        XCTAssertEqual(value.gMeterValueText(GForce(longitudinal: 0.049, lateral: 0)), "0.0")
+        XCTAssertEqual(value.gMeterAccessibilityText(GForce(longitudinal: 0.049, lateral: 0)), "G-meter, 0.0 g")
+    }
+
     func testGMeterNoDataNeverShowsZero() throws {
         let stalled = DriveReadout(frame: .unknown)
         var layout1 = DemoTelemetry()

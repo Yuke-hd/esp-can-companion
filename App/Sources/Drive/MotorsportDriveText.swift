@@ -107,7 +107,8 @@ extension DriveReadout {
     /// One combined label, for example "G-meter, 0.4 g braking, 0.7 g right".
     /// Directions name the car's acceleration (positive lateral is a right
     /// turn), not where the dot sits. A component that rounds to zero is
-    /// left out.
+    /// left out; when both do, the total is spoken as shown under the dial
+    /// (for example "0.1 g"), so the label never contradicts the number.
     func gMeterAccessibilityText(_ smoothed: GForce?) -> String {
         guard acceleration != nil, let smoothed else {
             guard let (axis, freshness) = gMeterMissingAxis else { return "G-meter, no data" }
@@ -117,7 +118,7 @@ extension DriveReadout {
             Self.gComponent(smoothed.longitudinal, positive: "accelerating", negative: "braking"),
             Self.gComponent(smoothed.lateral, positive: "right", negative: "left"),
         ].compactMap { $0 }
-        return (["G-meter"] + (parts.isEmpty ? ["0.0 g"] : parts)).joined(separator: ", ")
+        return (["G-meter"] + (parts.isEmpty ? [Self.gText(smoothed.magnitude) + " g"] : parts)).joined(separator: ", ")
     }
 
     private enum GMeterAxis {
