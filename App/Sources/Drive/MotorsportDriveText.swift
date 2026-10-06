@@ -1,5 +1,39 @@
 import Foundation
+import CompanionProtocol
 import CompanionLink
+
+/// Typed lamp and selector states for the Motorsport style. They are read
+/// from the frame's typed values, never from Pit Wall's display words, and
+/// each is gated by the matching readout freshness so a stale or unknown
+/// signal can never light.
+struct MotorsportSignals: Equatable {
+    var leftLit = false
+    var rightLit = false
+    /// Nil while the brake value must not be shown.
+    var brakePressed: Bool?
+    /// Nil while the gear group is not current. `.shifting` and unknown
+    /// codes (including unrecognised ones, as `.unknown`) are kept so the gear view can tell them apart from staleness.
+    var selector: SelectorPosition?
+
+    static let off = MotorsportSignals()
+
+    init() {}
+
+    init(frame: LiveSignalFrame, readout: DriveReadout) {
+        let turn = readout.turn.freshness.showsValue ? frame.turnState.value : nil
+        let hazard = readout.hazard.freshness.showsValue && frame.hazardRequest.value == true
+        leftLit = hazard || turn == .known(.left) || turn == .known(.hazard)
+        rightLit = hazard || turn == .known(.right) || turn == .known(.hazard)
+        brakePressed = readout.brake.freshness.showsValue ? frame.brakePressed.value : nil
+
+        guard readout.gearFreshness.showsValue, readout.selectorFreshness.showsValue,
+              let position = frame.selectorPosition.value else { return }
+        switch position {
+        case .known(let known): selector = known
+        case .unknown: selector = .unknown
+        }
+    }
+}
 
 // Display and accessibility words for the Motorsport Drive style. Keeping
 // these decisions beside the screen lets tests cover signal state without
@@ -33,12 +67,30 @@ extension DriveReadout {
 
     var brakeAccessibilityText: String { tileAccessibility(brake) }
     var turnAccessibilityText: String { tileAccessibility(turn) }
-    var throttleDisplayText: String { "NO SIGNAL" }
-    var boostDisplayText: String { "PLACEHOLDER" }
-    var throttleAccessibilityText: String { "Throttle, not available" }
-    var boostAccessibilityText: String { "Turbo, placeholder, not available" }
+    // Throttle and boost have no layout v1 signal. Their wording follows the
+    // readout's placeholder tiles, so a future signal changes it in one place.
+    var throttleDisplayText: String {
+        throttle.freshness == .unsupported ? "NO SIGNAL" : throttle.freshness.title.uppercased()
+    }
+    var boostDisplayText: String {
+        boost.freshness == .unsupported ? "PLACEHOLDER" : boost.freshness.title.uppercased()
+    }
+    var throttleAccessibilityText: String { ["Throttle", throttle.freshness.title].joined(separator: ", ") }
+    var boostAccessibilityText: String { ["Turbo, placeholder", boost.freshness.title].joined(separator: ", ") }
 
-    var linkDisplayText: String { linkState.title.uppercased() }
+    var linkDisplayText: String { linkDisplayText(telemetryFailure: nil) }
+
+    /// The link line. A telemetry failure (for example an unreadable layout)
+    /// is shown beside the link state so a connected link with empty gauges
+    /// is not mistaken for a healthy stream.
+    func linkDisplayText(telemetryFailure: String?) -> String {
+        let link = linkState.title.uppercased()
+        return telemetryFailure == nil ? link : link + " · NO LIVE SIGNALS"
+    }
+
+    func linkAccessibilityText(telemetryFailure: String?) -> String {
+        (["Link", linkState.title] + [telemetryFailure].compactMap { $0 }).joined(separator: ", ")
+    }
 
     private func tileAccessibility(_ tile: PitWallReadout.Tile) -> String {
         [tile.title, tile.value ?? "no value", tile.freshness.title].joined(separator: ", ")

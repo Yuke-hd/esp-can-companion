@@ -1,4 +1,5 @@
 import SwiftUI
+import CompanionProtocol
 import CompanionLink
 
 /// The Drive route owns one live subscription while its landscape screen is
@@ -25,7 +26,12 @@ struct DriveTab: View {
             framesPerSecond: telemetry?.framesPerSecond ?? 0
         )
 
-        MotorsportDriveView(readout: readout, onExit: onExit)
+        MotorsportDriveView(
+            readout: readout,
+            signals: MotorsportSignals(frame: frame, readout: readout),
+            telemetryFailure: telemetry?.failure,
+            onExit: onExit
+        )
             .task(id: session?.phase) {
                 guard let session, session.phase == .ready else { return }
                 let liveTelemetry: LiveTelemetry

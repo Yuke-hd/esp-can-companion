@@ -8,12 +8,14 @@ import CompanionLink
 /// following the "04 · Drive" draft.
 struct MotorsportDriveView: View {
     let readout: DriveReadout
+    let signals: MotorsportSignals
+    /// Why the live stream cannot be read, if it cannot.
+    var telemetryFailure: String?
     let onExit: () -> Void
 
     var body: some View {
-        let hazardActive = readout.hazard.value == "On"
-        let leftActive = hazardActive || readout.turn.value == "Left" || readout.turn.value == "Both"
-        let rightActive = hazardActive || readout.turn.value == "Right" || readout.turn.value == "Both"
+        let leftActive = signals.leftLit
+        let rightActive = signals.rightLit
         DriveScreen(
             slots: DriveScreenSlots(
                 backdrop: { MotorsportTurnGlow(left: leftActive, right: rightActive) },
@@ -36,10 +38,10 @@ struct MotorsportDriveView: View {
                     accessibilityText: readout.speedAccessibilityText,
                     identifier: "drive.speed"
                 ) },
-                gear: { MotorsportGear(readout: readout) },
-                sideMeters: { MotorsportSideMeters(readout: readout) },
+                gear: { MotorsportGear(readout: readout, selector: signals.selector) },
+                sideMeters: { MotorsportSideMeters(readout: readout, brakePressed: signals.brakePressed) },
                 auxiliary: { MotorsportBoostPlaceholder(readout: readout) },
-                link: { MotorsportLink(readout: readout) }
+                link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
             ),
             onExit: onExit
         )
@@ -123,10 +125,14 @@ private struct MotorsportTurnGlow: View {
     let right: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Share of the screen width each glow fades across: about a quarter,
+    /// as the owner asked, so it reaches the side gauges but not the gear.
+    private static let reach: CGFloat = 0.26
+
     var body: some View {
         ZStack {
-            if left { glow(from: .leading, to: UnitPoint(x: 0.26, y: 0.5)) }
-            if right { glow(from: .trailing, to: UnitPoint(x: 0.74, y: 0.5)) }
+            if left { glow(from: .leading, to: UnitPoint(x: Self.reach, y: 0.5)) }
+            if right { glow(from: .trailing, to: UnitPoint(x: 1 - Self.reach, y: 0.5)) }
         }
         .animation(.easeOut(duration: 0.2), value: left)
         .animation(.easeOut(duration: 0.2), value: right)
@@ -238,33 +244,42 @@ private struct MotorsportMetric: View {
     }
 }
 
+private enum DriveNumeralLineHeight {
+    static let trim: CGFloat = 0.14
+}
+
 private extension View {
     /// Barlow's line box is far taller than its figures; trim it so numerals
-    /// sit tight against their labels as in the draft.
+    /// sit tight against their labels as in the draft. The share was measured
+    /// from Barlow Condensed's ascender and descender against its cap height.
     func driveNumeralLineHeight(_ size: CGFloat) -> some View {
-        padding(.vertical, -size * 0.14)
+        padding(.vertical, -size * DriveNumeralLineHeight.trim)
     }
 }
 
 // MARK: - Centre gauges
 
 private struct MotorsportGear: View {
+    /// Largest gear numeral, so it stays inside the side arcs on big phones.
+    private static let maxNumeralSize: CGFloat = 240
+    /// Share of the gauge height the gear numeral takes, leaving room for
+    /// its label above and the boost dial below.
+    private static let numeralShareOfGauge: CGFloat = 0.74
+
     let readout: DriveReadout
+    /// The typed selector, or nil while the gear group is not current.
+    let selector: SelectorPosition?
     @Environment(\.driveMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The selector shown in place of the gear while it changes, or nil.
-    @State private var flyInSelector: String?
+    @State private var flyInSelector: SelectorPosition?
     @State private var flyInTask: Task<Void, Never>?
-
-    /// A known selector position, or nil while unknown, shifting or stale.
-    private var selector: String? {
-        guard readout.gearFreshness.showsValue, let selector = readout.selector,
-              MotorsportSelectorStrip.order.contains(selector) else { return nil }
-        return selector
-    }
+    /// The last position in the strip, kept through shifting and unknown
+    /// codes so P → shifting → D still animates from P to D.
+    @State private var lastKnownSelector: SelectorPosition?
 
     var body: some View {
-        let size = min(240, metrics.gaugeHeight * 0.74)
+        let size = min(Self.maxNumeralSize, metrics.gaugeHeight * Self.numeralShareOfGauge)
         let showsSelector = flyInSelector != nil
         VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.xs) {
@@ -295,10 +310,8 @@ private struct MotorsportGear: View {
                     }
                 }
         }
-        .onChange(of: selector) { old, new in
-            guard let old, let new, old != new else { return }
-            showSelector(from: old, to: new)
-        }
+        .onAppear { remember(selector) }
+        .onChange(of: selector) { _, new in remember(new) }
         .onDisappear { flyInTask?.cancel() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.gearAccessibilityText)
@@ -311,7 +324,22 @@ private struct MotorsportGear: View {
     /// Flies the selector in over the gear, slides it to the new position,
     /// holds it briefly, then flies it back out. A change while it shows
     /// slides on from where it is and restarts the hold.
-    private func showSelector(from old: String, to new: String) {
+    /// Animates from the last strip position to `new`. Shifting and unknown
+    /// codes leave the memory alone; a stale gear group clears it so a later
+    /// value is not animated from a position the screen never showed live.
+    private func remember(_ new: SelectorPosition?) {
+        guard let new else {
+            lastKnownSelector = nil
+            return
+        }
+        guard MotorsportSelectorStrip.order.contains(new) else { return }
+        if let last = lastKnownSelector, last != new {
+            showSelector(from: last, to: new)
+        }
+        lastKnownSelector = new
+    }
+
+    private func showSelector(from old: SelectorPosition, to new: SelectorPosition) {
         flyInTask?.cancel()
         flyInTask = Task { @MainActor in
             if flyInSelector == nil {
@@ -333,17 +361,17 @@ private struct MotorsportGear: View {
 /// neighbours small and dim. Changing `current` slides the row.
 private struct MotorsportSelectorStrip: View {
     /// Left to right as drawn by the owner: at N, D sits left and R right.
-    static let order = ["D", "N", "R", "P"]
+    static let order: [SelectorPosition] = [.drive, .neutral, .reverse, .park]
 
-    let current: String
+    let current: SelectorPosition
     let size: CGFloat
 
     var body: some View {
         let currentIndex = Self.order.firstIndex(of: current) ?? 0
         ZStack {
-            ForEach(Array(Self.order.enumerated()), id: \.element) { index, letter in
+            ForEach(Array(Self.order.enumerated()), id: \.element) { index, position in
                 let distance = index - currentIndex
-                Text(letter)
+                Text(Self.letter(position))
                     .font(Theme.DriveTypography.numerals(size))
                     .foregroundStyle(distance == 0 ? Theme.Colors.accent : Theme.Colors.textTertiary)
                     .scaleEffect(distance == 0 ? 1 : 0.36)
@@ -355,17 +383,30 @@ private struct MotorsportSelectorStrip: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
+    static func letter(_ position: SelectorPosition) -> String {
+        switch position {
+        case .drive: "D"
+        case .neutral: "N"
+        case .reverse: "R"
+        case .park: "P"
+        case .shifting, .unknown: ""
+        }
+    }
 }
 
 private struct MotorsportSideMeters: View {
-    /// Width each side gauge (arc and its caption) takes from the centre column.
+    /// Width each side gauge takes from the centre column: the 44-point arc,
+    /// its caption's overhang and a gap, so the gear numeral clears both.
     static let signalWidth: CGFloat = 84
 
     let readout: DriveReadout
+    /// Nil while the brake value must not be shown.
+    let brakePressed: Bool?
 
     var body: some View {
-        let brakeKnown = readout.brake.value != nil
-        let brakeOn = readout.brake.value == "Pressed"
+        let brakeKnown = brakePressed != nil
+        let brakeOn = brakePressed == true
         HStack(spacing: 0) {
             MotorsportSideSignal(
                 title: "BRK",
@@ -584,21 +625,23 @@ private struct BoostDial: Shape {
 /// draft's status strip.
 private struct MotorsportLink: View {
     let readout: DriveReadout
+    let telemetryFailure: String?
 
     var body: some View {
-        let live = readout.linkState.pillStatus == .live
+        let live = readout.linkState.pillStatus == .live && telemetryFailure == nil
+        let text = readout.linkDisplayText(telemetryFailure: telemetryFailure)
         HStack(spacing: 6) {
             Circle()
                 .fill(live ? Theme.Colors.signalTeal : Theme.Colors.textDisabled)
                 .frame(width: 6, height: 6)
-            Text(readout.linkDisplayText)
+            Text(text)
                 .font(Theme.DriveTypography.label(9))
                 .tracking(1.4)
                 .foregroundStyle(live ? Theme.Colors.signalTeal.opacity(0.8) : Theme.Colors.textTertiary)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Link, \(readout.linkDisplayText)")
+        .accessibilityLabel(readout.linkAccessibilityText(telemetryFailure: telemetryFailure))
         .accessibilityIdentifier("drive.link")
     }
 }
@@ -606,7 +649,7 @@ private struct MotorsportLink: View {
 // MARK: - Previews
 
 private enum MotorsportDrivePreview {
-    static func readout(at seconds: Double, scenario: DemoScenario) -> DriveReadout {
+    static func view(at seconds: Double, scenario: DemoScenario) -> MotorsportDriveView {
         let frame: LiveSignalFrame
         switch scenario {
         case .stalled, .notPaired, .connecting:
@@ -619,33 +662,29 @@ private enum MotorsportDrivePreview {
             : .connected(.init(id: UUID(), name: "Demo Controller", maximumWriteLength: 182))
         let activeConfig = (try? ControllerConfig(canonicalJSON: DemoController.factoryDocument))
             .map { ConfigSummary($0, profile: .factory) }
-        return DriveReadout(frame: frame, activeConfig: activeConfig, linkState: link)
+        let readout = DriveReadout(frame: frame, activeConfig: activeConfig, linkState: link)
+        return MotorsportDriveView(
+            readout: readout,
+            signals: MotorsportSignals(frame: frame, readout: readout),
+            onExit: {}
+        )
     }
 }
 
 struct MotorsportDrive_Previews: PreviewProvider {
     static var previews: some View {
         Group {
-            MotorsportDriveView(
-                readout: MotorsportDrivePreview.readout(at: 4.5, scenario: .connected),
-                onExit: {}
-            )
+            MotorsportDrivePreview.view(at: 4.5, scenario: .connected)
             .preferredColorScheme(.dark)
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDisplayName("Moving demo")
 
-            MotorsportDriveView(
-                readout: MotorsportDrivePreview.readout(at: 4.5, scenario: .stalled),
-                onExit: {}
-            )
+            MotorsportDrivePreview.view(at: 4.5, scenario: .stalled)
             .preferredColorScheme(.dark)
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDisplayName("Stalled")
 
-            MotorsportDriveView(
-                readout: MotorsportDrivePreview.readout(at: 0, scenario: .notPaired),
-                onExit: {}
-            )
+            MotorsportDrivePreview.view(at: 0, scenario: .notPaired)
             .preferredColorScheme(.dark)
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDisplayName("Not connected")

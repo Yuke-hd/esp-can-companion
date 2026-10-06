@@ -1,10 +1,16 @@
 import SwiftUI
 import CoreText
+import os
 
 extension Theme {
     /// Typefaces named by the Drive draft. They are bundled under the SIL Open
-    /// Font License (see `Fonts/OFL-*.txt`) and used on Drive only; the rest of
-    /// the app keeps the system faces.
+    /// Font License (see `Fonts/OFL-*.txt`, with provenance in
+    /// `Fonts/SOURCES.md`) and used on Drive only; the rest of the app keeps
+    /// the system faces.
+    ///
+    /// Sizes are fixed on purpose: Drive is a glanceable landscape gauge
+    /// sized to fit the screen, and Dynamic Type scaling would push numerals
+    /// out of their slots. Accessibility labels carry every value instead.
     public enum DriveTypography {
         /// Numerals: Barlow Condensed ExtraBold Italic.
         public static func numerals(_ size: CGFloat) -> Font {
@@ -29,6 +35,8 @@ extension Theme {
             _ = registration
         }
 
+        private static let logger = Logger(subsystem: "CANCompanion", category: "DriveTypography")
+
         private static let registration: Void = {
             let names = [
                 "BarlowCondensed-BoldItalic",
@@ -40,7 +48,12 @@ extension Theme {
                     assertionFailure("Missing bundled font \(name)")
                     continue
                 }
-                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+                var error: Unmanaged<CFError>?
+                if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
+                    // Drive then falls back to the system face; leave a trace.
+                    let description = error.map { CFErrorCopyDescription($0.takeRetainedValue()) as String }
+                    logger.error("Could not register font \(name, privacy: .public): \(description ?? "unknown error", privacy: .public)")
+                }
             }
         }()
     }

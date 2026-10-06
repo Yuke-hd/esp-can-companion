@@ -54,8 +54,8 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
         assertText(for: "drive.rpm", matchingAny: ["2", "3", "4", "5", "6"])
         assertText(for: "drive.speed", matchingAny: ["3", "5", "7", "9"])
-        assertText(for: "drive.throttle", containing: "not available")
-        assertText(for: "drive.boost", containing: "not available")
+        assertText(for: "drive.throttle", containing: "Not supported")
+        assertText(for: "drive.boost", containing: "Not supported")
         captureLandscape("drive-readouts-and-unsupported-signals")
     }
 

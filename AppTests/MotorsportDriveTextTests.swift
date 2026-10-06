@@ -54,8 +54,48 @@ final class MotorsportDriveTextTests: XCTestCase {
 
         XCTAssertEqual(value.throttleDisplayText, "NO SIGNAL")
         XCTAssertEqual(value.boostDisplayText, "PLACEHOLDER")
-        XCTAssertEqual(value.throttleAccessibilityText, "Throttle, not available")
-        XCTAssertEqual(value.boostAccessibilityText, "Turbo, placeholder, not available")
+        XCTAssertEqual(value.throttleAccessibilityText, "Throttle, Not supported")
+        XCTAssertEqual(value.boostAccessibilityText, "Turbo, placeholder, Not supported")
+
+        let stalled = DriveReadout(frame: .unknown)
+        XCTAssertEqual(stalled.throttleDisplayText, "UNKNOWN")
+        XCTAssertEqual(stalled.boostDisplayText, "UNKNOWN")
+    }
+
+    private func signals(_ change: (inout DemoTelemetry) -> Void) throws -> MotorsportSignals {
+        var telemetry = DemoTelemetry()
+        change(&telemetry)
+        let frame = try LiveSignalFrame(decoding: telemetry.encoded)
+        return MotorsportSignals(frame: frame, readout: DriveReadout(frame: frame))
+    }
+
+    func testSignalsComeFromTypedFrameValues() throws {
+        let left = try signals { $0.turnState = .left }
+        XCTAssertTrue(left.leftLit)
+        XCTAssertFalse(left.rightLit)
+
+        let hazard = try signals { $0.booleans = 1 << 0 }
+        XCTAssertTrue(hazard.leftLit)
+        XCTAssertTrue(hazard.rightLit)
+
+        let braking = try signals { $0.booleans = 1 << 12 }
+        XCTAssertEqual(braking.brakePressed, true)
+
+        let shifting = try signals { $0.selectorPosition = .shifting }
+        XCTAssertEqual(shifting.selector, .shifting)
+    }
+
+    func testStaleSignalsNeverLight() throws {
+        let stale = try signals {
+            $0.turnState = .left
+            $0.booleans = 1 << 0 | 1 << 12
+            $0.statuses[2] = .stale
+            $0.statuses[6] = .stale
+            $0.statuses[18] = .stale
+            $0.statuses[4] = .stale
+        }
+        XCTAssertEqual(stale, .off)
+        XCTAssertEqual(MotorsportSignals(frame: .unknown, readout: DriveReadout(frame: .unknown)), .off)
     }
 
     func testLinkTextUsesLinkState() throws {
@@ -68,5 +108,10 @@ final class MotorsportDriveTextTests: XCTestCase {
         )
 
         XCTAssertEqual(value.linkDisplayText, "LINKED")
+        XCTAssertEqual(value.linkDisplayText(telemetryFailure: "Live signals are not available."), "LINKED · NO LIVE SIGNALS")
+        XCTAssertEqual(
+            value.linkAccessibilityText(telemetryFailure: "Live signals are not available."),
+            "Link, Linked, Live signals are not available."
+        )
     }
 }

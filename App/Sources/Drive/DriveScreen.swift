@@ -66,10 +66,21 @@ struct DriveMetrics: Equatable {
     /// Large numeral size for RPM and speed.
     var numeralSize: CGFloat = 72
 
+    /// Share of the width for each of the RPM and speed columns: wide enough
+    /// for a five-digit RPM at the largest numeral size on an SE.
+    static let sideColumnShare: CGFloat = 0.22
+    /// Height taken above and below the gauges by the shift lights, their gap
+    /// and the link line.
+    static let chromeHeight: CGFloat = 70
+    /// Below this the gauges become unreadable; content scales down instead.
+    static let minimumGaugeHeight: CGFloat = 160
+    /// The centre cluster's widest aspect ratio relative to the gauge height,
+    /// so side gauges stay hugging the gear rather than drifting to the edges.
+    static let centreClusterAspect: CGFloat = 1.45
+
     static func make(contentSize size: CGSize) -> DriveMetrics {
-        let sideColumnWidth = (size.width * 0.22).rounded()
-        // Shift lights, their gap and the link line take ~70 points.
-        let gaugeHeight = max(160, size.height - 70)
+        let sideColumnWidth = (size.width * sideColumnShare).rounded()
+        let gaugeHeight = max(minimumGaugeHeight, size.height - chromeHeight)
         let numeralSize = min(76, max(52, size.height * 0.19)).rounded()
         return DriveMetrics(sideColumnWidth: sideColumnWidth, gaugeHeight: gaugeHeight, numeralSize: numeralSize)
     }
@@ -159,7 +170,7 @@ struct DriveScreen: View {
                         slots.sideMeters
                         slots.gear
                     }
-                    .frame(maxWidth: metrics.gaugeHeight * 1.45, maxHeight: .infinity)
+                    .frame(maxWidth: metrics.gaugeHeight * DriveMetrics.centreClusterAspect, maxHeight: .infinity)
                     .frame(maxWidth: .infinity)
 
                     slots.link

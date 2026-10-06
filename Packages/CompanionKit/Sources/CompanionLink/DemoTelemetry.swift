@@ -67,8 +67,11 @@ public struct DemoTelemetry: Equatable, Sendable {
             (.drive, .first), (.neutral, .neutral), (.reverse, .reverse),
         ]
         let step = steps[Int(seconds / 2.5) % steps.count]
-        frame.selectorPosition = step.0
-        frame.actualGear = step.1
+        // Each change passes through a short shifting window, as the car
+        // reports between positions, so Drive must animate across it.
+        let isShifting = seconds.truncatingRemainder(dividingBy: 2.5) < 0.4
+        frame.selectorPosition = isShifting ? .shifting : step.0
+        frame.actualGear = isShifting ? .shifting : step.1
         frame.engineRPM = 800
         frame.speedKPH = 0
         return frame
