@@ -19,6 +19,15 @@ final class ConnectionManagerTransportTests: XCTestCase {
         }
     }
 
+    /// BLETransport cannot depend on CompanionProtocol, so the transport's copy of
+    /// the decodable layouts must be kept in step with the protocol's by hand.
+    func testTransportAcceptsExactlyTheLayoutsTheProtocolDecodes() {
+        XCTAssertEqual(
+            CompanionServiceConfiguration.protocolV1.supportedLiveSignalLayouts,
+            CompanionProtocol.supportedLiveSignalLayouts
+        )
+    }
+
     func testNotConnected() async {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)

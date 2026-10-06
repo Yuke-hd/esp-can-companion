@@ -19,6 +19,18 @@ final class LiveSignalLayout2Tests: XCTestCase {
         return value
     }
 
+    private func assertRejects(
+        _ value: Data,
+        layoutVersion: UInt8,
+        with expected: ProtocolDecodingError,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try LiveSignalFrame(decoding: value, layoutVersion: layoutVersion), file: file, line: line) {
+            XCTAssertEqual($0 as? ProtocolDecodingError, expected, file: file, line: line)
+        }
+    }
+
     // MARK: Values
 
     func testLongitudinalIsSignedInHundredthsOfMetresPerSecondSquared() throws {
@@ -110,28 +122,31 @@ final class LiveSignalLayout2Tests: XCTestCase {
     func testLayout1StillRequiresExactly23Bytes() throws {
         let valid = Data([1, 0, 1]) + Data(count: 20)
         XCTAssertNoThrow(try LiveSignalFrame(decoding: valid, layoutVersion: 1))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: valid.dropLast(), layoutVersion: 1))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: valid + [0], layoutVersion: 1))
+        assertRejects(valid.dropLast(), layoutVersion: 1, with: .truncated(field: "frame"))
+        assertRejects(valid + [0], layoutVersion: 1, with: .invalidValue(field: "frame"))
     }
 
     func testAFrameNeverDecodesAsTheOtherLayout() {
         let v1 = Data([1, 0, 1]) + Data(count: 20)
         let v2 = frame()
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: v2, layoutVersion: 1))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: v1, layoutVersion: 2))
-        // A frame whose version byte disagrees with its length is rejected either way.
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: frame(version: 1), layoutVersion: 1))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: frame(version: 1), layoutVersion: 2))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: Data([2]) + v1.dropFirst(), layoutVersion: 2))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: Data([2]) + v1.dropFirst(), layoutVersion: 1))
+        assertRejects(v2, layoutVersion: 1, with: .invalidValue(field: "layout_version"))
+        assertRejects(v1, layoutVersion: 2, with: .invalidValue(field: "layout_version"))
+        // A frame whose version byte disagrees with its length is rejected either way:
+        // the version byte is checked first, then the exact length.
+        assertRejects(frame(version: 1), layoutVersion: 1, with: .invalidValue(field: "frame"))
+        assertRejects(frame(version: 1), layoutVersion: 2, with: .invalidValue(field: "layout_version"))
+        assertRejects(Data([2]) + v1.dropFirst(), layoutVersion: 2, with: .truncated(field: "frame"))
+        assertRejects(Data([2]) + v1.dropFirst(), layoutVersion: 1, with: .invalidValue(field: "layout_version"))
         // The version-less decoder is layout 1.
         XCTAssertNoThrow(try LiveSignalFrame(decoding: v1))
-        XCTAssertThrowsError(try LiveSignalFrame(decoding: v2))
+        XCTAssertThrowsError(try LiveSignalFrame(decoding: v2)) {
+            XCTAssertEqual($0 as? ProtocolDecodingError, .invalidValue(field: "layout_version"))
+        }
     }
 
     func testUnknownLayoutVersionsAreRejected() {
         for version: UInt8 in [0, 3, 255] {
-            XCTAssertThrowsError(try LiveSignalFrame(decoding: frame(version: version), layoutVersion: version))
+            assertRejects(frame(version: version), layoutVersion: version, with: .invalidValue(field: "layout_version"))
         }
     }
 
