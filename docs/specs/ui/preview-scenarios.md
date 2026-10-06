@@ -87,12 +87,14 @@ Pick checks relevant to the change rather than every row for every PR.
   that was selected before Drive. The container currently shows named
   placeholders for gear, RPM, speed, side meters, turn indicators, warnings,
   and the status strip; live readouts and styles are tracked by [#25](https://github.com/Yuke-hd/esp-can-companion/issues/25).
-- **Acceleration data:** launch `driveLaps` to supply acceleration for the
-  planned Drive g-meter ([#33](https://github.com/Yuke-hd/esp-can-companion/issues/33)
-  and the following UI issue). Check that it is plotted only while both axes are
-  live, and shows no data during the dropout, unverified and missing windows. Use
-  `driveLapsLayout1` to check a layout 1 controller: no data, with the rest of
-  Drive unaffected. The g-meter view itself does not exist yet.
+- **G-meter:** launch `driveLaps`, open Drive and watch the g-meter
+  (`drive.gmeter`, bottom right; [#35](https://github.com/Yuke-hd/esp-can-companion/issues/35)).
+  Check that the dot is plotted only while both axes are live and moves toward
+  the felt force (up when braking, left in a right-hander), and that the
+  dropout, unverified and missing windows show no dot, "—" and the named axis
+  state. Use `driveLapsLayout1` to check a layout 1 controller: no data, with
+  the rest of Drive unaffected. With Reduce Motion on, the trail and glow are
+  absent while the dot and peaks still update.
 
 Once full-app send/restart and `validationError` are available, check success only
 after active-configuration read-back, and structured rejection without changing

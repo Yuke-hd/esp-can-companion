@@ -55,7 +55,7 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.rpm", matchingAny: ["2", "3", "4", "5", "6"])
         assertText(for: "drive.speed", matchingAny: ["3", "5", "7", "9"])
         assertText(for: "drive.throttle", containing: "Not supported")
-        assertText(for: "drive.boost", containing: "Not supported")
+        assertText(for: "drive.gmeter", containing: "g accelerating")
         captureLandscape("drive-readouts-and-unsupported-signals")
     }
 
@@ -67,7 +67,16 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.rpm", containing: "Unknown")
         assertText(for: "drive.speed", containing: "Unknown")
         assertText(for: "drive.gear", containing: "Unknown")
+        assertText(for: "drive.gmeter", containing: "no data")
         captureLandscape("drive-stalled-unknown")
+    }
+
+    func testDriveGMeterShowsNoDataForLayout1Controller() {
+        launch(scenario: "driveLapsLayout1")
+        openDrive()
+        waitForLandscape()
+
+        assertText(for: "drive.gmeter", containing: "no data")
     }
 
     func testDriveShowsNotLinkedStateWithoutTelemetry() {
@@ -156,7 +165,7 @@ final class DriveNavigationUITests: XCTestCase {
             "drive.speed",
             "drive.brake",
             "drive.throttle",
-            "drive.boost",
+            "drive.gmeter",
             "drive.link"
         ]
 
@@ -168,16 +177,18 @@ final class DriveNavigationUITests: XCTestCase {
             XCTAssertTrue(windowFrame.contains(frame), "\(identifier) is clipped by window \(windowFrame): \(frame)", file: file, line: line)
         }
 
-        let gaugeIdentifiers = ["drive.gear", "drive.brake", "drive.throttle", "drive.boost"]
+        let gaugeIdentifiers = ["drive.gear", "drive.brake", "drive.throttle", "drive.gmeter", "drive.speed"]
         let gaugeFrames = Dictionary(uniqueKeysWithValues: gaugeIdentifiers.map {
             ($0, app.descendants(matching: .any)[$0].frame)
         })
         for (left, right) in [
             ("drive.gear", "drive.brake"),
             ("drive.gear", "drive.throttle"),
-            ("drive.gear", "drive.boost"),
+            ("drive.gear", "drive.gmeter"),
             ("drive.brake", "drive.throttle"),
-            ("drive.throttle", "drive.boost")
+            ("drive.throttle", "drive.gmeter"),
+            // Both sit in the right column.
+            ("drive.speed", "drive.gmeter")
         ] {
             XCTAssertFalse(
                 gaugeFrames[left]!.intersects(gaugeFrames[right]!),
