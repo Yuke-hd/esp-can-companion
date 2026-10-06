@@ -177,6 +177,8 @@ final class ControllerSessionTests: XCTestCase {
             .customConfig: { $0.isConnected },
             .stalled: { $0.isConnected },
             .selectorCycle: { $0.isConnected },
+            .driveLaps: { $0.isConnected },
+            .driveLapsLayout1: { $0.isConnected },
             .validationError: { $0.isConnected },
             .relinking: { $0 == .disconnected(.connectionLost("The connection has timed out unexpectedly."), willReconnect: true) },
             .incompatible: { $0 == .disconnected(.unsupportedProtocol(major: 2), willReconnect: false) },

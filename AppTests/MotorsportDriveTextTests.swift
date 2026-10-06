@@ -8,7 +8,7 @@ final class MotorsportDriveTextTests: XCTestCase {
     private func readout(_ change: (inout DemoTelemetry) -> Void = { _ in }) throws -> DriveReadout {
         var telemetry = DemoTelemetry()
         change(&telemetry)
-        let frame = try LiveSignalFrame(decoding: telemetry.encoded)
+        let frame = try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)
         return DriveReadout(frame: frame, linkState: .connected(.init(
             id: UUID(), name: "Demo Controller", maximumWriteLength: 182
         )))
@@ -65,7 +65,7 @@ final class MotorsportDriveTextTests: XCTestCase {
     private func signals(_ change: (inout DemoTelemetry) -> Void) throws -> MotorsportSignals {
         var telemetry = DemoTelemetry()
         change(&telemetry)
-        let frame = try LiveSignalFrame(decoding: telemetry.encoded)
+        let frame = try LiveSignalFrame(decoding: telemetry.encoded, layoutVersion: telemetry.layoutVersion)
         return MotorsportSignals(frame: frame, readout: DriveReadout(frame: frame))
     }
 
@@ -93,7 +93,7 @@ final class MotorsportDriveTextTests: XCTestCase {
         }
         let frame = try LiveSignalFrame(decoding: {
             var t = DemoTelemetry(); t.selectorPosition = .shifting; t.actualGear = .shifting; return t.encoded
-        }())
+        }(), layoutVersion: DemoTelemetry().layoutVersion)
         XCTAssertTrue(MotorsportSignals(frame: frame, readout: value).isShifting)
         XCTAssertEqual(value.gearDisplayText(shifting: true), "—")
         XCTAssertEqual(value.selectorDisplayText(shifting: true), "?")
@@ -116,7 +116,7 @@ final class MotorsportDriveTextTests: XCTestCase {
     func testLinkTextUsesLinkState() throws {
         let config = ConfigSummary(try ControllerConfig(canonicalJSON: DemoController.factoryDocument), profile: .preset("Track"))
         let value = DriveReadout(
-            frame: try LiveSignalFrame(decoding: DemoTelemetry().encoded),
+            frame: try LiveSignalFrame(decoding: DemoTelemetry().encoded, layoutVersion: DemoTelemetry().layoutVersion),
             activeConfig: config,
             linkState: .connected(.init(id: UUID(), name: "Demo Controller", maximumWriteLength: 182)),
             framesPerSecond: 10
