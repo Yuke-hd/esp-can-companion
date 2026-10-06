@@ -14,6 +14,8 @@ struct MotorsportSignals: Equatable {
     /// Nil while the gear group is not current. `.shifting` and unknown
     /// codes (including unrecognised ones, as `.unknown`) are kept so the gear view can tell them apart from staleness.
     var selector: SelectorPosition?
+    /// The gearbox or selector reports a change in progress.
+    var isShifting = false
 
     static let off = MotorsportSignals()
 
@@ -25,11 +27,15 @@ struct MotorsportSignals: Equatable {
         leftLit = hazard || turn == .known(.left) || turn == .known(.hazard)
         rightLit = hazard || turn == .known(.right) || turn == .known(.hazard)
         brakePressed = readout.brake.freshness.showsValue ? frame.brakePressed.value : nil
+        let gearShifting = readout.gearFreshness.showsValue && frame.actualGear.value == .known(.shifting)
+        isShifting = gearShifting
 
         guard readout.gearFreshness.showsValue, readout.selectorFreshness.showsValue,
               let position = frame.selectorPosition.value else { return }
         switch position {
-        case .known(let known): selector = known
+        case .known(let known):
+            selector = known
+            isShifting = isShifting || known == .shifting
         case .unknown: selector = .unknown
         }
     }
@@ -48,6 +54,12 @@ extension DriveReadout {
     var selectorDisplayText: String {
         gearFreshness.showsValue ? (selector ?? "—") : "—"
     }
+
+    // Mid-shift the label reads "GEAR ?" instead of the word "Shift", and
+    // the view hides the big numeral (owner direction). The dash keeps the
+    // numeral's layout height while hidden.
+    func gearDisplayText(shifting: Bool) -> String { shifting ? "—" : gearDisplayText }
+    func selectorDisplayText(shifting: Bool) -> String { shifting ? "?" : selectorDisplayText }
 
     var gearAccessibilityText: String {
         let gear = self.gear.map { "Gear " + $0 } ?? "Gear, no value"

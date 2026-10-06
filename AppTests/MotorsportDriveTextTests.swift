@@ -83,6 +83,21 @@ final class MotorsportDriveTextTests: XCTestCase {
 
         let shifting = try signals { $0.selectorPosition = .shifting }
         XCTAssertEqual(shifting.selector, .shifting)
+        XCTAssertTrue(shifting.isShifting)
+    }
+
+    func testShiftingShowsQuestionMarkInsteadOfShiftWord() throws {
+        let value = try readout {
+            $0.selectorPosition = .shifting
+            $0.actualGear = .shifting
+        }
+        let frame = try LiveSignalFrame(decoding: {
+            var t = DemoTelemetry(); t.selectorPosition = .shifting; t.actualGear = .shifting; return t.encoded
+        }())
+        XCTAssertTrue(MotorsportSignals(frame: frame, readout: value).isShifting)
+        XCTAssertEqual(value.gearDisplayText(shifting: true), "—")
+        XCTAssertEqual(value.selectorDisplayText(shifting: true), "?")
+        XCTAssertEqual(value.gearDisplayText(shifting: false), value.gearDisplayText)
     }
 
     func testStaleSignalsNeverLight() throws {

@@ -38,7 +38,7 @@ struct MotorsportDriveView: View {
                     accessibilityText: readout.speedAccessibilityText,
                     identifier: "drive.speed"
                 ) },
-                gear: { MotorsportGear(readout: readout, selector: signals.selector) },
+                gear: { MotorsportGear(readout: readout, selector: signals.selector, shifting: signals.isShifting) },
                 sideMeters: { MotorsportSideMeters(readout: readout, brakePressed: signals.brakePressed) },
                 auxiliary: { MotorsportBoostPlaceholder(readout: readout) },
                 link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
@@ -269,6 +269,7 @@ private struct MotorsportGear: View {
     let readout: DriveReadout
     /// The typed selector, or nil while the gear group is not current.
     let selector: SelectorPosition?
+    let shifting: Bool
     @Environment(\.driveMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The selector shown in place of the gear while it changes, or nil.
@@ -285,20 +286,21 @@ private struct MotorsportGear: View {
             HStack(spacing: Theme.Spacing.xs) {
                 Text("GEAR")
                     .foregroundStyle(Theme.Colors.textSecondary)
-                Text(readout.selectorDisplayText)
+                Text(readout.selectorDisplayText(shifting: shifting))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .fontWeight(.bold)
             }
             .font(Theme.DriveTypography.label(11))
             .tracking(1.6)
-            Text(readout.gearDisplayText)
+            Text(readout.gearDisplayText(shifting: shifting))
                 .font(Theme.DriveTypography.numerals(size))
-                .foregroundStyle(readout.gear == nil ? Theme.Colors.textDisabled : Theme.Colors.textPrimary)
+                .foregroundStyle(readout.gear == nil || shifting ? Theme.Colors.textDisabled : Theme.Colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.4)
                 .driveNumeralLineHeight(size)
                 .scaleEffect(showsSelector && !reduceMotion ? 0.6 : 1)
-                .opacity(showsSelector ? 0 : 1)
+                // Mid-shift only the "GEAR ?" label speaks; the slot stays empty.
+                .opacity(showsSelector || shifting ? 0 : 1)
                 .overlay {
                     if let flyInSelector {
                         MotorsportSelectorStrip(current: flyInSelector, size: size)
