@@ -90,7 +90,9 @@ struct MotorsportGMeter: View {
             Text(DriveReadout.gMeterRangeText(model.ringRange))
                 .font(Theme.DriveTypography.label(9))
                 .monospacedDigit()
-                .foregroundStyle(rangeHighlight > 0.5 ? Theme.Colors.accent : (live ? Theme.Colors.textTertiary : Theme.Colors.textDisabled))
+                // `rangeHighlight` jumps to its target inside `withAnimation`, so
+                // this reads "rising, not fading" rather than the current glow.
+                .foregroundStyle(rangeHighlight == 1 ? Theme.Colors.accent : (live ? Theme.Colors.textTertiary : Theme.Colors.textDisabled))
                 .scaleEffect(1 + 0.2 * rangeHighlight, anchor: .leading)
                 // A cross-fade rather than rolling digits, which pass through a
                 // misleading "±1.5" on the way from 0.5 to 1.0.

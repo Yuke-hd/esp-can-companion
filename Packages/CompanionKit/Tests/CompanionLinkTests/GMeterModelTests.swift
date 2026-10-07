@@ -329,6 +329,19 @@ final class GMeterModelTests: XCTestCase {
         model.update(lateral(0.48), at: at(13000))
         model.update(lateral(0.49), at: at(14000))
         XCTAssertEqual(model.ringRange, 0.5)
+
+        // Expanding again during a settle period discards it: the next dip
+        // starts a fresh period.
+        model = GMeterModel(configuration: magnitudeOnly)
+        model.update(lateral(0.6), at: at(20000))
+        model.update(lateral(0.3), at: at(21000))
+        model.update(lateral(0.6), at: at(22000))
+        model.update(lateral(0.3), at: at(24100))
+        XCTAssertEqual(model.ringRange, 1.0, "the settle period restarted at 24.1 s")
+        model.update(lateral(0.3), at: at(27099))
+        XCTAssertEqual(model.ringRange, 1.0)
+        model.update(lateral(0.3), at: at(27100))
+        XCTAssertEqual(model.ringRange, 0.5)
     }
 
     func testAHeldPeakAboveTheThresholdKeepsTheRangeExpanded() {

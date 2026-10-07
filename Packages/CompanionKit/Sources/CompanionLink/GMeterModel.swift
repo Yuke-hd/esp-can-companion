@@ -273,7 +273,8 @@ public struct GMeterModel: Equatable, Sendable {
         case .left: GForce(longitudinal: 0, lateral: -magnitude)
         case .right: GForce(longitudinal: 0, lateral: magnitude)
         }
-        return position(of: force).clamped(toRadius: ringRange)
+        // `peaks` is already clamped to the ring, and each lies on one axis.
+        return position(of: force)
     }
 
     /// Feeds one sample taken at `now`. A nil sample clears the dot, trail and

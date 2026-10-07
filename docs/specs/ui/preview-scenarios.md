@@ -96,8 +96,8 @@ Pick checks relevant to the change rather than every row for every PR.
   (dashed 0.5 g mark) in the hard-braking and cornering phases
   ([#56](https://github.com/Yuke-hd/esp-can-companion/issues/56)), and returns
   to ±0.5 g after the dropout. The range label beside the title matches, and
-  it and the rim briefly light up on each change. Use `driveLapsLayout1` to check a layout 1 controller: no data, with
-  the rest of Drive unaffected. With Reduce Motion on, the trail and glow are
+  it and the rim briefly light up on each change. Use `driveLapsLayout1` to
+  check a layout 1 controller: no data, with the rest of Drive unaffected. With Reduce Motion on, the trail and glow are
   absent while the dot and peaks still update, and the range switches without
   animating or lighting up.
 
