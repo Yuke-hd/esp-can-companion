@@ -2,9 +2,11 @@ import SwiftUI
 import DesignSystem
 import CompanionLink
 
-/// A friction-circle g-meter for the Drive `auxiliary` slot: a ring with
-/// 0.5 g and 1.0 g marks, a smoothed dot with a short fading trail, decaying
-/// peak markers per direction and the total g underneath.
+/// A friction-circle g-meter for the Drive `auxiliary` slot: an auto-ranging
+/// ring (±0.5 g with a 0.25 g mark, or ±1 g with a 0.5 g mark), a smoothed dot
+/// with a short fading trail, decaying peak markers per direction and the
+/// total g underneath. The active range is named beside the title; when it
+/// changes, the label and rim briefly light up in the accent colour.
 ///
 /// The view only displays: the readout decides liveness (both axes fresh) and
 /// `GMeterModel` owns smoothing, peaks and the trail. A clock tick feeds the
@@ -17,6 +19,11 @@ struct MotorsportGMeter: View {
     static let ringDiameter: CGFloat = 84
     /// How often the model is fed between frames, for smooth motion and decay.
     static let tick: Duration = .milliseconds(33)
+    /// The ring's rescale when the range changes; instant under Reduce Motion.
+    static let rangeAnimation: Animation = .easeInOut(duration: 0.35)
+    /// The range-change highlight: a quick rise, then a slower fade.
+    static let highlightRise: Animation = .easeOut(duration: 0.15)
+    static let highlightFade: Animation = .easeIn(duration: 0.6)
 
     let readout: DriveReadout
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,17 +31,16 @@ struct MotorsportGMeter: View {
     /// The latest sample, kept in state so the clock loop reads the current
     /// frame rather than the one captured when the task started.
     @State private var sample: GForce?
+    /// 0…1: how strongly the range label and rim are lit after a range change.
+    @State private var rangeHighlight = 0.0
 
     var body: some View {
         let live = readout.acceleration != nil && model.dot != nil
         VStack(spacing: Theme.Spacing.xxs) {
-            Text("G-METER")
-                .font(Theme.DriveTypography.label(10))
-                .tracking(1.4)
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .lineLimit(1)
-            GMeterFace(model: model, live: live, showsMotion: !reduceMotion)
+            titleRow(live: live)
+            GMeterFace(model: model, range: model.ringRange, highlight: rangeHighlight, live: live, showsMotion: !reduceMotion)
                 .frame(width: Self.ringDiameter, height: Self.ringDiameter)
+                .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
             valueRow(live: live)
         }
         .frame(width: Self.width)
@@ -59,10 +65,41 @@ struct MotorsportGMeter: View {
             // without a dash frame, and missing data clears immediately.
             if new != nil || model.smoothed != nil { model.update(new, at: .now) }
         }
+        .onChange(of: model.ringRange) {
+            // Only a change the driver can see while data is live; a reset to
+            // the compact range on missing data is not announced.
+            guard !reduceMotion, readout.acceleration != nil, model.dot != nil else { return }
+            withAnimation(Self.highlightRise) {
+                rangeHighlight = 1
+            } completion: {
+                withAnimation(Self.highlightFade) { rangeHighlight = 0 }
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.gMeterAccessibilityText(model.smoothed))
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityIdentifier("drive.gmeter")
+    }
+
+    private func titleRow(live: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+            Text("G-METER")
+                .font(Theme.DriveTypography.label(10))
+                .tracking(1.4)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(DriveReadout.gMeterRangeText(model.ringRange))
+                .font(Theme.DriveTypography.label(9))
+                .monospacedDigit()
+                // `rangeHighlight` jumps to its target inside `withAnimation`, so
+                // this reads "rising, not fading" rather than the current glow.
+                .foregroundStyle(rangeHighlight == 1 ? Theme.Colors.accent : (live ? Theme.Colors.textTertiary : Theme.Colors.textDisabled))
+                .scaleEffect(1 + 0.2 * rangeHighlight, anchor: .leading)
+                // A cross-fade rather than rolling digits, which pass through a
+                // misleading "±1.5" on the way from 0.5 to 1.0.
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
+        }
+        .lineLimit(1)
     }
 
     @ViewBuilder private func valueRow(live: Bool) -> some View {
@@ -88,35 +125,56 @@ struct MotorsportGMeter: View {
 }
 
 /// The dial itself, drawn from the model's presentation values (g, x right,
-/// y up, already clamped to the ring).
-private struct GMeterFace: View {
+/// y up) on a rim of `range` g.
+///
+/// `range` animates on its own while the model keeps updating, so a range
+/// change rescales the dot, peaks, trail and marks smoothly. Positions are
+/// clamped again to the drawn range, which lags the model's while expanding.
+private struct GMeterFace: View, Animatable {
     let model: GMeterModel
+    var range: Double
+    /// 0…1: the accent glow on the rim after a range change.
+    var highlight: Double
     let live: Bool
     /// Trail and glow; off under Reduce Motion. The dot and peaks still update.
     let showsMotion: Bool
+
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(range, highlight) }
+        set { (range, highlight) = (newValue.first, newValue.second) }
+    }
 
     var body: some View {
         Canvas { context, size in
             let radius = min(size.width, size.height) / 2 - 2
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let range = model.configuration.ringRange
             func point(_ p: GMeterModel.Point) -> CGPoint {
-                CGPoint(x: center.x + CGFloat(p.x / range) * radius, y: center.y - CGFloat(p.y / range) * radius)
+                let p = p.clamped(toRadius: range)
+                return CGPoint(x: center.x + CGFloat(p.x / range) * radius, y: center.y - CGFloat(p.y / range) * radius)
             }
             func circle(_ r: CGFloat, at c: CGPoint = center) -> Path {
                 Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
             }
 
             let markColor = live ? Theme.Colors.textDisabled : Theme.Colors.surfaceRaised
-            // Crosshair, then the 0.5 g and 1.0 g rings.
+            // Crosshair, the dashed inner mark for the range, then the rim.
             var cross = Path()
             cross.move(to: CGPoint(x: center.x - radius, y: center.y))
             cross.addLine(to: CGPoint(x: center.x + radius, y: center.y))
             cross.move(to: CGPoint(x: center.x, y: center.y - radius))
             cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
             context.stroke(cross, with: .color(Theme.Colors.surfaceRaised), lineWidth: 1)
-            context.stroke(circle(radius * 0.5), with: .color(markColor), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            for mark in model.configuration.innerMarks(atRange: range) where mark.opacity > 0.01 && mark.value < range {
+                context.stroke(
+                    circle(radius * CGFloat(mark.value / range)),
+                    with: .color(markColor.opacity(mark.opacity)),
+                    style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                )
+            }
             context.stroke(circle(radius), with: .color(markColor), lineWidth: 1.5)
+            if highlight > 0 {
+                context.stroke(circle(radius), with: .color(Theme.Colors.accent.opacity(highlight)), lineWidth: 1.5 + highlight)
+            }
 
             guard live, let dot = model.dot else { return }
 

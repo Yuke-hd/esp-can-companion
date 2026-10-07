@@ -37,9 +37,15 @@ public struct GForce: Equatable, Sendable {
 /// stream) clears everything; nothing is interpolated across the gap.
 ///
 /// Presentation values (`dot`, `trail`, `peaks`, `peakPosition(_:)`) are in g
-/// on screen axes, x to the right and y up, and clamp to the ring at
-/// `Configuration.ringRange` without rescaling. `smoothed` keeps the
+/// on screen axes, x to the right and y up, and clamp to the active
+/// `ringRange` without rescaling. Peaks and trail are stored unclamped, so
+/// they keep their g values when the range changes. `smoothed` keeps the
 /// unclamped value for numeric text.
+///
+/// The ring auto-ranges: it starts at `Configuration.compactRange`, expands
+/// to `expandedRange` as soon as the smoothed magnitude or a held peak goes
+/// beyond the compact ring, and shrinks back only once both have stayed at or
+/// below `shrinkThreshold` for `rangeSettle`.
 public struct GMeterModel: Equatable, Sendable {
     /// Which way the dot moves for a given acceleration.
     public enum DotDirection: Equatable, Sendable {
@@ -63,8 +69,19 @@ public struct GMeterModel: Equatable, Sendable {
         /// The most trail points kept, newest included. Zero or less keeps no
         /// trail; the initialiser clamps negative values to zero.
         public var trailCapacity: Int
-        /// The ring's radius in g; presentation values clamp to it.
-        public var ringRange: Double
+        /// The ring's radius in g at start, with no data and in everyday driving.
+        public var compactRange: Double
+        /// The ring's radius in g once the magnitude exceeds `compactRange`.
+        /// Presentation values clamp to the active range.
+        public var expandedRange: Double
+        /// The magnitude in g the smoothed value and every held peak must stay
+        /// at or below before the range shrinks. Keeping it under
+        /// `compactRange` leaves a hysteresis band, so the scale does not
+        /// flicker around the compact ring.
+        public var shrinkThreshold: Double
+        /// How long the magnitude must stay at or below `shrinkThreshold`
+        /// before the range shrinks back to `compactRange`.
+        public var rangeSettle: Duration
         /// The dot-direction convention; flip here if the real axes are inverted.
         public var dotDirection: DotDirection
 
@@ -74,7 +91,10 @@ public struct GMeterModel: Equatable, Sendable {
             peakDecay: Duration,
             trailWindow: Duration,
             trailCapacity: Int,
-            ringRange: Double,
+            compactRange: Double,
+            expandedRange: Double,
+            shrinkThreshold: Double,
+            rangeSettle: Duration,
             dotDirection: DotDirection
         ) {
             self.smoothingTimeConstant = smoothingTimeConstant
@@ -82,7 +102,10 @@ public struct GMeterModel: Equatable, Sendable {
             self.peakDecay = peakDecay
             self.trailWindow = trailWindow
             self.trailCapacity = max(0, trailCapacity)
-            self.ringRange = ringRange
+            self.compactRange = compactRange
+            self.expandedRange = expandedRange
+            self.shrinkThreshold = shrinkThreshold
+            self.rangeSettle = rangeSettle
             self.dotDirection = dotDirection
         }
 
@@ -93,9 +116,36 @@ public struct GMeterModel: Equatable, Sendable {
             peakDecay: .seconds(2),
             trailWindow: .milliseconds(750),
             trailCapacity: 12,
-            ringRange: 1.0,
+            compactRange: 0.5,
+            expandedRange: 1.0,
+            shrinkThreshold: 0.45,
+            rangeSettle: .seconds(3),
             dotDirection: .feltForce
         )
+
+        /// A dashed ring inside the rim: `value` in g and how visible it is.
+        public struct RingMark: Equatable, Sendable {
+            public var value: Double
+            public var opacity: Double
+
+            public init(value: Double, opacity: Double) {
+                self.value = value
+                self.opacity = opacity
+            }
+        }
+
+        /// The dashed rings to draw inside a rim of radius `range` g: half of
+        /// each range, the compact one fully visible at `compactRange` and the
+        /// expanded one at `expandedRange`, cross-fading while the drawn range
+        /// animates between them.
+        public func innerMarks(atRange range: Double) -> [RingMark] {
+            let span = expandedRange - compactRange
+            let progress = span > 0 ? min(max((range - compactRange) / span, 0), 1) : 1
+            return [
+                RingMark(value: compactRange / 2, opacity: 1 - progress),
+                RingMark(value: expandedRange / 2, opacity: progress),
+            ]
+        }
     }
 
     /// A position on the g-meter face in g: x to the right, y up.
@@ -106,6 +156,15 @@ public struct GMeterModel: Equatable, Sendable {
         public init(x: Double, y: Double) {
             self.x = x
             self.y = y
+        }
+
+        /// This point moved radially onto a circle of `radius` g if it lies
+        /// beyond it; unchanged otherwise.
+        public func clamped(toRadius radius: Double) -> Point {
+            let distance = hypot(x, y)
+            guard distance > radius, distance > 0 else { return self }
+            let scale = radius / distance
+            return Point(x: x * scale, y: y * scale)
         }
     }
 
@@ -130,7 +189,7 @@ public struct GMeterModel: Equatable, Sendable {
     }
 
     /// Recent maximum magnitudes in g per direction, each non-negative and
-    /// clamped to the ring.
+    /// clamped to the active ring.
     ///
     /// Peaks follow the smoothed value, not raw samples, so a brief spike is
     /// recorded at its smoothed height. The held peaks are stored unclamped
@@ -174,26 +233,35 @@ public struct GMeterModel: Equatable, Sendable {
     /// The smoothed acceleration, unclamped; nil when there is no live data.
     public private(set) var smoothed: GForce?
     public private(set) var peaks: Peaks = .zero
+    /// The active ring radius in g: `compactRange` or `expandedRange`.
+    public private(set) var ringRange: Double
     private var lastUpdate: ContinuousClock.Instant?
     private var heldPeaks: [PeakDirection: HeldPeak] = [:]
     private var trailSamples: [TrailSample] = []
+    /// When the magnitude last fell to or below `shrinkThreshold` while
+    /// expanded; nil while it is above, or when compact.
+    private var settlingSince: ContinuousClock.Instant?
 
     private struct TrailSample: Equatable, Sendable {
+        /// Unclamped, so the point keeps its g value across a range change.
         var position: Point
         var at: ContinuousClock.Instant
     }
 
     public init(configuration: Configuration = .standard) {
         self.configuration = configuration
+        ringRange = configuration.compactRange
     }
 
     /// The dot, clamped to the ring; nil when there is no live data.
-    public var dot: Point? { smoothed.map(position) }
+    public var dot: Point? { smoothed.map { position(of: $0).clamped(toRadius: ringRange) } }
 
     /// The trail, oldest first; the newest point is the current dot.
     public var trail: [TrailPoint] {
         guard let lastUpdate else { return [] }
-        return trailSamples.map { TrailPoint(position: $0.position, age: lastUpdate - $0.at) }
+        return trailSamples.map {
+            TrailPoint(position: $0.position.clamped(toRadius: ringRange), age: lastUpdate - $0.at)
+        }
     }
 
     /// Where `direction`'s peak marker sits on the face.
@@ -205,6 +273,7 @@ public struct GMeterModel: Equatable, Sendable {
         case .left: GForce(longitudinal: 0, lateral: -magnitude)
         case .right: GForce(longitudinal: 0, lateral: magnitude)
         }
+        // `peaks` is already clamped to the ring, and each lies on one axis.
         return position(of: force)
     }
 
@@ -230,7 +299,14 @@ public struct GMeterModel: Equatable, Sendable {
         smoothed = next
         lastUpdate = now
 
-        updatePeaks(with: next, at: now)
+        let heldPeak = updateHeldPeaks(with: next, at: now)
+        updateRange(demand: max(next.magnitude, heldPeak), at: now)
+        peaks = Peaks(
+            accel: min(peaks.accel, ringRange),
+            brake: min(peaks.brake, ringRange),
+            left: min(peaks.left, ringRange),
+            right: min(peaks.right, ringRange)
+        )
         let window = configuration.trailWindow
         trailSamples.append(TrailSample(position: position(of: next), at: now))
         trailSamples.removeAll { now - $0.at > window }
@@ -243,7 +319,9 @@ public struct GMeterModel: Equatable, Sendable {
 
     // MARK: Internals
 
-    private mutating func updatePeaks(with force: GForce, at now: ContinuousClock.Instant) {
+    /// Updates the held peaks and sets `peaks` to them unclamped; returns the
+    /// largest. The caller clamps `peaks` once the range is known.
+    private mutating func updateHeldPeaks(with force: GForce, at now: ContinuousClock.Instant) -> Double {
         let magnitudes: [PeakDirection: Double] = [
             .accel: max(force.longitudinal, 0),
             .brake: max(-force.longitudinal, 0),
@@ -261,9 +339,31 @@ public struct GMeterModel: Equatable, Sendable {
             } else {
                 value = decayed
             }
-            current[direction] = min(value, configuration.ringRange)
+            current[direction] = value
         }
         peaks = current
+        return PeakDirection.allCases.map { current[$0] }.max() ?? 0
+    }
+
+    /// Expands at once when `demand` exceeds the compact ring; shrinks only
+    /// after it has stayed at or below the shrink threshold for the settle period.
+    private mutating func updateRange(demand: Double, at now: ContinuousClock.Instant) {
+        if demand > configuration.compactRange {
+            ringRange = configuration.expandedRange
+            settlingSince = nil
+        } else if ringRange != configuration.compactRange {
+            guard demand <= configuration.shrinkThreshold else {
+                settlingSince = nil
+                return
+            }
+            let since = settlingSince ?? now
+            if now - since >= configuration.rangeSettle {
+                ringRange = configuration.compactRange
+                settlingSince = nil
+            } else {
+                settlingSince = since
+            }
+        }
     }
 
     private func decayedValue(of peak: HeldPeak, at now: ContinuousClock.Instant) -> Double {
@@ -274,16 +374,10 @@ public struct GMeterModel: Equatable, Sendable {
         return peak.value * max(0, 1 - sinceHoldEnded / decay)
     }
 
-    /// Maps a force to the face using the dot direction, clamped radially to the ring.
+    /// Maps a force to the face using the dot direction, unclamped.
     private func position(of force: GForce) -> Point {
         let sign: Double = configuration.dotDirection == .feltForce ? -1 : 1
-        var point = Point(x: sign * force.lateral, y: sign * force.longitudinal)
-        let radius = hypot(point.x, point.y)
-        if radius > configuration.ringRange {
-            let scale = configuration.ringRange / radius
-            point = Point(x: point.x * scale, y: point.y * scale)
-        }
-        return point
+        return Point(x: sign * force.lateral, y: sign * force.longitudinal)
     }
 
     private static func seconds(_ duration: Duration) -> Double {
