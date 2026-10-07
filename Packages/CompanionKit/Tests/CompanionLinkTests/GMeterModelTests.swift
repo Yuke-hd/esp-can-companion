@@ -73,10 +73,11 @@ final class GMeterModelTests: XCTestCase {
     }
 
     func testDotBeyondTheRingClampsToTheRimWithoutRescaling() throws {
-        XCTAssertEqual(GMeterModel.Configuration.standard.ringRange, 1.0)
+        XCTAssertEqual(GMeterModel.Configuration.standard.expandedRange, 1.0)
 
         var model = GMeterModel()
         model.update(GForce(longitudinal: -1.2, lateral: 1.6), at: at(0))
+        XCTAssertEqual(model.ringRange, 1.0, "beyond the compact ring the range expands")
 
         let dot = try XCTUnwrap(model.dot)
         XCTAssertEqual(hypot(dot.x, dot.y), 1.0, accuracy: accuracy)
@@ -218,7 +219,10 @@ final class GMeterModelTests: XCTestCase {
             peakDecay: .seconds(2),
             trailWindow: .milliseconds(750),
             trailCapacity: -1,
-            ringRange: 1.0,
+            compactRange: 0.5,
+            expandedRange: 1.0,
+            shrinkThreshold: 0.45,
+            rangeSettle: .seconds(3),
             dotDirection: .feltForce
         )
         XCTAssertEqual(viaInit.trailCapacity, 0, "the initialiser clamps a negative capacity")
@@ -230,6 +234,171 @@ final class GMeterModelTests: XCTestCase {
 
         let point = try XCTUnwrap(model.trail.last)
         XCTAssertEqual(point.position.y, -1.0, accuracy: accuracy)
+    }
+
+    // MARK: Auto-range
+
+    /// The standard configuration without peak hold, so the range follows the
+    /// smoothed magnitude alone, and with near-instant smoothing so each
+    /// sample is effectively the smoothed value.
+    private var magnitudeOnly: GMeterModel.Configuration {
+        var configuration = GMeterModel.Configuration.standard
+        configuration.peakHold = .zero
+        configuration.peakDecay = .zero
+        configuration.smoothingTimeConstant = .milliseconds(1)
+        return configuration
+    }
+
+    private func lateral(_ g: Double) -> GForce {
+        GForce(longitudinal: 0, lateral: g)
+    }
+
+    func testStandardAutoRangeConfiguration() {
+        let configuration = GMeterModel.Configuration.standard
+        XCTAssertEqual(configuration.compactRange, 0.5)
+        XCTAssertEqual(configuration.expandedRange, 1.0)
+        XCTAssertEqual(configuration.shrinkThreshold, 0.45)
+        XCTAssertEqual(configuration.rangeSettle, .seconds(3))
+    }
+
+    func testRangeIsCompactAtStartAndWithNoData() {
+        var model = GMeterModel()
+        XCTAssertEqual(model.ringRange, 0.5, "at start")
+
+        model.update(lateral(0.8), at: at(0))
+        XCTAssertEqual(model.ringRange, 1.0)
+
+        model.update(nil, at: at(100))
+        XCTAssertEqual(model.ringRange, 0.5, "no data resets to the compact range")
+    }
+
+    func testRangeExpandsWhenTheTotalMagnitudeExceedsTheCompactRing() {
+        var atRing = GMeterModel()
+        atRing.update(lateral(0.5), at: at(0))
+        XCTAssertEqual(atRing.ringRange, 0.5, "exactly on the ring does not expand")
+
+        // Neither axis alone exceeds 0.5 g, but the total does.
+        var combined = GMeterModel()
+        combined.update(GForce(longitudinal: -0.4, lateral: 0.35), at: at(0))
+        XCTAssertEqual(combined.ringRange, 1.0)
+    }
+
+    func testValuesInsideTheCompactRangeAreNotClampedOrRescaled() throws {
+        var model = GMeterModel()
+        model.update(GForce(longitudinal: -0.3, lateral: 0.2), at: at(0))
+
+        let dot = try XCTUnwrap(model.dot)
+        XCTAssertEqual(dot.y, 0.3, accuracy: accuracy)
+        XCTAssertEqual(dot.x, -0.2, accuracy: accuracy)
+    }
+
+    func testRangeShrinksOnlyAfterTheMagnitudeSettlesBelowTheThreshold() {
+        var model = GMeterModel(configuration: magnitudeOnly)
+        model.update(lateral(0.6), at: at(0))
+        XCTAssertEqual(model.ringRange, 1.0)
+
+        model.update(lateral(0.1), at: at(1000))
+        model.update(lateral(0.1), at: at(3999))
+        XCTAssertEqual(model.ringRange, 1.0, "still inside the settle period")
+
+        model.update(lateral(0.1), at: at(4000))
+        XCTAssertEqual(model.ringRange, 0.5, "three seconds below the threshold")
+    }
+
+    func testRangeDoesNotFlickerAroundTheThreshold() {
+        var model = GMeterModel(configuration: magnitudeOnly)
+        model.update(lateral(0.6), at: at(0))
+
+        // Between the shrink threshold and the ring: no shrink, however long.
+        for second in 1...6 {
+            model.update(lateral(0.48), at: at(second * 1000))
+        }
+        XCTAssertEqual(model.ringRange, 1.0, "hysteresis band holds the expanded range")
+
+        // A dip below the threshold starts the settle period; rising back
+        // above it restarts the period.
+        model.update(lateral(0.3), at: at(7000))
+        model.update(lateral(0.48), at: at(8000))
+        model.update(lateral(0.3), at: at(9000))
+        model.update(lateral(0.3), at: at(11999))
+        XCTAssertEqual(model.ringRange, 1.0, "the settle period restarted at 9 s")
+        model.update(lateral(0.3), at: at(12000))
+        XCTAssertEqual(model.ringRange, 0.5)
+
+        // Once compact, values up to the ring do not expand it again.
+        model.update(lateral(0.48), at: at(13000))
+        model.update(lateral(0.49), at: at(14000))
+        XCTAssertEqual(model.ringRange, 0.5)
+    }
+
+    func testAHeldPeakAboveTheThresholdKeepsTheRangeExpanded() {
+        var model = GMeterModel()
+        model.update(lateral(0.6), at: at(0))
+        model.update(lateral(0), at: at(1000))
+        XCTAssertEqual(model.ringRange, 1.0, "the dot is near the centre but the 0.6 g peak is held")
+
+        // At 3 s the peak has decayed to 0.3 g, below the threshold, so the
+        // settle period starts there rather than when the dot returned.
+        model.update(lateral(0), at: at(3000))
+        model.update(lateral(0), at: at(5999))
+        XCTAssertEqual(model.ringRange, 1.0)
+        model.update(lateral(0), at: at(6000))
+        XCTAssertEqual(model.ringRange, 0.5)
+    }
+
+    func testPeaksAndTrailKeepTheirValuesInGAcrossARangeChange() throws {
+        var model = GMeterModel()
+        model.update(lateral(0.3), at: at(0))
+        XCTAssertEqual(model.ringRange, 0.5)
+        model.update(lateral(0.9), at: at(200))
+        XCTAssertEqual(model.ringRange, 1.0)
+
+        let smoothed = try XCTUnwrap(model.smoothed).lateral
+        XCTAssertGreaterThan(smoothed, 0.5)
+        XCTAssertEqual(model.peaks.right, smoothed, accuracy: accuracy, "not clamped to the old compact ring")
+        XCTAssertEqual(try XCTUnwrap(model.dot).x, -smoothed, accuracy: accuracy)
+        let trail = model.trail
+        XCTAssertEqual(trail.count, 2)
+        XCTAssertEqual(try XCTUnwrap(trail.first).position.x, -0.3, accuracy: accuracy, "the older point stays at 0.3 g")
+        XCTAssertEqual(trail.last?.position, model.dot)
+    }
+
+    func testTrailIsStoredInGAndClampedOnlyForTheActiveRange() throws {
+        var configuration = magnitudeOnly
+        configuration.rangeSettle = .zero
+        var model = GMeterModel(configuration: configuration)
+
+        model.update(lateral(0.8), at: at(0))
+        model.update(lateral(0.1), at: at(100))
+        XCTAssertEqual(model.ringRange, 0.5, "a zero settle shrinks at once")
+        XCTAssertEqual(try XCTUnwrap(model.trail.first).position.x, -0.5, accuracy: accuracy, "clamped to the compact rim")
+
+        model.update(lateral(0.9), at: at(200))
+        XCTAssertEqual(model.ringRange, 1.0)
+        XCTAssertEqual(try XCTUnwrap(model.trail.first).position.x, -0.8, accuracy: accuracy, "the stored 0.8 g is back")
+    }
+
+    func testPointClampsRadiallyToARadius() {
+        let point = GMeterModel.Point(x: 0.6, y: -0.8)
+        let clamped = point.clamped(toRadius: 0.5)
+        XCTAssertEqual(clamped.x, 0.3, accuracy: accuracy)
+        XCTAssertEqual(clamped.y, -0.4, accuracy: accuracy)
+        XCTAssertEqual(point.clamped(toRadius: 2), point, "inside the radius is unchanged")
+    }
+
+    func testInnerMarksCrossFadeBetweenTheHalfRangeRings() throws {
+        let configuration = GMeterModel.Configuration.standard
+
+        func opacities(_ range: Double) -> [Double: Double] {
+            Dictionary(uniqueKeysWithValues: configuration.innerMarks(atRange: range).map { ($0.value, $0.opacity) })
+        }
+
+        XCTAssertEqual(opacities(0.5), [0.25: 1, 0.5: 0], "±0.5 g shows the 0.25 g ring inside the 0.5 g rim")
+        XCTAssertEqual(opacities(1.0), [0.25: 0, 0.5: 1], "±1 g shows the 0.5 g ring inside the 1 g rim")
+        let halfway = opacities(0.75)
+        XCTAssertEqual(try XCTUnwrap(halfway[0.25]), 0.5, accuracy: accuracy)
+        XCTAssertEqual(try XCTUnwrap(halfway[0.5]), 0.5, accuracy: accuracy)
+        XCTAssertEqual(opacities(2.0), [0.25: 0, 0.5: 1], "outside the ranges the nearest end applies")
     }
 
     // MARK: Stall and no data

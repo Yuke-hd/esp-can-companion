@@ -2,9 +2,10 @@ import SwiftUI
 import DesignSystem
 import CompanionLink
 
-/// A friction-circle g-meter for the Drive `auxiliary` slot: a ring with
-/// 0.5 g and 1.0 g marks, a smoothed dot with a short fading trail, decaying
-/// peak markers per direction and the total g underneath.
+/// A friction-circle g-meter for the Drive `auxiliary` slot: an auto-ranging
+/// ring (±0.5 g with a 0.25 g mark, or ±1 g with a 0.5 g mark), a smoothed dot
+/// with a short fading trail, decaying peak markers per direction and the
+/// total g underneath.
 ///
 /// The view only displays: the readout decides liveness (both axes fresh) and
 /// `GMeterModel` owns smoothing, peaks and the trail. A clock tick feeds the
@@ -17,6 +18,8 @@ struct MotorsportGMeter: View {
     static let ringDiameter: CGFloat = 84
     /// How often the model is fed between frames, for smooth motion and decay.
     static let tick: Duration = .milliseconds(33)
+    /// The ring's rescale when the range changes; instant under Reduce Motion.
+    static let rangeAnimation: Animation = .easeInOut(duration: 0.35)
 
     let readout: DriveReadout
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -33,8 +36,9 @@ struct MotorsportGMeter: View {
                 .tracking(1.4)
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(1)
-            GMeterFace(model: model, live: live, showsMotion: !reduceMotion)
+            GMeterFace(model: model, range: model.ringRange, live: live, showsMotion: !reduceMotion)
                 .frame(width: Self.ringDiameter, height: Self.ringDiameter)
+                .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
             valueRow(live: live)
         }
         .frame(width: Self.width)
@@ -88,34 +92,50 @@ struct MotorsportGMeter: View {
 }
 
 /// The dial itself, drawn from the model's presentation values (g, x right,
-/// y up, already clamped to the ring).
-private struct GMeterFace: View {
+/// y up) on a rim of `range` g.
+///
+/// `range` animates on its own while the model keeps updating, so a range
+/// change rescales the dot, peaks, trail and marks smoothly. Positions are
+/// clamped again to the drawn range, which lags the model's while expanding.
+private struct GMeterFace: View, Animatable {
     let model: GMeterModel
+    var range: Double
     let live: Bool
     /// Trail and glow; off under Reduce Motion. The dot and peaks still update.
     let showsMotion: Bool
+
+    var animatableData: Double {
+        get { range }
+        set { range = newValue }
+    }
 
     var body: some View {
         Canvas { context, size in
             let radius = min(size.width, size.height) / 2 - 2
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let range = model.configuration.ringRange
             func point(_ p: GMeterModel.Point) -> CGPoint {
-                CGPoint(x: center.x + CGFloat(p.x / range) * radius, y: center.y - CGFloat(p.y / range) * radius)
+                let p = p.clamped(toRadius: range)
+                return CGPoint(x: center.x + CGFloat(p.x / range) * radius, y: center.y - CGFloat(p.y / range) * radius)
             }
             func circle(_ r: CGFloat, at c: CGPoint = center) -> Path {
                 Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
             }
 
             let markColor = live ? Theme.Colors.textDisabled : Theme.Colors.surfaceRaised
-            // Crosshair, then the 0.5 g and 1.0 g rings.
+            // Crosshair, the dashed inner mark for the range, then the rim.
             var cross = Path()
             cross.move(to: CGPoint(x: center.x - radius, y: center.y))
             cross.addLine(to: CGPoint(x: center.x + radius, y: center.y))
             cross.move(to: CGPoint(x: center.x, y: center.y - radius))
             cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
             context.stroke(cross, with: .color(Theme.Colors.surfaceRaised), lineWidth: 1)
-            context.stroke(circle(radius * 0.5), with: .color(markColor), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            for mark in model.configuration.innerMarks(atRange: range) where mark.opacity > 0.01 && mark.value < range {
+                context.stroke(
+                    circle(radius * CGFloat(mark.value / range)),
+                    with: .color(markColor.opacity(mark.opacity)),
+                    style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                )
+            }
             context.stroke(circle(radius), with: .color(markColor), lineWidth: 1.5)
 
             guard live, let dot = model.dot else { return }

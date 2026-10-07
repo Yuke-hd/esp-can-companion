@@ -92,9 +92,13 @@ Pick checks relevant to the change rather than every row for every PR.
   Check that the dot is plotted only while both axes are live and moves toward
   the felt force (up when braking, left in a right-hander), and that the
   dropout, unverified and missing windows show no dot, "—" and the named axis
-  state. Use `driveLapsLayout1` to check a layout 1 controller: no data, with
+  state. The ring starts at ±0.5 g (dashed 0.25 g mark), expands to ±1 g
+  (dashed 0.5 g mark) in the hard-braking and cornering phases
+  ([#56](https://github.com/Yuke-hd/esp-can-companion/issues/56)), and returns
+  to ±0.5 g after the dropout. Use `driveLapsLayout1` to check a layout 1 controller: no data, with
   the rest of Drive unaffected. With Reduce Motion on, the trail and glow are
-  absent while the dot and peaks still update.
+  absent while the dot and peaks still update, and the range switches without
+  animating.
 
 Once full-app send/restart and `validationError` are available, check success only
 after active-configuration read-back, and structured rejection without changing
