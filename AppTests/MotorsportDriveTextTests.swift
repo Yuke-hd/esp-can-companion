@@ -118,6 +118,11 @@ final class MotorsportDriveTextTests: XCTestCase {
         XCTAssertEqual(value.gMeterAccessibilityText(GForce(longitudinal: 0.049, lateral: 0)), "G-meter, 0.0 g")
     }
 
+    func testGMeterRangeTextNamesTheActiveRingRadius() {
+        XCTAssertEqual(DriveReadout.gMeterRangeText(0.5), "±0.5 G")
+        XCTAssertEqual(DriveReadout.gMeterRangeText(1.0), "±1.0 G")
+    }
+
     func testGMeterNoDataNeverShowsZero() throws {
         let stalled = DriveReadout(frame: .unknown)
         var layout1 = DemoTelemetry()

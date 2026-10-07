@@ -104,6 +104,11 @@ extension DriveReadout {
         return Self.gText(smoothed.magnitude)
     }
 
+    /// The active ring radius beside the title, for example "±0.5 G".
+    static func gMeterRangeText(_ range: Double) -> String {
+        "±\(gText(range)) G"
+    }
+
     /// One combined label, for example "G-meter, 0.4 g braking, 0.7 g right".
     /// Directions name the car's acceleration (positive lateral is a right
     /// turn), not where the dot sits. A component that rounds to zero is

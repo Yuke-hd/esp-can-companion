@@ -5,7 +5,8 @@ import CompanionLink
 /// A friction-circle g-meter for the Drive `auxiliary` slot: an auto-ranging
 /// ring (±0.5 g with a 0.25 g mark, or ±1 g with a 0.5 g mark), a smoothed dot
 /// with a short fading trail, decaying peak markers per direction and the
-/// total g underneath.
+/// total g underneath. The active range is named beside the title; when it
+/// changes, the label and rim briefly light up in the accent colour.
 ///
 /// The view only displays: the readout decides liveness (both axes fresh) and
 /// `GMeterModel` owns smoothing, peaks and the trail. A clock tick feeds the
@@ -20,6 +21,9 @@ struct MotorsportGMeter: View {
     static let tick: Duration = .milliseconds(33)
     /// The ring's rescale when the range changes; instant under Reduce Motion.
     static let rangeAnimation: Animation = .easeInOut(duration: 0.35)
+    /// The range-change highlight: a quick rise, then a slower fade.
+    static let highlightRise: Animation = .easeOut(duration: 0.15)
+    static let highlightFade: Animation = .easeIn(duration: 0.6)
 
     let readout: DriveReadout
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,16 +31,14 @@ struct MotorsportGMeter: View {
     /// The latest sample, kept in state so the clock loop reads the current
     /// frame rather than the one captured when the task started.
     @State private var sample: GForce?
+    /// 0…1: how strongly the range label and rim are lit after a range change.
+    @State private var rangeHighlight = 0.0
 
     var body: some View {
         let live = readout.acceleration != nil && model.dot != nil
         VStack(spacing: Theme.Spacing.xxs) {
-            Text("G-METER")
-                .font(Theme.DriveTypography.label(10))
-                .tracking(1.4)
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .lineLimit(1)
-            GMeterFace(model: model, range: model.ringRange, live: live, showsMotion: !reduceMotion)
+            titleRow(live: live)
+            GMeterFace(model: model, range: model.ringRange, highlight: rangeHighlight, live: live, showsMotion: !reduceMotion)
                 .frame(width: Self.ringDiameter, height: Self.ringDiameter)
                 .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
             valueRow(live: live)
@@ -63,10 +65,39 @@ struct MotorsportGMeter: View {
             // without a dash frame, and missing data clears immediately.
             if new != nil || model.smoothed != nil { model.update(new, at: .now) }
         }
+        .onChange(of: model.ringRange) {
+            // Only a change the driver can see while data is live; a reset to
+            // the compact range on missing data is not announced.
+            guard !reduceMotion, readout.acceleration != nil, model.dot != nil else { return }
+            withAnimation(Self.highlightRise) {
+                rangeHighlight = 1
+            } completion: {
+                withAnimation(Self.highlightFade) { rangeHighlight = 0 }
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.gMeterAccessibilityText(model.smoothed))
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityIdentifier("drive.gmeter")
+    }
+
+    private func titleRow(live: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+            Text("G-METER")
+                .font(Theme.DriveTypography.label(10))
+                .tracking(1.4)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(DriveReadout.gMeterRangeText(model.ringRange))
+                .font(Theme.DriveTypography.label(9))
+                .monospacedDigit()
+                .foregroundStyle(rangeHighlight > 0.5 ? Theme.Colors.accent : (live ? Theme.Colors.textTertiary : Theme.Colors.textDisabled))
+                .scaleEffect(1 + 0.2 * rangeHighlight, anchor: .leading)
+                // A cross-fade rather than rolling digits, which pass through a
+                // misleading "±1.5" on the way from 0.5 to 1.0.
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
+        }
+        .lineLimit(1)
     }
 
     @ViewBuilder private func valueRow(live: Bool) -> some View {
@@ -100,13 +131,15 @@ struct MotorsportGMeter: View {
 private struct GMeterFace: View, Animatable {
     let model: GMeterModel
     var range: Double
+    /// 0…1: the accent glow on the rim after a range change.
+    var highlight: Double
     let live: Bool
     /// Trail and glow; off under Reduce Motion. The dot and peaks still update.
     let showsMotion: Bool
 
-    var animatableData: Double {
-        get { range }
-        set { range = newValue }
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(range, highlight) }
+        set { (range, highlight) = (newValue.first, newValue.second) }
     }
 
     var body: some View {
@@ -137,6 +170,9 @@ private struct GMeterFace: View, Animatable {
                 )
             }
             context.stroke(circle(radius), with: .color(markColor), lineWidth: 1.5)
+            if highlight > 0 {
+                context.stroke(circle(radius), with: .color(Theme.Colors.accent.opacity(highlight)), lineWidth: 1.5 + highlight)
+            }
 
             guard live, let dot = model.dot else { return }
 
