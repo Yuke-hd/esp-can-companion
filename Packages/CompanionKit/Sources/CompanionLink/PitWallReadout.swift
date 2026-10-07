@@ -107,7 +107,7 @@ public struct PitWallReadout: Equatable, Sendable {
     public var isTelemetryStarted: Bool?
     public var tiles: [Tile]
 
-    public init(frame: LiveSignalFrame, band: ConfigSummary.RPMBand? = nil) {
+    public init(frame: LiveSignalFrame, band: RPMBand? = nil) {
         rpmFreshness = Freshness(frame.engineRPM.availability)
         rpm = rpmFreshness.showsValue ? frame.engineRPM.value : nil
 
@@ -157,7 +157,7 @@ public struct PitWallReadout: Equatable, Sendable {
     }
 
     /// The RPM bar's full scale: a little past the highest RPM the config uses.
-    static func scale(_ band: ConfigSummary.RPMBand?) -> Double {
+    static func scale(_ band: RPMBand?) -> Double {
         let top = max(band?.fill?.to ?? 0, band?.redline ?? 0)
         guard top > 0, top.isFinite else { return defaultRPMScale }
         let scale = (top * 1.08 / 500).rounded(.up) * 500

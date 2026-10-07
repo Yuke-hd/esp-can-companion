@@ -62,16 +62,6 @@ final class ConfigSummaryTests: XCTestCase {
         XCTAssertNil(stack[2].color)
     }
 
-    func testRPMBand() throws {
-        let factory = ConfigSummary(try ControllerConfig(canonicalJSON: DemoController.factoryDocument))
-        XCTAssertEqual(factory.rpmBand.fill, .init(from: 0, to: 6500))
-        XCTAssertEqual(factory.rpmBand.redline, 6000)
-
-        let custom = ConfigSummary(try ControllerConfig(canonicalJSON: DemoController.customDocument))
-        XCTAssertNil(custom.rpmBand.fill)
-        XCTAssertEqual(custom.rpmBand.redline, 5800)
-    }
-
     func testProfileFollowsTheControllerSource() throws {
         let track = Preset(id: "track", name: "Track", summary: "", config: ControllerConfig(actions: [.init(name: "brake")]))
         // The controller's factory profile differs from the app's copy: still factory.

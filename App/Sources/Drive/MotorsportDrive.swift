@@ -637,7 +637,7 @@ private enum MotorsportDrivePreview {
             : .connected(.init(id: UUID(), name: "Demo Controller", maximumWriteLength: 182))
         let activeConfig = (try? ControllerConfig(canonicalJSON: DemoController.factoryDocument))
             .map { ConfigSummary($0, profile: .factory) }
-        let readout = DriveReadout(frame: frame, activeConfig: activeConfig, linkState: link)
+        let readout = DriveReadout(frame: frame, activeConfig: activeConfig, rpmBand: AppConfig.default.rpmBand, linkState: link)
         return MotorsportDriveView(
             readout: readout,
             signals: MotorsportSignals(frame: frame, readout: readout),

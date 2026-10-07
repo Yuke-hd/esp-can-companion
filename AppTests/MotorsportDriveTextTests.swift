@@ -212,6 +212,7 @@ final class MotorsportDriveTextTests: XCTestCase {
         let value = DriveReadout(
             frame: try LiveSignalFrame(decoding: DemoTelemetry().encoded, layoutVersion: DemoTelemetry().layoutVersion),
             activeConfig: config,
+            rpmBand: AppConfig.default.rpmBand,
             linkState: .connected(.init(id: UUID(), name: "Demo Controller", maximumWriteLength: 182)),
             framesPerSecond: 10
         )

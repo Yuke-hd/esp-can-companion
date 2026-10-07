@@ -65,10 +65,10 @@ public struct DriveReadout: Equatable, Sendable {
     public init(
         frame: LiveSignalFrame,
         activeConfig: ConfigSummary? = nil,
+        rpmBand band: RPMBand? = nil,
         linkState: LinkState = .unknown,
         framesPerSecond: Int = 0
     ) {
-        let band = activeConfig?.rpmBand
         let pitWall = PitWallReadout(frame: frame, band: band)
         self.pitWall = pitWall
 
