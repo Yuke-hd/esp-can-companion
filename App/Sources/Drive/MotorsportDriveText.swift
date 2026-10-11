@@ -45,7 +45,7 @@ struct MotorsportSignals: Equatable {
 // these decisions beside the screen lets tests cover signal state without
 // rendering SwiftUI.
 extension DriveReadout {
-    var rpmDisplayText: String { rpm.map { Int($0.rounded()).formatted() } ?? "—" }
+    var rpmDisplayText: String { rpm.map { String(Int($0.rounded())) } ?? "—" }
     var speedDisplayText: String { speedKPH.map(String.init) ?? "—" }
     var gearDisplayText: String { gear ?? "—" }
     // The selector belongs to the same central gear group. When the gear

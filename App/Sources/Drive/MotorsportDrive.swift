@@ -12,13 +12,21 @@ struct MotorsportDriveView: View {
     /// Why the live stream cannot be read, if it cannot.
     var telemetryFailure: String?
     let onExit: () -> Void
+    /// Whether the G-meter has the centre and the gear the corner slot.
+    @State private var gMeterCentred = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let leftActive = signals.leftLit
         let rightActive = signals.rightLit
         DriveScreen(
             slots: DriveScreenSlots(
-                backdrop: { MotorsportTurnGlow(left: leftActive, right: rightActive) },
+                backdrop: {
+                    ZStack {
+                        MotorsportLivery()
+                        MotorsportTurnGlow(left: leftActive, right: rightActive)
+                    }
+                },
                 shiftLights: { MotorsportShiftLights(readout: readout) },
                 leftIndicator: { MotorsportTurnArrow(
                     direction: .left,
@@ -30,7 +38,13 @@ struct MotorsportDriveView: View {
                     active: rightActive,
                     freshness: readout.turn.freshness
                 ) },
-                rpm: { MotorsportRPM(readout: readout) },
+                rpm: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        MotorsportRPM(readout: readout)
+                        Spacer(minLength: Theme.Spacing.sm)
+                        MotorsportTeamBadge()
+                    }
+                },
                 speed: { MotorsportMetric(
                     title: "KM/H",
                     value: readout.speedDisplayText,
@@ -38,14 +52,40 @@ struct MotorsportDriveView: View {
                     accessibilityText: readout.speedAccessibilityText,
                     identifier: "drive.speed"
                 ) },
-                gear: { MotorsportGear(readout: readout, selector: signals.selector, shifting: signals.isShifting) },
+                gear: {
+                    if gMeterCentred {
+                        MotorsportCentredGMeter(readout: readout)
+                    } else {
+                        gear(compact: false)
+                    }
+                },
                 sideMeters: { MotorsportSideMeters(readout: readout, brakePressed: signals.brakePressed) },
-                auxiliary: { MotorsportGMeter(readout: readout) },
+                auxiliary: {
+                    Group {
+                        if gMeterCentred {
+                            gear(compact: true)
+                        } else {
+                            MotorsportGMeter(readout: readout)
+                        }
+                    }
+                    // A tap on the corner swaps it with the centre.
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: swapCentre)
+                    .accessibilityAction(named: gMeterCentred ? "Show gear in centre" : "Show G-meter in centre", swapCentre)
+                },
                 link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
             ),
             onExit: onExit
         )
         .onAppear { Theme.DriveTypography.registerFonts() }
+    }
+
+    private func gear(compact: Bool) -> some View {
+        MotorsportGear(readout: readout, selector: signals.selector, shifting: signals.isShifting, compact: compact)
+    }
+
+    private func swapCentre() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { gMeterCentred.toggle() }
     }
 }
 
@@ -104,34 +144,75 @@ private struct MotorsportTurnArrow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        BlockArrow()
-            .fill(active ? MotorsportTurnGlow.amber : Theme.Colors.surfaceRaised)
-            .scaleEffect(x: direction == .left ? -1 : 1)
-            .frame(width: 64, height: 44)
-            .shadow(
-                color: MotorsportTurnGlow.amber.opacity(active && !reduceMotion ? 0.6 : 0),
-                radius: active && !reduceMotion ? 10 : 0
-            )
-            .accessibilityElement(children: .ignore)
+        Group {
+            if active && !reduceMotion {
+                // Flashes in step with the edge glow: bright and slightly
+                // larger at the flash, dimming between pulses.
+                ZStack {
+                    arrow(fill: MotorsportTurnGlow.amber)
+                    // Brighter than SDR white at the flash, on HDR displays.
+                    MotorsportTurnGlow.hdrAmber(BlockArrow())
+                        .scaleEffect(x: direction == .left ? -1 : 1)
+                        .frame(width: 64, height: 44)
+                }
+                    .phaseAnimator([1.0, 0.0]) { content, phase in
+                        content
+                            .opacity(0.45 + 0.55 * phase)
+                            .scaleEffect(1 + 0.08 * phase)
+                            .shadow(color: MotorsportTurnGlow.amber.opacity(0.9 * phase), radius: 18 * phase)
+                    } animation: { phase in
+                        MotorsportTurnGlow.pulse(phase == 1.0)
+                    }
+            } else {
+                arrow(fill: active ? MotorsportTurnGlow.amber : Theme.Colors.surfaceRaised)
+            }
+        }
+        .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(direction.title), \(active ? "on" : "off"), \(freshness.title)")
             .accessibilityIdentifier(direction == .left ? "drive.turn.left" : "drive.turn.right")
+    }
+
+    private func arrow(fill: Color) -> some View {
+        BlockArrow()
+            .fill(fill)
+            .scaleEffect(x: direction == .left ? -1 : 1)
+            .frame(width: 64, height: 44)
     }
 }
 
 /// Amber washing in from the screen edge on the side that is signalling,
-/// fading out about a quarter of the way across, and pulsing like a halogen
+/// fading out two-fifths of the way across, and pulsing like a halogen
 /// bulb: a near-instant flash to full, then a slow fade.
 private struct MotorsportTurnGlow: View {
     let left: Bool
     let right: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Share of the screen width each glow fades across: about a quarter,
-    /// as the owner asked, so it reaches the side gauges but not the gear.
-    private static let reach: CGFloat = 0.26
+    /// Share of the screen width each glow fades across: two-fifths, as the
+    /// owner asked, reaching past the side gauges toward the gear.
+    private static let reach: CGFloat = 0.4
 
     /// Orange-leaning amber, like a tail-light lens rather than a yellow warning.
     static let amber = Color(red: 1.0, green: 0.45, blue: 0.0)
+
+    /// The amber one stop brighter than SDR white allows, for the flashing
+    /// parts only, so on an HDR display the flash stands out from the rest
+    /// of the screen. Components are the amber's in linear sRGB, doubled.
+    static func hdrAmber<S: Shape>(_ shape: S) -> HDRFill<S> {
+        HDRFill(linearRed: 2, linearGreen: 0.34, linearBlue: 0, shape: shape)
+    }
+
+    private static let washOpacities: [Double] = [0.6, 0.18, 0]
+
+    /// The wash only half a stop over SDR white: it covers a large share of
+    /// the screen, so full flash brightness would dazzle at night.
+    private static func hdrWash(from start: UnitPoint, to end: UnitPoint) -> HDRGradient {
+        HDRGradient(
+            linearRed: 1.4, linearGreen: 0.24, linearBlue: 0,
+            opacities: washOpacities.map { CGFloat($0) },
+            startPoint: start, endPoint: end
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -143,21 +224,39 @@ private struct MotorsportTurnGlow: View {
         .accessibilityHidden(true)
     }
 
+    /// Halogen filament: near-instant flash to full, slow cool-down.
+    static func pulse(_ flashing: Bool) -> Animation {
+        flashing ? .linear(duration: 0.04) : .easeOut(duration: 0.6)
+    }
+
     @ViewBuilder private func glow(from start: UnitPoint, to end: UnitPoint) -> some View {
-        let gradient = LinearGradient(
-            colors: [Self.amber.opacity(0.32), Self.amber.opacity(0)],
-            startPoint: start,
-            endPoint: end
-        )
+        let wash = ZStack(alignment: start == .leading ? .leading : .trailing) {
+            if reduceMotion {
+                LinearGradient(
+                    colors: Self.washOpacities.map { Self.amber.opacity($0) },
+                    startPoint: start,
+                    endPoint: end
+                )
+            } else {
+                Self.hdrWash(from: start, to: end)
+            }
+            // A lit strip along the screen edge, like the lens itself.
+            Rectangle()
+                .fill(Self.amber)
+                .frame(width: 6)
+                .shadow(color: Self.amber, radius: 12)
+                .overlay {
+                    if !reduceMotion { Self.hdrAmber(Rectangle()) }
+                }
+        }
         if reduceMotion {
-            gradient.opacity(0.6).transition(.opacity)
+            wash.opacity(0.6).transition(.opacity)
         } else {
-            gradient
-                .phaseAnimator([1.0, 0.08]) { content, phase in
+            wash
+                .phaseAnimator([1.0, 0.05]) { content, phase in
                     content.opacity(phase)
                 } animation: { phase in
-                    // Halogen filament: near-instant flash to full, slow cool-down.
-                    phase == 1.0 ? .linear(duration: 0.04) : .easeOut(duration: 0.6)
+                    Self.pulse(phase == 1.0)
                 }
                 .transition(.opacity)
         }
@@ -189,13 +288,19 @@ private struct BlockArrow: Shape {
 /// values that are not current clear to a dash instead.
 private struct MotorsportLabelRow: View {
     let title: String
+    /// Which side of the title the livery hashes sit, or nil for none.
+    var hashes: HorizontalEdge?
 
     var body: some View {
-        Text(title)
-            .font(Theme.DriveTypography.label(11))
-            .tracking(1.6)
-            .foregroundStyle(Theme.Colors.textSecondary)
-            .lineLimit(1)
+        HStack(spacing: Theme.Spacing.xs) {
+            if hashes == .leading { MotorsportHashes() }
+            Text(title)
+                .font(Theme.DriveTypography.label(11))
+                .tracking(1.6)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(1)
+            if hashes == .trailing { MotorsportHashes() }
+        }
     }
 }
 
@@ -205,13 +310,22 @@ private struct MotorsportRPM: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            MotorsportLabelRow(title: "RPM")
+            MotorsportLabelRow(title: "RPM", hashes: .leading)
             Text(readout.rpmDisplayText)
                 .font(Theme.DriveTypography.numerals(metrics.numeralSize))
                 .foregroundStyle(rpmColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .driveNumeralLineHeight(metrics.numeralSize)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            // Overhang toward the screen edge, clear of the centre gauges.
+            MotorsportNumeralPlate(mirrored: false)
+                .padding(.leading, -Theme.Spacing.sm)
+                .padding(.top, -Theme.Spacing.xs)
+                // Room under the numeral for the accent bar and ticks.
+                .padding(.bottom, -Theme.Spacing.md)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(readout.rpmAccessibilityText)
@@ -235,13 +349,22 @@ private struct MotorsportMetric: View {
 
     var body: some View {
         VStack(alignment: alignment, spacing: Theme.Spacing.xs) {
-            MotorsportLabelRow(title: title)
+            MotorsportLabelRow(title: title, hashes: alignment == .trailing ? .trailing : .leading)
             Text(value)
                 .font(Theme.DriveTypography.numerals(metrics.numeralSize))
                 .foregroundStyle(value == "—" ? Theme.Colors.textDisabled : Theme.Colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .driveNumeralLineHeight(metrics.numeralSize)
+        }
+        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+        .background {
+            // Overhang toward the screen edge, clear of the centre gauges.
+            MotorsportNumeralPlate(mirrored: alignment == .trailing)
+                .padding(alignment == .trailing ? .trailing : .leading, -Theme.Spacing.sm)
+                .padding(.top, -Theme.Spacing.xs)
+                // Room under the numeral for the accent bar and ticks.
+                .padding(.bottom, -Theme.Spacing.md)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -264,17 +387,34 @@ private extension View {
 
 // MARK: - Centre gauges
 
+/// The G-meter enlarged into the centre slot: the ring as large as fits
+/// between the side gauges' arcs, with the total behind it and no title row.
+private struct MotorsportCentredGMeter: View {
+    let readout: DriveReadout
+
+    var body: some View {
+        // Narrower than the gear's inset: the round ring clears the brake and
+        // throttle captions in the corners, so only the arcs bound it.
+        MotorsportGMeter(readout: readout, fillsSpace: true)
+            .padding(.horizontal, Theme.Spacing.lg)
+    }
+}
+
 private struct MotorsportGear: View {
     /// Largest gear numeral, so it stays inside the side arcs on big phones.
     private static let maxNumeralSize: CGFloat = 240
     /// Share of the gauge height the gear numeral takes, leaving room for
     /// its label above and the link line below.
     private static let numeralShareOfGauge: CGFloat = 0.74
+    /// Gear numeral in the corner slot, about the G-meter ring's height.
+    private static let compactNumeralSize: CGFloat = 96
 
     let readout: DriveReadout
     /// The typed selector, or nil while the gear group is not current.
     let selector: SelectorPosition?
     let shifting: Bool
+    /// Drawn small in the corner slot, in the G-meter's footprint.
+    var compact = false
     @Environment(\.driveMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The selector shown in place of the gear while it changes, or nil.
@@ -285,7 +425,9 @@ private struct MotorsportGear: View {
     @State private var lastKnownSelector: SelectorPosition?
 
     var body: some View {
-        let size = min(Self.maxNumeralSize, metrics.gaugeHeight * Self.numeralShareOfGauge)
+        let size = compact
+            ? Self.compactNumeralSize
+            : min(Self.maxNumeralSize, metrics.gaugeHeight * Self.numeralShareOfGauge)
         let showsSelector = flyInSelector != nil
         VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.xs) {
@@ -327,8 +469,12 @@ private struct MotorsportGear: View {
         .accessibilityLabel(readout.gearAccessibilityText)
         .accessibilityIdentifier("drive.gear")
         // Keep the gear clear of the side gauges' arcs and captions.
-        .padding(.horizontal, MotorsportSideMeters.signalWidth)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, compact ? 0 : MotorsportSideMeters.signalWidth)
+        .frame(
+            maxWidth: compact ? MotorsportGMeter.width : .infinity,
+            maxHeight: compact ? nil : .infinity,
+            alignment: .top
+        )
     }
 
     /// Animates from the last strip position to `new`. Shifting and unknown

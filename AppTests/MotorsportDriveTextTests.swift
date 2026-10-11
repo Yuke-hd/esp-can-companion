@@ -23,6 +23,12 @@ final class MotorsportDriveTextTests: XCTestCase {
         XCTAssertEqual(value.gearAccessibilityText, "Gear 4, Drive, Unverified")
     }
 
+    func testRPMHasNoThousandsSeparator() throws {
+        let value = try readout { $0.engineRPM = 3256 }
+
+        XCTAssertEqual(value.rpmDisplayText, "3256")
+    }
+
     func testStaleAndStalledMetricsUsePlaceholders() throws {
         let stale = try readout {
             $0.statuses[0] = .stale
