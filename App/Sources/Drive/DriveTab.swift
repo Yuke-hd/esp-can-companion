@@ -8,6 +8,7 @@ struct DriveTab: View {
     let model: AppModel
     let onExit: () -> Void
     @State private var telemetry: LiveTelemetry?
+    @AppStorage("drive.style") private var style: DriveStyle = .motorsport
 
     init(model: AppModel, onExit: @escaping () -> Void) {
         self.model = model
@@ -27,12 +28,28 @@ struct DriveTab: View {
             framesPerSecond: telemetry?.framesPerSecond ?? 0
         )
 
-        MotorsportDriveView(
-            readout: readout,
-            signals: MotorsportSignals(frame: frame, readout: readout),
-            telemetryFailure: telemetry?.failure,
-            onExit: onExit
-        )
+        let signals = MotorsportSignals(frame: frame, readout: readout)
+
+        Group {
+            switch style {
+            case .motorsport:
+                MotorsportDriveView(
+                    readout: readout,
+                    signals: signals,
+                    telemetryFailure: telemetry?.failure,
+                    onExit: onExit,
+                    onSwitchStyle: switchStyle
+                )
+            case .cluster:
+                ClusterDriveView(
+                    readout: readout,
+                    signals: signals,
+                    rpmBand: AppConfig.default.rpmBand,
+                    onExit: onExit,
+                    onSwitchStyle: switchStyle
+                )
+            }
+        }
             .task(id: session?.phase) {
                 guard let session, session.phase == .ready else { return }
                 let liveTelemetry: LiveTelemetry
@@ -45,5 +62,21 @@ struct DriveTab: View {
                 }
                 await liveTelemetry.run()
             }
+    }
+
+    private func switchStyle() {
+        style = style.next
+    }
+}
+
+/// The Drive presentations the driver can switch between; the choice is kept
+/// across launches.
+enum DriveStyle: String, CaseIterable {
+    case motorsport
+    case cluster
+
+    var next: DriveStyle {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
     }
 }
