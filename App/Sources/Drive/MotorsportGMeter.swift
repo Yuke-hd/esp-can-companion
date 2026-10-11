@@ -26,6 +26,13 @@ struct MotorsportGMeter: View {
     static let highlightFade: Animation = .easeIn(duration: 0.6)
 
     let readout: DriveReadout
+    /// In the centre slot: the ring fills the space, its marks and dot growing
+    /// with it, the title row is hidden and the total sits large behind the ring.
+    var fillsSpace = false
+    /// The total's size behind the centre ring, as a share of its diameter.
+    private static let backdropValueShare: CGFloat = 0.3
+    /// Dimmed so the dot, crosshair and peaks stay readable over it.
+    private static let backdropValueOpacity = 0.45
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = GMeterModel()
     /// The latest sample, kept in state so the clock loop reads the current
@@ -37,13 +44,29 @@ struct MotorsportGMeter: View {
     var body: some View {
         let live = readout.acceleration != nil && model.dot != nil
         VStack(spacing: Theme.Spacing.xxs) {
-            titleRow(live: live)
+            if !fillsSpace { titleRow(live: live) }
             GMeterFace(model: model, range: model.ringRange, highlight: rangeHighlight, live: live, showsMotion: !reduceMotion)
-                .frame(width: Self.ringDiameter, height: Self.ringDiameter)
+                .aspectRatio(1, contentMode: .fit)
+                .frame(
+                    maxWidth: fillsSpace ? .infinity : Self.ringDiameter,
+                    maxHeight: fillsSpace ? .infinity : Self.ringDiameter
+                )
                 .animation(reduceMotion ? nil : Self.rangeAnimation, value: model.ringRange)
-            valueRow(live: live)
+                .background {
+                    if fillsSpace {
+                        GeometryReader { proxy in
+                            valueRow(live: live, size: min(proxy.size.width, proxy.size.height) * Self.backdropValueShare)
+                                .opacity(Self.backdropValueOpacity)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+                    }
+                }
+            if !fillsSpace {
+                valueRow(live: live, size: 20)
+                    .fixedSize()
+            }
         }
-        .frame(width: Self.width)
+        .frame(maxWidth: fillsSpace ? .infinity : Self.width, maxHeight: fillsSpace ? .infinity : nil)
         // The clock only runs while there is data: with no sample the model
         // is already cleared and there is nothing to smooth or decay, so an
         // idle meter does not redraw. The id restarts the loop when data returns.
@@ -102,21 +125,21 @@ struct MotorsportGMeter: View {
         .lineLimit(1)
     }
 
-    @ViewBuilder private func valueRow(live: Bool) -> some View {
+    @ViewBuilder private func valueRow(live: Bool, size valueSize: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xxs) {
             Text(readout.gMeterValueText(model.smoothed))
-                .font(Theme.DriveTypography.numerals(20))
+                .font(Theme.DriveTypography.numerals(valueSize))
                 .foregroundStyle(live ? Theme.Colors.textPrimary : Theme.Colors.textDisabled)
                 .monospacedDigit()
             if let status = readout.gMeterStatusText {
                 Text(status)
-                    .font(Theme.DriveTypography.label(8))
+                    .font(Theme.DriveTypography.label(valueSize * 0.4))
                     .tracking(0.8)
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .minimumScaleFactor(0.7)
             } else {
                 Text("G")
-                    .font(Theme.DriveTypography.label(9))
+                    .font(Theme.DriveTypography.label(valueSize * 0.45))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
@@ -146,7 +169,9 @@ private struct GMeterFace: View, Animatable {
 
     var body: some View {
         Canvas { context, size in
-            let radius = min(size.width, size.height) / 2 - 2
+            // Strokes, ticks and the dot grow with the ring past its corner size.
+            let k = max(1, min(size.width, size.height) / MotorsportGMeter.ringDiameter)
+            let radius = min(size.width, size.height) / 2 - 2 * k
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             func point(_ p: GMeterModel.Point) -> CGPoint {
                 let p = p.clamped(toRadius: range)
@@ -163,17 +188,17 @@ private struct GMeterFace: View, Animatable {
             cross.addLine(to: CGPoint(x: center.x + radius, y: center.y))
             cross.move(to: CGPoint(x: center.x, y: center.y - radius))
             cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
-            context.stroke(cross, with: .color(Theme.Colors.surfaceRaised), lineWidth: 1)
+            context.stroke(cross, with: .color(Theme.Colors.surfaceRaised), lineWidth: k)
             for mark in model.configuration.innerMarks(atRange: range) where mark.opacity > 0.01 && mark.value < range {
                 context.stroke(
                     circle(radius * CGFloat(mark.value / range)),
                     with: .color(markColor.opacity(mark.opacity)),
-                    style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                    style: StrokeStyle(lineWidth: k, dash: [2 * k, 3 * k])
                 )
             }
-            context.stroke(circle(radius), with: .color(markColor), lineWidth: 1.5)
+            context.stroke(circle(radius), with: .color(markColor), lineWidth: 1.5 * k)
             if highlight > 0 {
-                context.stroke(circle(radius), with: .color(Theme.Colors.accent.opacity(highlight)), lineWidth: 1.5 + highlight)
+                context.stroke(circle(radius), with: .color(Theme.Colors.accent.opacity(highlight)), lineWidth: (1.5 + highlight) * k)
             }
 
             guard live, let dot = model.dot else { return }
@@ -184,13 +209,13 @@ private struct GMeterFace: View, Animatable {
                 let horizontal = direction == .left || direction == .right
                 var tick = Path()
                 if horizontal {
-                    tick.move(to: CGPoint(x: at.x, y: at.y - 4))
-                    tick.addLine(to: CGPoint(x: at.x, y: at.y + 4))
+                    tick.move(to: CGPoint(x: at.x, y: at.y - 4 * k))
+                    tick.addLine(to: CGPoint(x: at.x, y: at.y + 4 * k))
                 } else {
-                    tick.move(to: CGPoint(x: at.x - 4, y: at.y))
-                    tick.addLine(to: CGPoint(x: at.x + 4, y: at.y))
+                    tick.move(to: CGPoint(x: at.x - 4 * k, y: at.y))
+                    tick.addLine(to: CGPoint(x: at.x + 4 * k, y: at.y))
                 }
-                context.stroke(tick, with: .color(Theme.Colors.signalYellow), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                context.stroke(tick, with: .color(Theme.Colors.signalYellow), style: StrokeStyle(lineWidth: 2 * k, lineCap: .round))
             }
 
             if showsMotion {
@@ -198,7 +223,7 @@ private struct GMeterFace: View, Animatable {
                 for sample in model.trail.dropLast() {
                     let fade = max(0, 1 - Self.seconds(sample.age) / window)
                     context.fill(
-                        circle(2 + 2 * fade, at: point(sample.position)),
+                        circle((2 + 2 * fade) * k, at: point(sample.position)),
                         with: .color(Theme.Colors.accent.opacity(0.5 * fade))
                     )
                 }
@@ -207,10 +232,10 @@ private struct GMeterFace: View, Animatable {
             let dotCenter = point(dot)
             if showsMotion {
                 var glow = context
-                glow.addFilter(.shadow(color: Theme.Colors.accent.opacity(0.8), radius: 6))
-                glow.fill(circle(6, at: dotCenter), with: .color(Theme.Colors.accent))
+                glow.addFilter(.shadow(color: Theme.Colors.accent.opacity(0.8), radius: 6 * k))
+                glow.fill(circle(6 * k, at: dotCenter), with: .color(Theme.Colors.accent))
             } else {
-                context.fill(circle(6, at: dotCenter), with: .color(Theme.Colors.accent))
+                context.fill(circle(6 * k, at: dotCenter), with: .color(Theme.Colors.accent))
             }
         }
         .accessibilityHidden(true)
