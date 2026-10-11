@@ -36,6 +36,18 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Wait for simulator
+        # CoreSimulator can still be loading when a job starts, so xcodebuild
+        # sees no iOS devices and fails the destination lookup.
+        run: |
+          for _ in $(seq 1 18); do
+            if xcrun simctl list devices available | grep -q "iPhone 16 Pro ("; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::iPhone 16 Pro simulator did not become available"
+          xcrun simctl list devices available
+          exit 1
+
       - name: Test CompanionKit package
         working-directory: Packages/CompanionKit
         run: |
@@ -79,6 +91,18 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Wait for simulator
+        # CoreSimulator can still be loading when a job starts, so xcodebuild
+        # sees no iOS devices and fails the destination lookup.
+        run: |
+          for _ in $(seq 1 18); do
+            if xcrun simctl list devices available | grep -q "iPhone 16 Pro ("; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::iPhone 16 Pro simulator did not become available"
+          xcrun simctl list devices available
+          exit 1
 
       - name: Run UI tests
         run: |
