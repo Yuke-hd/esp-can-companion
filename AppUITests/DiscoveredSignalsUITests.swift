@@ -81,7 +81,10 @@ final class DiscoveredSignalsUITests: XCTestCase {
 
     func testUnavailableScenariosShowNoDiscoveredValues() {
         for scenario in ["discoveredUnsupported", "discoveredUnusable", "discoveredCatalogFailure"] {
-            open(scenario)
+            let failure = scenario == "discoveredCatalogFailure"
+                ? "The controller's signal catalog could not be read."
+                : "Live signals are not supported by this controller."
+            open(scenario, dashboardFailure: failure)
             assertState("Telemetry unavailable")
             XCTAssertFalse(row("example.enabled").exists)
             capture(scenario + "-unavailable")
@@ -108,12 +111,17 @@ final class DiscoveredSignalsUITests: XCTestCase {
         closeSheet()
     }
 
-    private func open(_ scenario: String, largeText: Bool = false) {
+    private func open(_ scenario: String, largeText: Bool = false, dashboardFailure: String? = nil) {
         app.launchArguments = ["-FakeController", "YES", "-DemoScenario", scenario]
         if largeText {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
         app.launch()
+        if let dashboardFailure {
+            // Failure text changes the telemetry card's height. Wait for that
+            // expected terminal state before calculating the sheet-button tap.
+            XCTAssertTrue(app.staticTexts[dashboardFailure].waitForExistence(timeout: 35))
+        }
         openSheet()
     }
 
