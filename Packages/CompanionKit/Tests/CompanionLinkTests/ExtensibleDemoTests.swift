@@ -5,18 +5,120 @@ import CompanionProtocol
 
 @MainActor
 final class ExtensibleDemoTests: XCTestCase {
-    private func connected(_ demo: DemoController) async throws -> (FakeRadio, BLETransport.FakeController, ControllerSession) {
+    private func connected(_ demo: DemoController, latency: TimeInterval = 0,
+                           streamBeforeConnectFor: Duration? = nil) async throws -> (FakeRadio, BLETransport.FakeController, ControllerSession) {
         let scheduler = MainActorScheduler()
         let peripheral = BLETransport.FakeController()
-        let radio = FakeRadio(controllers: [peripheral], scheduler: scheduler, latency: 0)
+        let radio = FakeRadio(controllers: [peripheral], scheduler: scheduler, latency: latency)
         demo.attach(to: radio)
         let manager = ConnectionManager(radio: radio,
                                         store: InMemoryDeviceStore(rememberedDeviceID: peripheral.id), scheduler: scheduler)
         let session = ControllerSession(connection: manager)
+        if let streamBeforeConnectFor {
+            demo.streamLiveSignals(on: radio, from: peripheral.id, stopAfter: streamBeforeConnectFor)
+        }
         manager.start()
-        for _ in 0..<200 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<800 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertEqual(session.phase, .ready)
         return (radio, peripheral, session)
+    }
+
+    func testExplicitSelectionOmitsRecordsAndKeepsOtherSignalClockIndependent() throws {
+        let fixture = try DemoSignalCatalog(token: 2, entries: [
+            .init(handle: 1, key: "first", type: .number), .init(handle: 2, key: "second", type: .number),
+        ])
+        let readings: [String: SignalReading<ExtensibleSignalValue>] = [
+            "first": .init(availability: .fresh, value: .number(1)),
+            "second": .init(availability: .fresh, value: .number(2)),
+        ]
+        let start = ContinuousClock.now
+        var feed = ExtensibleSignalFeed()
+        feed.install(catalog: fixture.catalog)
+        _ = feed.receive(try fixture.packets(sequence: 0, readings: readings)[0], at: start)
+        let partial = try fixture.packets(sequence: 1, readings: readings, selecting: [2])[0]
+        XCTAssertEqual(try ExtensibleLiveSignalPacket(decoding: partial).records.map(\.handle), [2])
+        _ = feed.receive(try fixture.packets(sequence: 1, readings: [:], selecting: [])[0], at: start + .seconds(1))
+        _ = feed.receive(partial, at: start + .seconds(2))
+        XCTAssertEqual(feed.snapshot(at: start + .milliseconds(2999)).reading(for: "first")?.value, .number(1))
+        let expired = feed.snapshot(at: start + .seconds(3))
+        XCTAssertNil(expired.reading(for: "first")?.value)
+        XCTAssertEqual(expired.reading(for: "second")?.value, .number(2))
+        XCTAssertFalse(expired.isStalled)
+        XCTAssertTrue(try ExtensibleLiveSignalPacket(decoding: fixture.packets(sequence: 2, readings: readings, selecting: [])[0]).records.isEmpty)
+        XCTAssertThrowsError(try fixture.packets(sequence: 0, readings: readings, selecting: [99]))
+        XCTAssertEqual(try ExtensibleLiveSignalPacket(decoding: fixture.packets(sequence: 0, readings: [:])[0]).records.count, 2)
+    }
+
+    func testNegotiatedPartialRecordsRetainThenExpireWhilePeerKeepsUpdating() async throws {
+        let fixture = try DemoSignalCatalog(token: 3, entries: [
+            .init(handle: 1, key: "first", type: .number), .init(handle: 2, key: "second", type: .number),
+        ])
+        let demo = DemoController(signalCatalog: fixture)
+        let (radio, peripheral, session) = try await connected(demo)
+        demo.streamLiveSignals(on: radio, from: peripheral.id, extensibleFrames: { seconds, _ in [
+            "first": .init(availability: .fresh, value: .number(1)),
+            "second": .init(availability: .fresh, value: .number(Float(seconds))),
+        ] }, extensibleSelection: { $0 < 0.2 ? nil : [2] })
+        defer { demo.liveSignalTask?.cancel(); session.connection.disconnect() }
+        let states = await session.client.extensibleLiveSignals()
+        var current: ExtensibleSignalSnapshot?
+        let consumer = Task { @MainActor in
+            for await state in states { if case .active(let value) = state { current = value } }
+        }
+        defer { consumer.cancel() }
+        for _ in 0..<200 where current?.reading(for: "first")?.value == nil { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(current?.reading(for: "first")?.value, .number(1))
+        for _ in 0..<200 {
+            if case .number(let number) = current?.reading(for: "second")?.value, number >= 0.5 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(current?.reading(for: "first")?.value, .number(1), "omission must retain the reading until its own deadline")
+        for _ in 0..<800 where current?.reading(for: "first")?.value != nil { try await Task.sleep(for: .milliseconds(5)) }
+        let expired = try XCTUnwrap(current)
+        XCTAssertNil(expired.reading(for: "first")?.value)
+        XCTAssertEqual(expired.reading(for: "second")?.availability, .fresh)
+        XCTAssertNotNil(expired.reading(for: "second")?.value)
+        XCTAssertFalse(expired.isStalled)
+    }
+
+    func testMalformedAndDroppedPacketTransformsDoNotRefreshNegotiatedStream() async throws {
+        for malformed in [true, false] {
+            let demo = DemoController()
+            let (radio, peripheral, session) = try await connected(demo)
+            demo.streamLiveSignals(on: radio, from: peripheral.id, transformExtensiblePackets: { seconds, packets in
+                seconds < 0.2 ? packets : (malformed ? packets.map { $0 + Data([1]) } : [])
+            })
+            defer { demo.liveSignalTask?.cancel(); session.connection.disconnect() }
+            let states = await session.client.extensibleLiveSignals()
+            var current: ExtensibleSignalSnapshot?
+            let consumer = Task { @MainActor in
+                for await state in states { if case .active(let value) = state { current = value } }
+            }
+            defer { consumer.cancel() }
+            for _ in 0..<200 where current?.reading(for: "vehicle.engine_rpm")?.value == nil { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertNotNil(current?.reading(for: "vehicle.engine_rpm")?.value)
+            for _ in 0..<600 where current?.isStalled != true { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertEqual(current?.isStalled, true)
+            XCTAssertNil(current?.reading(for: "vehicle.engine_rpm")?.value)
+        }
+    }
+
+    func testSlowStartupGetsValidFramesBeforeStopAfterThenStalls() async throws {
+        let demo = DemoController()
+        let (radio, _, session) = try await connected(demo, latency: 0.08, streamBeforeConnectFor: .milliseconds(250))
+        defer { demo.liveSignalTask?.cancel(); session.connection.disconnect() }
+        let states = await session.client.extensibleLiveSignals()
+        var current: ExtensibleSignalSnapshot?
+        let consumer = Task { @MainActor in
+            for await state in states { if case .active(let value) = state { current = value } }
+        }
+        defer { consumer.cancel() }
+        for _ in 0..<400 where current?.reading(for: "vehicle.engine_rpm")?.value == nil { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertNotNil(current?.reading(for: "vehicle.engine_rpm")?.value, "startup exceeds stopAfter but active interval must still run")
+        for _ in 0..<600 where current?.isStalled != true { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(current?.isStalled, true)
+        XCTAssertNil(current?.reading(for: "vehicle.engine_rpm")?.value)
+        XCTAssertEqual(radio.notificationRequests.filter { $0.enabled }.map(\.characteristic), [CompanionGATT.extensibleLiveSignals])
     }
 
     func testNegotiatedDemoUsesCompleteCatalogAndOnlyExtensibleNotifier() async throws {
