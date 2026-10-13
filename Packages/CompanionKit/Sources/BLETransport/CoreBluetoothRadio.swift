@@ -9,7 +9,7 @@ import Foundation
 /// and hand back the pending connection (`bluetooth-central` background mode).
 @MainActor
 public final class CoreBluetoothRadio: NSObject, BLERadio {
-    public static let defaultRestoreIdentifier = "BLETransport.central"
+    public nonisolated static let defaultRestoreIdentifier = "BLETransport.central"
 
     public var onEvent: (@MainActor (RadioEvent) -> Void)?
 

@@ -257,7 +257,7 @@ extension DemoController {
         on radio: FakeRadio,
         from peripheral: PeripheralID,
         stopAfter: Duration? = nil,
-        frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = DemoTelemetry.drive,
+        frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = { DemoTelemetry.drive(at: $0, sequence: $1) },
         extensibleFrames: (@Sendable (Double, UInt16) -> [String: SignalReading<ExtensibleSignalValue>])? = nil,
         extensibleSelection: (@Sendable (Double) -> Set<UInt16>?)? = nil,
         transformExtensiblePackets: (@Sendable (Double, [Data]) -> [Data])? = nil

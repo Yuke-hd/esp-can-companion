@@ -86,9 +86,9 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             }
         }
         let frames: @Sendable (Double, UInt8) -> DemoTelemetry = switch self {
-        case .selectorCycle: DemoTelemetry.selectorCycle
-        case .driveLaps, .driveLapsLayout1: DemoTelemetry.driveLaps
-        default: DemoTelemetry.drive
+        case .selectorCycle: { DemoTelemetry.selectorCycle(at: $0, sequence: $1) }
+        case .driveLaps, .driveLapsLayout1: { DemoTelemetry.driveLaps(at: $0, sequence: $1) }
+        default: { DemoTelemetry.drive(at: $0, sequence: $1) }
         }
         if isDiscoveredJourney {
             startJourney(demo: demo, radio: radio, peripheral: peripheral.id)
