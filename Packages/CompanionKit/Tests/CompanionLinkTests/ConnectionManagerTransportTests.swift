@@ -296,6 +296,91 @@ final class ConnectionManagerTransportTests: XCTestCase {
         bench.scheduler.runUntilIdle()
         XCTAssertEqual(events.values, ["frame"])
     }
+    func testNegotiationThroughManagerSelectsOnlyExtensibleAndClearsOnRemoteLifecycleLoss() async throws {
+        for loss in 0..<3 {
+            var info = DemoController.defaultDeviceInfo
+            info.protocolMinor = 1
+            info.extensionVersion = 1
+            info.extensionFlags = 1
+            let bench = Bench(demo: DemoController(deviceInfo: info))
+            let fallback = bench.radio.readHandler
+            let body = Data([1, 0, 1, 1, 0, 120, 2, 1, 0, 1, 3, 4, 0]) + Data("none".utf8)
+                + Data([4, 9, 0]) + Data("reference".utf8)
+            let document = Data([1, 1, 0, UInt8(body.count), 0]) + body
+            let page = Data([1, 1, 0, 0, 0, UInt8(document.count), 0, 0, 0, UInt8(document.count), 0]) + document
+            let reads = LockedEvents()
+            bench.radio.readHandler = { id, uuid in
+                if uuid == CompanionGATT.signalCatalog { reads.append("complete catalog"); return .success(page) }
+                return fallback?(id, uuid) ?? .failure(.characteristicNotFound(uuid))
+            }
+            bench.radio.notificationHandler = { uuid, enabled in
+                if uuid == CompanionGATT.extensibleLiveSignals && enabled {
+                    XCTAssertEqual(reads.values, ["complete catalog"])
+                }
+                return nil
+            }
+            let client = CompanionClient(transport: ConnectionManagerTransport(manager: bench.manager))
+            await bench.connect()
+            var infoRead = false
+            let read = Task { try await client.readDeviceInfo(); infoRead = true }
+            await bench.settle { infoRead }
+            try await read.value
+            let values = TransportTelemetryValues()
+            let consumer = Task { for await state in await client.extensibleLiveSignals() { values.latest = state } }
+            await bench.settle { if case .active = values.latest { return true }; return false }
+            XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+            XCTAssertFalse(bench.radio.notificationRequests.contains { $0.characteristic == CompanionGATT.liveSignals && $0.enabled })
+            bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals,
+                data: Data([1, 0, 0, 1, 1, 0, 0, 0, 5, 1, 0, 1, 9, 1]), immediately: true)
+            await bench.settle { if case .active(let snapshot) = values.latest { return snapshot.reading(for: "x")?.value == .boolean(true) }; return false }
+            switch loss {
+            case 0: bench.manager.disconnect()
+            case 1: bench.radio.onEvent?(.liveNotifierStopped(bench.peripheral.id, CompanionGATT.extensibleLiveSignals, nil))
+            default: bench.radio.onEvent?(.liveNotifierStopped(bench.peripheral.id, CompanionGATT.extensibleLiveSignals, .att(5)))
+            }
+            await bench.settle { values.latest == .unavailable(.notifierEnded) }
+            await consumer.value
+            if loss == 0 {
+                // ControllerSession owns the actual disconnect reset in the app.
+                await client.reset()
+                let catalog = await client.signalCatalog
+                XCTAssertNil(catalog)
+            } else {
+                var configRead = false
+                let read = Task { _ = try await client.readConfigStatus(); configRead = true }
+                await bench.settle { configRead }
+                try await read.value
+                let catalog = await client.signalCatalog
+                XCTAssertNotNil(catalog)
+            }
+            XCTAssertNil(bench.manager.selectedLiveNotifier)
+        }
+    }
+
+    func testMissingRealEndpointLeavesConfigConnectionUsableWithoutLiveFallback() async throws {
+        for missing in [CompanionGATT.signalCatalog, CompanionGATT.extensibleLiveSignals] {
+            var info = DemoController.defaultDeviceInfo
+            info.protocolMinor = 1
+            info.extensionVersion = 1
+            info.extensionFlags = 1
+            let bench = Bench(demo: DemoController(deviceInfo: info))
+            bench.radio.update(bench.peripheral.id) { $0.availableCharacteristics.remove(missing) }
+            let client = CompanionClient(transport: ConnectionManagerTransport(manager: bench.manager))
+            await bench.connect()
+            var ready = false
+            let read = Task { try await client.readDeviceInfo(); _ = try await client.readConfigStatus(); ready = true }
+            await bench.settle { ready }
+            try await read.value
+            let values = TransportTelemetryValues()
+            let consumer = Task { for await state in await client.extensibleLiveSignals() { values.latest = state } }
+            await bench.settle { values.latest == .unavailable(.missingEndpoints) }
+            await consumer.value
+            XCTAssertTrue(bench.manager.state.isConnected)
+            XCTAssertNil(bench.manager.selectedLiveNotifier)
+            XCTAssertFalse(bench.radio.notificationRequests.contains { $0.enabled && ($0.characteristic == CompanionGATT.liveSignals || $0.characteristic == CompanionGATT.extensibleLiveSignals) })
+        }
+    }
+
 }
 
 final class LockedEvents: @unchecked Sendable {
@@ -313,4 +398,9 @@ final class LockedEvents: @unchecked Sendable {
         defer { lock.unlock() }
         return storage
     }
+}
+
+@MainActor
+private final class TransportTelemetryValues {
+    var latest: CompanionLiveTelemetryState?
 }

@@ -572,3 +572,397 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(next?.longitudinalAcceleration, .unknown)
     }
 }
+
+final class ExtensibleTelemetryNegotiationTests: XCTestCase {
+    func testProtocol10KeepsConfigButHasExplicitUnavailableTelemetryWithoutFallback() async throws {
+        let fake = FakeController()
+        let transport = NegotiationTransport(fake)
+        let client = CompanionClient(transport: transport)
+        try await client.readDeviceInfo()
+        let stream = await client.extensibleLiveSignals()
+        var iterator = stream.makeAsyncIterator()
+        var state = await iterator.next()
+        if state == .discovering { state = await iterator.next() }
+        XCTAssertEqual(state, .unavailable(.capabilityUnavailable))
+        XCTAssertTrue(transport.activations.get().isEmpty)
+        XCTAssertTrue(transport.subscriptions.get().isEmpty)
+        _ = try await client.readConfigStatus()
+        XCTAssertEqual(fake.subscriberCount, 0)
+    }
+    private func fixture() throws -> [String: Any] {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "extensible-live-v1", withExtension: "json", subdirectory: "Fixtures/golden-vectors"))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    }
+
+    private func bytes(_ hex: String) -> Data {
+        let pairs = stride(from: 0, to: hex.count, by: 2).map { offset -> UInt8 in
+            let start = hex.index(hex.startIndex, offsetBy: offset)
+            return UInt8(hex[start..<hex.index(start, offsetBy: 2)], radix: 16)!
+        }
+        return Data(pairs)
+    }
+
+    private func connected(timeout: Duration = .seconds(1)) async throws -> (FakeController, NegotiationTransport, CompanionClient) {
+        let fake = FakeController()
+        fake.deviceInfo.protocolMinor = 1
+        fake.deviceInfo.extensionVersion = 1
+        fake.deviceInfo.extensionFlags = 1
+        fake.catalogToken = 0x12345678
+        fake.catalogDocument = bytes((try fixture()["catalog"] as! [String: Any])["document_hex"] as! String)
+        let transport = NegotiationTransport(fake)
+        let client = CompanionClient(transport: transport, timeouts: .init(operation: timeout))
+        try await client.readDeviceInfo()
+        return (fake, transport, client)
+    }
+
+    private func waitUntil(_ predicate: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !predicate() {
+            if ContinuousClock.now >= deadline { XCTFail("Timed out waiting for telemetry state", file: file, line: line); throw TestTimeout() }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+    }
+
+    private func active(_ recorder: TelemetryRecorder) async throws -> ExtensibleSignalSnapshot {
+        try await waitUntil { if case .active = recorder.latest { return true }; return false }
+        guard case .active(let snapshot) = recorder.latest else { throw TestTimeout() }
+        return snapshot
+    }
+
+    private func unavailable(_ recorder: TelemetryRecorder) async throws -> CompanionLiveTelemetryUnavailableReason {
+        try await waitUntil { if case .unavailable = recorder.latest { return true }; return false }
+        guard case .unavailable(let reason) = recorder.latest else { throw TestTimeout() }
+        return reason
+    }
+
+    func testKnownMinorAndUsableExtensionSubscribeOnlyAfterCompleteDiscoveryAndNeverRenegotiateNormalPackets() async throws {
+        let (fake, transport, client) = try await connected()
+        XCTAssertFalse(fake.deviceInfo.compatibility().hasNewerMinor)
+        fake.catalogPageLength = 11
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { recorder.cancel() }
+        let initial = try await active(recorder)
+        XCTAssertEqual(initial.catalog?.descriptors.count, 7)
+        XCTAssertTrue(initial.signals.allSatisfy { $0.reading == .unknown })
+        XCTAssertEqual(transport.activations.get(), [.extensibleLiveSignals])
+        XCTAssertEqual(transport.subscriptions.get(), [.extensibleLiveSignals])
+        let reads = transport.catalogReads.get()
+        for sequence: UInt8 in 1...5 {
+            fake.notify(.extensibleLiveSignals, Data([1, sequence, 0, 1, 0x78, 0x56, 0x34, 0x12, 5, 1, 0, 1, 9, 1]))
+        }
+        try await waitUntil { if case .active(let snapshot) = recorder.latest { return snapshot.sequence == 5 }; return false }
+        let snapshot = try await active(recorder)
+        XCTAssertEqual(snapshot.reading(for: "example.enabled"), SignalReading(availability: .fresh, value: .boolean(true)))
+        XCTAssertEqual(transport.catalogReads.get(), reads)
+        XCTAssertEqual(transport.activations.get().count, 1)
+        _ = try await client.readConfigStatus()
+    }
+
+    func testAbsentUnknownAndUnusableCapabilitiesNeverReadCatalogOrSubscribe() async throws {
+        for capability in [(UInt8?.none, UInt8?.none), (2, 1), (1, 0), (1, nil)] {
+            let (fake, transport, client) = try await connected()
+            fake.deviceInfo.extensionVersion = capability.0
+            fake.deviceInfo.extensionFlags = capability.1
+            try await client.readDeviceInfo()
+            let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+            let reason = try await unavailable(recorder)
+            XCTAssertEqual(reason, .capabilityUnavailable)
+            XCTAssertEqual(transport.catalogReads.get(), 0)
+            XCTAssertTrue(transport.activations.get().isEmpty)
+            XCTAssertTrue(transport.subscriptions.get().isEmpty)
+            recorder.cancel()
+        }
+    }
+
+    func testMissingEitherEndpointPublishesUnavailableWithoutFallback() async throws {
+        for endpoint in [CompanionCharacteristic.signalCatalog, .extensibleLiveSignals] {
+            let (_, transport, client) = try await connected()
+            _ = transport.endpoints.withValue { $0.remove(endpoint) }
+            let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+            let reason = try await unavailable(recorder)
+            XCTAssertEqual(reason, .missingEndpoints)
+            XCTAssertEqual(transport.catalogReads.get(), 0)
+            XCTAssertTrue(transport.activations.get().isEmpty)
+            XCTAssertTrue(transport.subscriptions.get().isEmpty)
+            recorder.cancel()
+        }
+    }
+
+    func testFailedIncompleteAndMalformedCatalogSelectNoNotifierAndLeaveConfigUsable() async throws {
+        for failure in 0..<3 {
+            let (fake, transport, client) = try await connected(timeout: .milliseconds(40))
+            if failure == 0 { fake.hangingReads = [.signalCatalog] }
+            if failure == 1 { fake.catalogReadOverride = Data([1, 0x78, 0x56, 0x34, 0x12, 10, 0, 0, 0, 1, 0]) }
+            if failure == 2 { fake.catalogDocument = Data([1, 1, 0]) }
+            let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+            guard case .catalogFailure = try await unavailable(recorder) else { XCTFail("Expected catalog failure"); continue }
+            XCTAssertTrue(transport.activations.get().isEmpty)
+            XCTAssertTrue(transport.subscriptions.get().isEmpty)
+            let catalog = await client.signalCatalog
+            XCTAssertNil(catalog)
+            _ = try await client.readConfigStatus()
+            recorder.cancel()
+        }
+    }
+
+    func testNotifierFailureIsExplicitAndDisposesByteSubscription() async throws {
+        let (fake, transport, client) = try await connected()
+        transport.activationError = .att(.known(.invalidState))
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        guard case .notifierFailure(.controllerError(.known(.invalidState), _)) = try await unavailable(recorder) else { return XCTFail("Expected notifier ATT failure") }
+        try await waitUntil { fake.subscriberCount == 0 }
+        XCTAssertEqual(transport.activations.get(), [.extensibleLiveSignals])
+        recorder.cancel()
+    }
+
+    func testSubscribersShareLeaseAndFinalCancellationRestartsUnknownWithCachedImmutableCatalog() async throws {
+        let (fake, transport, client) = try await connected()
+        let first = TelemetryRecorder(await client.extensibleLiveSignals())
+        let initial = try await active(first)
+        let second = TelemetryRecorder(await client.extensibleLiveSignals())
+        _ = try await active(second)
+        let reads = transport.catalogReads.get()
+        fake.notify(.extensibleLiveSignals, bytes("0100000178563412050100010901"))
+        try await waitUntil { if case .active(let s) = second.latest { return s.sequence == 0 }; return false }
+        first.cancel()
+        await first.task.value
+        XCTAssertEqual(fake.subscriberCount, 1)
+        XCTAssertFalse(transport.leases.get()[0].state.get().ended)
+        second.cancel()
+        await second.task.value
+        try await waitUntil { fake.subscriberCount == 0 && transport.leases.get()[0].state.get().ended }
+        fake.catalogDocument = Data([1, 0, 0])
+        let third = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { third.cancel() }
+        let restarted = try await active(third)
+        XCTAssertEqual(restarted.catalog, initial.catalog)
+        XCTAssertNil(restarted.sequence)
+        XCTAssertTrue(restarted.signals.allSatisfy { $0.reading == .unknown })
+        XCTAssertEqual(transport.catalogReads.get(), reads)
+        XCTAssertEqual(transport.activations.get(), [.extensibleLiveSignals, .extensibleLiveSignals])
+    }
+
+    func testTokenMismatchImmediatelyClearsAndSuspendsUntilCompleteRediscovery() async throws {
+        let (fake, transport, client) = try await connected()
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { recorder.cancel() }
+        _ = try await active(recorder)
+        fake.notify(.extensibleLiveSignals, bytes("0100000178563412050100010901"))
+        try await waitUntil { if case .active(let s) = recorder.latest { return s.sequence == 0 }; return false }
+        fake.withLock { fake.catalogToken = 0x87654321; fake.catalogPageOffset = 0; fake.readDelay = .milliseconds(60) }
+        // A mismatched recognizable header invalidates even with malformed records.
+        fake.notify(.extensibleLiveSignals, bytes("01010001214365870801000109"))
+        try await waitUntil { recorder.latest == .discovering }
+        fake.notify(.extensibleLiveSignals, bytes("0102000178563412050100010901"))
+        XCTAssertEqual(recorder.latest, .discovering)
+        let replacement = try await active(recorder)
+        XCTAssertEqual(replacement.catalog?.token, 0x87654321)
+        XCTAssertTrue(replacement.signals.allSatisfy { $0.reading == .unknown })
+        XCTAssertEqual(transport.activations.get().count, 1)
+        XCTAssertEqual(transport.catalogReads.get(), 4)
+        fake.notify(.extensibleLiveSignals, bytes("0103000121436587050100010900"))
+        try await waitUntil { if case .active(let s) = recorder.latest { return s.sequence == 3 }; return false }
+    }
+
+    func testResetReconnectSameTokenRediscoversRemappedHandlesAndRejectsOldCallbacks() async throws {
+        let (fake, transport, client) = try await connected()
+        let old = TelemetryRecorder(await client.extensibleLiveSignals())
+        _ = try await active(old)
+        fake.notify(.extensibleLiveSignals, bytes("0100000178563412050100010901"))
+        await client.reset()
+        let oldReason = try await unavailable(old)
+        XCTAssertEqual(oldReason, .connectionEnded)
+        var document = fake.catalogDocument
+        document[5] = 9
+        fake.withLock { fake.catalogDocument = document; fake.catalogPageOffset = 0 }
+        try await client.readDeviceInfo()
+        let fresh = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { old.cancel(); fresh.cancel() }
+        let snapshot = try await active(fresh)
+        XCTAssertEqual(snapshot.catalog?.descriptor(for: 9)?.key, "example.enabled")
+        XCTAssertNil(snapshot.catalog?.descriptor(for: 1))
+        XCTAssertEqual(transport.catalogReads.get(), 4)
+        transport.oldHandlers.get()[0](bytes("0109000178563412050100010901"))
+        let afterOldCallback = try await active(fresh)
+        XCTAssertEqual(afterOldCallback, snapshot)
+        fake.notify(.extensibleLiveSignals, bytes("0101000178563412050900010900"))
+        try await waitUntil { if case .active(let s) = fresh.latest { return s.sequence == 1 }; return false }
+        let received = try await active(fresh)
+        XCTAssertEqual(received.reading(for: "example.enabled")?.value, .boolean(false))
+    }
+
+    func testRemoteLeaseLossClearsReadingsAndEndsSubscribersWithoutBreakingConfig() async throws {
+        let (fake, transport, client) = try await connected()
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        _ = try await active(recorder)
+        fake.notify(.extensibleLiveSignals, bytes("0100000178563412050100010901"))
+        transport.leases.get()[0].cancel()
+        let reason = try await unavailable(recorder)
+        XCTAssertEqual(reason, .notifierEnded)
+        try await waitUntil { fake.subscriberCount == 0 }
+        let catalog = await client.signalCatalog
+        XCTAssertNotNil(catalog)
+        _ = try await client.readConfigStatus()
+        await recorder.task.value
+    }
+
+    func testAlreadyEndedLeaseNeverPublishesActiveSnapshot() async throws {
+        let (_, transport, client) = try await connected()
+        transport.endBeforeReturningLease = true
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        let reason = try await unavailable(recorder)
+        XCTAssertEqual(reason, .notifierEnded)
+        XCTAssertFalse(recorder.values.get().contains { if case .active = $0 { return true }; return false })
+    }
+
+    func testCancelledUncancellableActivationDisposesLateLeaseAndCannotAffectRestart() async throws {
+        let (fake, transport, client) = try await connected()
+        transport.activationDelay = .milliseconds(80)
+        let old = TelemetryRecorder(await client.extensibleLiveSignals())
+        try await waitUntil { transport.activations.get().count == 1 }
+        old.cancel()
+        await old.task.value
+        let fresh = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { fresh.cancel() }
+        _ = try await active(fresh)
+        try await waitUntil { transport.leases.get().count == 2 }
+        XCTAssertTrue(transport.leases.get()[0].state.get().ended)
+        XCTAssertFalse(transport.leases.get()[1].state.get().ended)
+        XCTAssertEqual(fake.subscriberCount, 1)
+    }
+
+
+    func testResetDuringDiscoveryRejectsLateMapAndCannotSelectForOldGeneration() async throws {
+        let (fake, transport, client) = try await connected()
+        fake.readDelay = .milliseconds(80)
+        let old = TelemetryRecorder(await client.extensibleLiveSignals())
+        try await waitUntil { transport.catalogReads.get() == 1 }
+        await client.reset()
+        let reason = try await unavailable(old)
+        XCTAssertEqual(reason, .connectionEnded)
+        fake.withLock { fake.readDelay = nil; fake.catalogDocument = Data([1, 0, 0]); fake.catalogPageOffset = 0 }
+        try await client.readDeviceInfo()
+        let fresh = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { old.cancel(); fresh.cancel() }
+        let snapshot = try await active(fresh)
+        XCTAssertTrue(snapshot.signals.isEmpty)
+        XCTAssertEqual(transport.activations.get(), [.extensibleLiveSignals])
+    }
+
+    func testActivationTimeoutIsBoundedAndLateLeaseIsDisposed() async throws {
+        let (fake, transport, client) = try await connected(timeout: .milliseconds(30))
+        transport.activationDelay = .milliseconds(80)
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        let reason = try await unavailable(recorder)
+        guard case .notifierFailure(.timedOut) = reason else { return XCTFail("Expected bounded activation timeout") }
+        try await waitUntil { transport.leases.get().first?.state.get().ended == true }
+        XCTAssertEqual(fake.subscriberCount, 0)
+        _ = try await client.readConfigStatus()
+    }
+
+    func testSlowConsumerReceivesOnlyLatestGenericSnapshot() async throws {
+        let (fake, _, client) = try await connected()
+        let stream = await client.extensibleLiveSignals()
+        var iterator = stream.makeAsyncIterator()
+        while let value = await iterator.next() { if case .active = value { break } }
+        for sequence: UInt8 in 1...20 {
+            fake.notify(.extensibleLiveSignals, Data([1, sequence, 0, 1, 0x78, 0x56, 0x34, 0x12, 5, 1, 0, 1, 9, 1]))
+        }
+        guard case .active(let latest) = await iterator.next() else { return XCTFail("Expected snapshot") }
+        XCTAssertEqual(latest.sequence, 20)
+        await client.reset()
+    }
+
+    func testWatchdogClearsValuesAtTwoSecondsAndIndependentRecordsExpire() async throws {
+        let (fake, _, client) = try await connected()
+        let recorder = TelemetryRecorder(await client.extensibleLiveSignals())
+        defer { recorder.cancel() }
+        _ = try await active(recorder)
+        fake.notify(.extensibleLiveSignals, bytes("0100000178563412050100010901"))
+        try await waitUntil { if case .active(let s) = recorder.latest { return s.sequence == 0 }; return false }
+        try await Task.sleep(for: .milliseconds(2100))
+        let stalled = try await active(recorder)
+        XCTAssertTrue(stalled.isStalled)
+        XCTAssertEqual(stalled.reading(for: "example.enabled"), .unknown)
+        // A record expires independently while empty matching packets keep the stream alive.
+        fake.notify(.extensibleLiveSignals, bytes("0101000178563412050100010901"))
+        for sequence: UInt8 in 2...4 {
+            try await Task.sleep(for: .milliseconds(1050))
+            fake.notify(.extensibleLiveSignals, Data([1, sequence, 0, 1, 0x78, 0x56, 0x34, 0x12]))
+        }
+        try await waitUntil { if case .active(let s) = recorder.latest { return s.sequence == 4 }; return false }
+        let expired = try await active(recorder)
+        XCTAssertFalse(expired.isStalled)
+        XCTAssertEqual(expired.reading(for: "example.enabled"), .unknown)
+    }
+
+}
+
+private final class NegotiationTransport: CompanionTransport, @unchecked Sendable {
+    let fake: FakeController
+    let activations = LockedValue<[CompanionCharacteristic]>([])
+    let subscriptions = LockedValue<[CompanionCharacteristic]>([])
+    let endpoints = LockedValue(Set(CompanionCharacteristic.allCases))
+    let catalogReads = LockedValue(0)
+    let leases = LockedValue<[NegotiationLease]>([])
+    let oldHandlers = LockedValue<[@Sendable (Data) -> Void]>([])
+    var activationError: CompanionTransportError?
+    var activationDelay: Duration?
+    var endBeforeReturningLease = false
+    init(_ fake: FakeController) { self.fake = fake }
+    func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
+        if characteristic == .signalCatalog { catalogReads.withValue { $0 += 1 } }
+        return try await fake.read(characteristic)
+    }
+    func write(_ value: Data, to characteristic: CompanionCharacteristic) async throws { try await fake.write(value, to: characteristic) }
+    func maximumWriteLength() async throws -> Int { try await fake.maximumWriteLength() }
+    func availableCharacteristics() async throws -> Set<CompanionCharacteristic> { endpoints.get() }
+    func activateLiveNotifier(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
+        activations.withValue { $0.append(characteristic) }
+        if let activationError { throw activationError }
+        if let activationDelay { await Task.detached { try? await Task.sleep(for: activationDelay) }.value }
+        let lease = NegotiationLease()
+        leases.withValue { $0.append(lease) }
+        if endBeforeReturningLease { lease.cancel() }
+        return lease
+    }
+    func subscribe(to characteristic: CompanionCharacteristic, handler: @escaping @Sendable (Data) -> Void) -> CompanionSubscription {
+        subscriptions.withValue { $0.append(characteristic) }
+        if characteristic == .extensibleLiveSignals { oldHandlers.withValue { $0.append(handler) } }
+        return fake.subscribe(to: characteristic, handler: handler)
+    }
+}
+
+private final class NegotiationLease: CompanionSubscription, @unchecked Sendable {
+    let state = LockedValue((ended: false, handler: Optional<@Sendable () -> Void>.none))
+    func cancel() {
+        let handler = state.withValue { value -> (@Sendable () -> Void)? in
+            guard !value.ended else { return nil }
+            value.ended = true
+            defer { value.handler = nil }
+            return value.handler
+        }
+        handler?()
+    }
+    func onTermination(_ handler: @escaping @Sendable () -> Void) {
+        let ended = state.withValue { value -> Bool in
+            if value.ended { return true }
+            value.handler = handler
+            return false
+        }
+        if ended { handler() }
+    }
+}
+
+private struct TestTimeout: Error {}
+
+private final class TelemetryRecorder: @unchecked Sendable {
+    let values = LockedValue<[CompanionLiveTelemetryState]>([])
+    var latest: CompanionLiveTelemetryState? { values.get().last }
+    let task: Task<Void, Never>
+    init(_ stream: AsyncStream<CompanionLiveTelemetryState>) {
+        let values = values
+        task = Task { for await value in stream { values.withValue { $0.append(value) } } }
+    }
+    func cancel() { task.cancel() }
+}
