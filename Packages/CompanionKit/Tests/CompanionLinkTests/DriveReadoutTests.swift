@@ -215,8 +215,8 @@ final class DriveReadoutTests: XCTestCase {
 }
 
 // Synthetic typed states isolate semantic projection from packet framing.
-func projectionSnapshot(_ signals: [ExtensibleSignalState], stalled: Bool = false) -> ExtensibleSignalSnapshot {
-    ExtensibleSignalSnapshot(catalog: nil, sequence: 513, isTelemetryStarted: true,
+func projectionSnapshot(_ signals: [ExtensibleSignalState], stalled: Bool = false, sequence: UInt16 = 513) -> ExtensibleSignalSnapshot {
+    ExtensibleSignalSnapshot(catalog: nil, sequence: sequence, isTelemetryStarted: true,
         isStalled: stalled, signals: signals)
 }
 
