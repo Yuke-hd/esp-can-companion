@@ -64,7 +64,8 @@ final class ConnectionManagerTests: XCTestCase {
         try await finishSelection(Task { try await manager.selectLiveNotifier(CompanionGATT.extensibleLiveSignals) })
         XCTAssertEqual(radio.notificationRequests.suffix(3).map(\.characteristic), [telemetry, CompanionGATT.extensibleLiveSignals, CompanionGATT.extensibleLiveSignals])
         XCTAssertEqual(radio.notificationRequests.suffix(3).map(\.enabled), [false, false, true])
-        radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([2]))
+        // A restored or queued radio callback can arrive despite the remote gate.
+        radio.onEvent?(.received(controller.id, telemetry, Data([2])))
         radio.sendNotification(from: controller.id, characteristic: CompanionGATT.extensibleLiveSignals, data: Data([3]))
         radio.sendNotification(from: controller.id, characteristic: CompanionGATT.configStatus, data: Data([4]))
         scheduler.runUntilIdle()
