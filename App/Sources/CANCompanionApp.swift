@@ -103,11 +103,9 @@ final class AppModel {
             return AppModel(session: scenario.makeSession())
         }
         #if targetEnvironment(simulator)
-        let useFake = true
+        return AppModel(session: DemoScenario.notPaired.makeSession())
         #else
-        let useFake = defaults.bool(forKey: "FakeController")
-        #endif
-        if useFake {
+        if defaults.bool(forKey: "FakeController") {
             return AppModel(session: DemoScenario.notPaired.makeSession())
         }
 
@@ -127,5 +125,6 @@ final class AppModel {
             return AppModel(deferring: make)
         }
         return AppModel(session: make())
+        #endif
     }
 }
