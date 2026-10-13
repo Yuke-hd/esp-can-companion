@@ -20,7 +20,7 @@ public struct SignalReadout: Equatable, Sendable {
         }
         public var accessibilityText: String {
             var parts = [key, type, value ?? "no value", status.title,
-                         "Unit token: \(unit)", "Evidence token: \(evidence)"]
+                         "Unit: \(unit)", "Catalog evidence: \(evidence)"]
             if !choices.isEmpty { parts.append("Choices: " + choices.joined(separator: ", ")) }
             return parts.joined(separator: ", ")
         }

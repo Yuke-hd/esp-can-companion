@@ -84,6 +84,7 @@ struct PitWallView: View {
 private struct PitWallLive: View {
     var session: ControllerSession
     @State private var telemetry: LiveTelemetry
+    @State private var showingSignals = false
 
     init(session: ControllerSession) {
         self.session = session
@@ -101,11 +102,32 @@ private struct PitWallLive: View {
             )
             TelemetryCard(readout: readout, framesPerSecond: telemetry.framesPerSecond, failure: telemetry.failure)
             SignalTileGrid(tiles: readout.tiles)
+            Button {
+                showingSignals = true
+            } label: {
+                Card {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text("Discovered signals").font(Theme.Typography.headline)
+                        Spacer(minLength: Theme.Spacing.xs)
+                        Image(systemName: "chevron.right")
+                    }
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("signals.open")
+            .accessibilityHint("Shows read-only signal values and catalog metadata")
             if let summary {
                 OutputStackCard(outputs: summary.outputStack)
             }
         }
         .task { await telemetry.run() }
+        .sheet(isPresented: $showingSignals) {
+            DiscoveredSignalsView(
+                rows: SignalReadout(snapshot: telemetry.snapshot).rows,
+                state: .resolve(snapshot: telemetry.snapshot, unavailableReason: telemetry.unavailableReason)
+            )
+        }
     }
 }
 

@@ -1,11 +1,21 @@
 import SwiftUI
 import DesignSystem
 import CompanionLink
+import CompanionProtocol
 
 /// A catalog-backed list with no subscription or connection ownership.
 struct DiscoveredSignalsView: View {
     enum State: Equatable {
         case loading, ready, empty, unavailable, disconnected, stalled
+
+        static func resolve(snapshot: ExtensibleSignalSnapshot?,
+                            unavailableReason: CompanionLiveTelemetryUnavailableReason?) -> Self {
+            if unavailableReason == .connectionEnded { return .disconnected }
+            if unavailableReason != nil { return .unavailable }
+            guard let snapshot, snapshot.catalog != nil else { return .loading }
+            if snapshot.signals.isEmpty { return .empty }
+            return snapshot.isStalled ? .stalled : .ready
+        }
 
         var title: String {
             switch self {
@@ -21,7 +31,7 @@ struct DiscoveredSignalsView: View {
         var detail: String {
             switch self {
             case .loading: "Waiting for a complete signal catalog."
-            case .ready: "Read-only values and metadata advertised by this controller. Unit and evidence tokens are shown without interpretation."
+            case .ready: "Read-only values, units and catalog evidence supplied by this controller. Unfamiliar metadata is shown as supplied."
             case .empty: "The controller's catalog contains no signals."
             case .unavailable: "A usable signal catalog and stream are required."
             case .disconnected: "Reconnect to discover the controller's current signals."
@@ -40,6 +50,7 @@ struct DiscoveredSignalsView: View {
                 LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Text(state.title).font(Theme.Typography.headline)
+                            .accessibilityAddTraits(.isHeader)
                         Text(state.detail).font(Theme.Typography.body)
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
@@ -49,11 +60,13 @@ struct DiscoveredSignalsView: View {
                         Card {
                             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                                 Text(row.key).font(Theme.Typography.headline)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
                                 Text(row.value ?? "—").font(Theme.Typography.value)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
                                 Text("\(row.type) · \(row.status.title)")
                                     .font(Theme.Typography.body)
-                                Text("Unit token: \(row.unit)")
-                                Text("Evidence token: \(row.evidence)")
+                                Text("Unit: \(row.unit)")
+                                Text("Catalog evidence: \(row.evidence)")
                                 if !row.choices.isEmpty {
                                     Text("Choices: " + row.choices.joined(separator: ", "))
                                 }
