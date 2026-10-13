@@ -85,6 +85,11 @@ public enum CompanionGATT {
     public static let liveSignals: GATTUUID = "AB490004-09B6-4509-BF8E-2790253BAF98"
     /// Write, encrypted and bonded.
     public static let command: GATTUUID = "AB490005-09B6-4509-BF8E-2790253BAF98"
+    /// Optional catalog pages: read and selector write with response, encrypted and bonded.
+    public static let signalCatalog: GATTUUID = "AB490006-09B6-4509-BF8E-2790253BAF98"
+    /// Optional extensible telemetry: notify, encrypted and bonded.
+    /// Its subscription policy is separate from the automatic legacy subscriptions.
+    public static let extensibleLiveSignals: GATTUUID = "AB490007-09B6-4509-BF8E-2790253BAF98"
 }
 
 extension CompanionServiceConfiguration {
@@ -95,8 +100,8 @@ extension CompanionServiceConfiguration {
         deviceInfoCharacteristicUUID: CompanionGATT.deviceInfo,
         supportedProtocolMajors: [1],
         pairingCharacteristicUUID: CompanionGATT.configStatus,
-        writableCharacteristicUUIDs: [CompanionGATT.config, CompanionGATT.command],
-        readableCharacteristicUUIDs: [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus],
+        writableCharacteristicUUIDs: [CompanionGATT.config, CompanionGATT.command, CompanionGATT.signalCatalog],
+        readableCharacteristicUUIDs: [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus, CompanionGATT.signalCatalog],
         notifyingCharacteristicUUIDs: [CompanionGATT.configStatus, CompanionGATT.liveSignals],
         liveSignalsCharacteristicUUID: CompanionGATT.liveSignals,
         supportedLiveSignalLayouts: [1, 2]

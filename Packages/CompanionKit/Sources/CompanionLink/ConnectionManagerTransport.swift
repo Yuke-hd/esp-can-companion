@@ -76,6 +76,8 @@ public final class ConnectionManagerTransport: CompanionTransport, @unchecked Se
         case .configStatus: CompanionGATT.configStatus
         case .liveSignals: CompanionGATT.liveSignals
         case .command: CompanionGATT.command
+        case .signalCatalog: CompanionGATT.signalCatalog
+        case .extensibleLiveSignals: CompanionGATT.extensibleLiveSignals
         }
     }
 
