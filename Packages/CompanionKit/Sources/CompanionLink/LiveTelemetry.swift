@@ -51,13 +51,13 @@ public final class LiveTelemetry {
             unavailableReason = reason
             failure = switch reason {
             case .capabilityUnavailable:
-                "This controller does not support extensible live signals."
+                "Live signals are not supported by this controller."
             case .missingEndpoints:
-                "This controller's live signal endpoints are not available."
+                "Live signals could not be started."
             case .catalogFailure:
                 "The controller's signal catalog could not be read."
             case .notifierEnded:
-                "Live signals stopped. The controller connection is still available."
+                "Live signals stopped."
             case .connectionEnded:
                 "Live signals stopped because the controller disconnected."
             case .deviceUnavailable, .notifierFailure:

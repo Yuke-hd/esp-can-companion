@@ -324,7 +324,7 @@ extension ControllerSessionTests {
         XCTAssertEqual(telemetry.frame, .unknown)
         XCTAssertEqual(telemetry.framesPerSecond, 0)
         XCTAssertEqual(telemetry.unavailableReason, .notifierEnded)
-        XCTAssertEqual(telemetry.failure, "Live signals stopped. The controller connection is still available.")
+        XCTAssertEqual(telemetry.failure, "Live signals stopped.")
     }
 }
 
