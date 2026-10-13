@@ -20,7 +20,7 @@ final class SignalCatalogTests: XCTestCase {
         XCTAssertEqual(descriptor.unit, "future-unit")
         XCTAssertEqual(descriptor.evidence, "future-evidence")
         XCTAssertEqual(try SignalCatalog(decoding: document([body(valid + [(99, Data([4]))])]), token: 1).descriptors[0], descriptor)
-        var invalid = [Array(valid.dropFirst()), valid + [(1, Data("other".utf8))],
+        var invalid: [[(UInt8, Data)]] = [Array(valid.dropFirst()), valid + [(1, Data("other".utf8))],
                        valid + [(99, Data()), (99, Data())]]
         for (tag, bytes) in [(UInt8(1), Data()), (1, Data([0xff])), (1, Data(repeating: 97, count: 64)),
                              (2, Data()), (2, Data([2, 2])), (3, Data(repeating: 97, count: 32)),
