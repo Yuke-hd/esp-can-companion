@@ -1,6 +1,6 @@
 import XCTest
 import BLETransport
-import CompanionProtocol
+@testable import CompanionProtocol
 @testable import CompanionLink
 
 final class DriveReadoutTests: XCTestCase {
@@ -211,5 +211,72 @@ final class DriveReadoutTests: XCTestCase {
         XCTAssertNil(stalled.acceleration)
         XCTAssertEqual(stalled.longitudinalAccelerationFreshness, .unknown)
         XCTAssertEqual(stalled.lateralAccelerationFreshness, .unknown)
+    }
+}
+
+// Synthetic typed states isolate semantic projection from packet framing.
+func projectionSnapshot(_ signals: [ExtensibleSignalState], stalled: Bool = false) -> ExtensibleSignalSnapshot {
+    ExtensibleSignalSnapshot(catalog: nil, sequence: 513, isTelemetryStarted: true,
+        isStalled: stalled, signals: signals)
+}
+
+func projectionSignal(_ key: String, _ type: SignalType, unit: String = "none",
+                      availability: SignalAvailability = .fresh,
+                      value: ExtensibleSignalValue?, choices: [String] = []) -> ExtensibleSignalState {
+    ExtensibleSignalState(descriptor: SignalDescriptor(handle: 91, key: key, type: .known(type),
+        unit: unit, evidence: "candidate", choices: choices.enumerated().map {
+            SignalEnumChoice(handle: UInt16($0.offset + 30), key: $0.element)
+        }), reading: SignalReading(availability: availability, value: value))
+}
+
+extension DriveReadoutTests {
+    func testSemanticProjectionKeepsSignedAccelerationAndBothAxesRule() throws {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.acceleration.longitudinal", .number, unit: "m/s^2", value: .number(-9.80665)),
+            projectionSignal("vehicle.acceleration.lateral", .number, unit: "m/s^2", value: .number(4.903325)),
+        ])
+        let projected = LiveSignalProjection.frame(from: snapshot)
+        let readout = DriveReadout(frame: projected)
+        XCTAssertEqual(try XCTUnwrap(readout.acceleration).longitudinal, -1, accuracy: 0.000001)
+        XCTAssertEqual(try XCTUnwrap(readout.acceleration).lateral, 0.5, accuracy: 0.000001)
+        XCTAssertEqual(projected.longitudinalAcceleration.availability, .fresh)
+        let missing = LiveSignalProjection.frame(from: projectionSnapshot([snapshot.signals[0]]))
+        XCTAssertNil(DriveReadout(frame: missing).acceleration)
+    }
+
+    func testSemanticProjectionRejectsUnitsTypesChoicesAndUnfamiliarKeys() {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.engine_rpm", .number, unit: "km/h", value: .number(4000)),
+            projectionSignal("vehicle.speed_kph", .boolean, value: .boolean(true)),
+            projectionSignal("vehicle.turn_state", .enumeration, value: .enumeration(choiceKey: "left"), choices: ["right"]),
+            projectionSignal("vendor.future", .number, unit: "rpm", value: .number(5000)),
+        ])
+        let projected = LiveSignalProjection.frame(from: snapshot)
+        XCTAssertEqual(projected.engineRPM, .unknown)
+        XCTAssertEqual(projected.speedKPH, .unknown)
+        XCTAssertEqual(projected.turnState, .unknown)
+        XCTAssertEqual(snapshot.reading(for: "vendor.future")?.value, .number(5000))
+    }
+
+    func testSemanticProjectionPreservesAvailabilityWithoutArrivalFreshness() {
+        for availability in [SignalAvailability.noData, .freshnessUnverified, .stale, .unavailable,
+                             .readFailed, .notSupported, .unknown] {
+            let projected = LiveSignalProjection.frame(from: projectionSnapshot([
+                projectionSignal("vehicle.engine_rpm", .number, unit: "rpm", availability: availability, value: .number(4000)),
+                projectionSignal("vehicle.brake_pressed", .boolean, availability: availability, value: .boolean(true)),
+            ]))
+            XCTAssertEqual(projected.engineRPM.availability, availability)
+            XCTAssertEqual(projected.brakePressed.availability, availability)
+        }
+        let brake = LiveSignalProjection.frame(from: projectionSnapshot([
+            projectionSignal("vehicle.brake_pressed", .boolean, value: .boolean(true)),
+        ]))
+        XCTAssertEqual(brake.brakePressed.availability, .freshnessUnverified)
+        XCTAssertEqual(DriveReadout(frame: brake).brake.freshness, .unverified)
+        let absentValue = LiveSignalProjection.frame(from: projectionSnapshot([
+            projectionSignal("vehicle.engine_rpm", .number, unit: "rpm", availability: .noData, value: nil),
+        ]))
+        XCTAssertEqual(absentValue.engineRPM, SignalReading(availability: .noData, value: nil))
+        XCTAssertEqual(LiveSignalProjection.frame(from: projectionSnapshot([], stalled: true)), .unknown)
     }
 }
