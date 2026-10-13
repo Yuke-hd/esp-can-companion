@@ -177,6 +177,7 @@ final class DemoTelemetryTests: XCTestCase {
 
     private func liveFrame(
         _ scenario: DemoScenario,
+        onRawPacket: (@Sendable (Data) -> Void)? = nil,
         until condition: (LiveSignalFrame) -> Bool
     ) async throws -> (ControllerSession, LiveSignalFrame) {
         let session = scenario.makeSession(latency: 0.001)
@@ -184,6 +185,8 @@ final class DemoTelemetryTests: XCTestCase {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(session.phase, .ready, "\(scenario)")
+        let subscription = onRawPacket.map { session.client.transport.subscribe(to: .liveSignals, handler: $0) }
+        defer { subscription?.cancel() }
         let telemetry = LiveTelemetry(session: session)
         let run = Task { await telemetry.run() }
         defer { run.cancel() }
@@ -202,17 +205,12 @@ final class DemoTelemetryTests: XCTestCase {
     }
 
     func testDriveLapsLayout1ScenarioStreamsLayout1ThroughTheSession() async throws {
-        let (session, frame) = try await liveFrame(.driveLapsLayout1) { $0.engineRPM.value != nil }
-        XCTAssertEqual(session.deviceInfo?.liveSignalLayoutVersion, 1)
-        // The bytes on the wire, not just what the decoder made of them.
         let lengths = OSAllocatedUnfairLock(initialState: [Int]())
-        let subscription = session.client.transport.subscribe(to: .liveSignals) { data in
+        let (session, frame) = try await liveFrame(.driveLapsLayout1, onRawPacket: { data in
             lengths.withLock { $0.append(data.count) }
-        }
-        defer { subscription.cancel() }
-        for _ in 0..<500 where lengths.withLock({ $0.count < 3 }) {
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
+        }) { $0.engineRPM.value != nil && lengths.withLock { $0.count >= 3 } }
+        XCTAssertEqual(session.deviceInfo?.liveSignalLayoutVersion, 1)
+        // Inspect bytes while the explicit legacy activation lease is alive.
         let received = lengths.withLock { $0 }
         XCTAssertGreaterThanOrEqual(received.count, 3)
         XCTAssertTrue(received.allSatisfy { $0 == LiveSignalFrame.length }, "layout 1 frames are 23 bytes: \(received)")

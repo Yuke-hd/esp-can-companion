@@ -117,6 +117,8 @@ public actor CompanionClient {
     /// Device info read on this connection.
     public private(set) var deviceInfo: DeviceInfo?
     private var isUploading = false
+    private var legacyStreamFinish: (@Sendable () -> Void)?
+    private var legacyActivationInProgress = false
     /// Complete mapping for this connection; nil after reset or token invalidation.
     public internal(set) var signalCatalog: SignalCatalog?
     var catalogGeneration: UInt64 = 0
@@ -145,6 +147,8 @@ public actor CompanionClient {
 
     /// Forgets device info, for example after the link dropped.
     public func reset() {
+        legacyStreamFinish?()
+        legacyStreamFinish = nil
         deviceInfo = nil
         signalCatalog = nil
         catalogDiscoveryToken = nil
@@ -308,15 +312,25 @@ public actor CompanionClient {
     /// The stream ends when the consumer stops iterating.
     public func liveSignals(
         stallTimeout: Duration = LiveSignalFeed.defaultStallTimeout
-    ) throws -> AsyncStream<LiveSignalFrame> {
+    ) async throws -> AsyncStream<LiveSignalFrame> {
         let info = try requireSupportedDevice()
         guard info.compatibility().canDecodeLiveSignals else {
             throw CompanionClientError.unsupportedLiveSignalLayout(info.liveSignalLayoutVersion)
         }
+        guard !legacyActivationInProgress else {
+            throw CompanionClientError.transport(.other("A live notifier activation is already pending."))
+        }
+        legacyActivationInProgress = true
+        defer { legacyActivationInProgress = false }
+        legacyStreamFinish?()
+        let generation = catalogGeneration
+        let lease = LockedValue((terminated: false, subscription: Optional<any CompanionSubscription>.none))
+        let pair = AsyncStream<LiveSignalFrame>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let transport = transport
         let layoutVersion = info.liveSignalLayoutVersion
         // Keep only the newest value: a slow consumer sees current frames, not a backlog.
-        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        let continuation = pair.continuation
+        do {
             let clock = ContinuousClock()
             let feed = LockedValue((feed: LiveSignalFeed(stallTimeout: stallTimeout, layoutVersion: layoutVersion), reportedStall: true))
             continuation.yield(.unknown)
@@ -349,7 +363,33 @@ public actor CompanionClient {
             continuation.onTermination = { _ in
                 subscription.cancel()
                 watchdog.cancel()
+                let active = lease.withValue { state -> (any CompanionSubscription)? in
+                    state.terminated = true
+                    defer { state.subscription = nil }
+                    return state.subscription
+                }
+                active?.cancel()
             }
+        }
+        legacyStreamFinish = { continuation.finish() }
+        do {
+            let active = try await transport.activateLiveNotifier(.liveSignals)
+            active.onTermination { continuation.finish() }
+            let terminated = lease.withValue { state -> Bool in
+                guard !state.terminated else { return true }
+                state.subscription = active
+                return false
+            }
+            if terminated { active.cancel() }
+            guard generation == catalogGeneration, !terminated else { throw CompanionClientError.connectionChanged }
+            try Task.checkCancellation()
+            return pair.stream
+        } catch {
+            pair.continuation.finish()
+            if let transportError = error as? CompanionTransportError {
+                throw CompanionClientError.transport(transportError)
+            }
+            throw error
         }
     }
 

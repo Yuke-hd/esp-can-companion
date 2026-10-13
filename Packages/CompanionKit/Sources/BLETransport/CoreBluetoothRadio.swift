@@ -122,6 +122,10 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             emit(.notificationState(id, characteristic, requestID, enabled, .characteristicNotFound(characteristic)))
             return
         }
+        if target.isNotifying == enabled {
+            emit(.notificationState(id, characteristic, requestID, enabled, nil))
+            return
+        }
         pendingNotifications[id, default: [:]][characteristic] = (requestID, enabled)
         peripheral.setNotifyValue(enabled, for: target)
     }
@@ -213,8 +217,17 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         // Normalize restored live CCCDs before making the link available. Only
         // config status is automatic; live selection belongs to the caller.
         let live: Set<GATTUUID> = Set([configuration.liveSignalsCharacteristicUUID, CompanionGATT.extensibleLiveSignals].compactMap { $0 })
-        let discovered = Set(companionService(on: peripheral)?.characteristics?.map(gattUUID) ?? [])
-        emit(.characteristicsDiscovered(id, discovered))
+        let characteristics = companionService(on: peripheral)?.characteristics ?? []
+        let discovered = Set(characteristics.map(gattUUID))
+        let usable = Set(characteristics.filter { target in
+            let uuid = gattUUID(target)
+            if uuid == CompanionGATT.signalCatalog {
+                return target.properties.contains(.read) && target.properties.contains(.write)
+            }
+            if live.contains(uuid) { return target.properties.contains(.notify) }
+            return true
+        }.map(gattUUID))
+        emit(.characteristicsDiscovered(id, usable))
         let reset = live.intersection(discovered).filter {
             characteristic($0, on: peripheral)?.isNotifying == true
         }
@@ -436,7 +449,13 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
                 else if preparingNotifications[id]?.isEmpty == true { finishPreparing(id, nil) }
                 return
             }
-            guard let request = pendingNotifications[id]?.removeValue(forKey: uuid) else { return }
+            guard let request = pendingNotifications[id]?.removeValue(forKey: uuid) else {
+                if uuid == configuration?.liveSignalsCharacteristicUUID || uuid == CompanionGATT.extensibleLiveSignals,
+                   error != nil || !characteristic.isNotifying {
+                    emit(.liveNotifierStopped(id, uuid, Self.operationError(error)))
+                }
+                return
+            }
             let failure = Self.operationError(error) ?? (characteristic.isNotifying == request.enabled ? nil : .other("Notification state did not match request."))
             emit(.notificationState(id, uuid, request.id, characteristic.isNotifying, failure))
         }

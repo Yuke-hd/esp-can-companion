@@ -30,6 +30,9 @@ public enum CompanionTransportError: Error, Equatable, Sendable {
 /// A live notification subscription. Cancel it to stop receiving values.
 public protocol CompanionSubscription: Sendable {
     func cancel()
+    /// Activation leases invoke once when cancelled or when their selected
+    /// stream ends. Registering after the lease ended invokes immediately.
+    func onTermination(_ handler: @escaping @Sendable () -> Void)
 }
 
 /// Moves bytes to and from the companion service of one connected, paired
@@ -41,6 +44,11 @@ public protocol CompanionTransport: AnyObject, Sendable {
     func write(_ value: Data, to characteristic: CompanionCharacteristic) async throws
     /// The largest single ATT write value on this link (`MTU - 3`).
     func maximumWriteLength() async throws -> Int
+    /// Endpoints discovered for the current connection, cleared on disconnect.
+    func availableCharacteristics() async throws -> Set<CompanionCharacteristic>
+    /// Completes after the chosen live CCCD is enabled. Cancel the returned
+    /// lease to disable that selection without affecting a newer selection.
+    func activateLiveNotifier(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription
     /// Calls `handler` for each notification of `characteristic`, in arrival
     /// order and before the response to any write that the controller answered
     /// after sending the notification.
@@ -48,4 +56,28 @@ public protocol CompanionTransport: AnyObject, Sendable {
         to characteristic: CompanionCharacteristic,
         handler: @escaping @Sendable (Data) -> Void
     ) -> CompanionSubscription
+}
+
+public extension CompanionTransport {
+    /// Historical in-memory transports implement the fixed stream directly.
+    /// Extension use requires an explicit implementation of both operations.
+    func availableCharacteristics() async throws -> Set<CompanionCharacteristic> {
+        []
+    }
+
+    func activateLiveNotifier(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
+        guard characteristic == .liveSignals else {
+            throw CompanionTransportError.other("Live notifier is unavailable.")
+        }
+        return InMemoryLegacyNotifierLease()
+    }
+}
+
+private struct InMemoryLegacyNotifierLease: CompanionSubscription {
+    func cancel() {}
+}
+
+public extension CompanionSubscription {
+    /// Plain historical byte subscriptions have no remote lifecycle.
+    func onTermination(_ handler: @escaping @Sendable () -> Void) {}
 }

@@ -175,7 +175,8 @@ public final class FakeRadio: BLERadio {
     public func write(_ data: Data, to characteristic: GATTUUID, on id: PeripheralID) {
         later { [self] in
             guard connectedPeripherals.contains(id) else { return }
-            guard configuration?.writableCharacteristicUUIDs.contains(characteristic) == true else {
+            guard configuration?.writableCharacteristicUUIDs.contains(characteristic) == true,
+                  controllers[id]?.availableCharacteristics.contains(characteristic) == true else {
                 onEvent?(.wrote(id, characteristic, .characteristicNotFound(characteristic)))
                 return
             }
@@ -188,6 +189,11 @@ public final class FakeRadio: BLERadio {
     public func read(_ characteristic: GATTUUID, on id: PeripheralID) {
         later { [self] in
             guard connectedPeripherals.contains(id) else { return }
+            guard configuration?.readableCharacteristicUUIDs.contains(characteristic) == true,
+                  controllers[id]?.availableCharacteristics.contains(characteristic) == true else {
+                onEvent?(.read(id, characteristic, .failure(.characteristicNotFound(characteristic))))
+                return
+            }
             let result = readHandler?(id, characteristic) ?? .failure(.characteristicNotFound(characteristic))
             onEvent?(.read(id, characteristic, result))
         }

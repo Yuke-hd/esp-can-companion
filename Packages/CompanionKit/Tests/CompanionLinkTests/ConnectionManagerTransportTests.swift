@@ -97,11 +97,15 @@ final class ConnectionManagerTransportTests: XCTestCase {
         XCTAssertEqual(bench.radio.receivedWrites.map(\.characteristic), [CompanionGATT.config])
     }
 
-    func testExtensibleNotificationsRouteWithoutLegacyOrUnknownDelivery() async {
+    func testExtensibleNotificationsRouteWithoutLegacyOrUnknownDelivery() async throws {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)
         await bench.connect()
         let events = LockedEvents()
+        let activation = Task { try await transport.activateLiveNotifier(.extensibleLiveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.extensibleLiveSignals }
+        let lease = try await activation.value
+        defer { lease.cancel() }
         let subscription = transport.subscribe(to: .extensibleLiveSignals) { data in events.append(data.base64EncodedString()) }
         let packet = Data([1, 0, 0, 1, 0x78, 0x56, 0x34, 0x12])
         bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: packet)
@@ -112,6 +116,69 @@ final class ConnectionManagerTransportTests: XCTestCase {
         bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals, data: packet)
         bench.scheduler.runUntilIdle()
         XCTAssertEqual(events.values, [packet.base64EncodedString()])
+    }
+
+    func testActivationLeaseIsGenerationScopedAndReportsTerminationOnce() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let endpoints = try await transport.availableCharacteristics()
+        XCTAssertTrue(endpoints.contains(.signalCatalog))
+        XCTAssertTrue(endpoints.contains(.extensibleLiveSignals))
+        let first = Task { try await transport.activateLiveNotifier(.liveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.liveSignals }
+        let oldLease = try await first.value
+        let oldGeneration = try XCTUnwrap(bench.manager.selectedLiveNotifierID)
+        let events = LockedEvents()
+        oldLease.onTermination { events.append("old ended") }
+        let second = Task { try await transport.activateLiveNotifier(.extensibleLiveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.extensibleLiveSignals }
+        let newLease = try await second.value
+        oldLease.cancel()
+        try await bench.manager.clearLiveNotifier(ifSelectionID: oldGeneration)
+        for _ in 0..<20 { await Task.yield(); bench.scheduler.runUntilIdle() }
+        XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+        XCTAssertEqual(events.values, ["old ended"])
+        newLease.onTermination { events.append("new ended") }
+        bench.radio.onEvent?(.liveNotifierStopped(bench.peripheral.id, CompanionGATT.extensibleLiveSignals, .att(5)))
+        newLease.cancel()
+        XCTAssertEqual(events.values, ["old ended", "new ended"])
+        newLease.onTermination { events.append("late registration") }
+        XCTAssertEqual(events.values.last, "late registration")
+        XCTAssertNil(bench.manager.selectedLiveNotifier)
+    }
+
+    func testDisconnectEndsActivationLeaseAndClearsEndpointMetadata() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let activation = Task { try await transport.activateLiveNotifier(.liveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.liveSignals }
+        let lease = try await activation.value
+        let events = LockedEvents()
+        lease.onTermination { events.append("ended") }
+        bench.manager.disconnect()
+        XCTAssertEqual(events.values, ["ended"])
+        XCTAssertTrue(bench.manager.availableCharacteristics.isEmpty)
+        lease.cancel()
+        XCTAssertEqual(events.values, ["ended"])
+    }
+
+    func testLegacyClientAwaitsActivationAndPropagatesFailure() async throws {
+        let bench = Bench()
+        let client = CompanionClient(transport: ConnectionManagerTransport(manager: bench.manager))
+        await bench.connect()
+        let info = Task { try await client.readDeviceInfo() }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        for _ in 0..<100 { bench.scheduler.runUntilIdle(); await Task.yield() }
+        _ = try await info.value
+        bench.radio.notificationHandler = { _, enabled in enabled ? .att(5) : nil }
+        let stream = Task { try await client.liveSignals() }
+        await bench.settle { bench.radio.notificationRequests.contains { $0.enabled } }
+        for _ in 0..<100 { bench.scheduler.runUntilIdle(); await Task.yield() }
+        do { _ = try await stream.value; XCTFail("expected CCCD failure") }
+        catch { XCTAssertEqual(error as? CompanionClientError, .transport(.att(.known(.insufficientAuthentication)))) }
+        XCTAssertNil(bench.manager.selectedLiveNotifier)
     }
 
     func testNotConnected() async {
@@ -210,12 +277,16 @@ final class ConnectionManagerTransportTests: XCTestCase {
         XCTAssertEqual(events.values, ["notification", "response"])
     }
 
-    func testCancelledSubscriptionStopsDelivery() async {
+    func testCancelledSubscriptionStopsDelivery() async throws {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)
         await bench.connect()
 
         let events = LockedEvents()
+        let activation = Task { try await transport.activateLiveNotifier(.liveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.liveSignals }
+        let lease = try await activation.value
+        defer { lease.cancel() }
         let subscription = transport.subscribe(to: .liveSignals) { _ in events.append("frame") }
         bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: Data([1]))
         bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.configStatus, data: Data([1]))

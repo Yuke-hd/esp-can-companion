@@ -55,6 +55,43 @@ public final class ConnectionManagerTransport: CompanionTransport, @unchecked Se
         return device.maximumWriteLength
     }
 
+    public func availableCharacteristics() async throws -> Set<CompanionCharacteristic> {
+        try await discoveredCharacteristics()
+    }
+
+    @MainActor
+    private func discoveredCharacteristics() throws -> Set<CompanionCharacteristic> {
+        guard manager.state.isConnected else { throw CompanionTransportError.notConnected }
+        return Set(manager.availableCharacteristics.compactMap(Self.characteristic))
+    }
+
+    public func activateLiveNotifier(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
+        try await activateOnManager(characteristic)
+    }
+
+    @MainActor
+    private func activateOnManager(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
+        guard characteristic == .liveSignals || characteristic == .extensibleLiveSignals else {
+            throw CompanionTransportError.other("Characteristic is not a live notifier.")
+        }
+        do {
+            try await manager.selectLiveNotifier(Self.gattUUID(for: characteristic))
+            guard let generation = manager.selectedLiveNotifierID else { throw CompanionTransportError.disconnected }
+            let lease = NotifierLease { [weak manager] in
+                Task { @MainActor in try? await manager?.clearLiveNotifier(ifSelectionID: generation) }
+            }
+            manager.onLiveNotifierTermination(selectionID: generation) { [weak lease] in lease?.finish() }
+            return lease
+        } catch let error as LiveNotifierError {
+            switch error {
+            case .notConnected: throw CompanionTransportError.notConnected
+            case .disconnected: throw CompanionTransportError.disconnected
+            case .failed(.att(let code)): throw CompanionTransportError.att(ATTError(rawValue: code))
+            default: throw CompanionTransportError.other(String(describing: error))
+            }
+        }
+    }
+
     public func subscribe(
         to characteristic: CompanionCharacteristic,
         handler: @escaping @Sendable (Data) -> Void
@@ -113,4 +150,42 @@ public final class ConnectionManagerTransport: CompanionTransport, @unchecked Se
 private struct Subscription: CompanionSubscription {
     let onCancel: @Sendable () -> Void
     func cancel() { onCancel() }
+}
+
+/// The lease's terminal state is synchronous so a packet callback can gate
+/// delivery immediately even while actor cleanup is waiting to run.
+private final class NotifierLease: CompanionSubscription, @unchecked Sendable {
+    private let lock = NSLock()
+    private var ended = false
+    private var termination: (@Sendable () -> Void)?
+    private let cancelSelection: @Sendable () -> Void
+
+    init(cancelSelection: @escaping @Sendable () -> Void) {
+        self.cancelSelection = cancelSelection
+    }
+
+    func cancel() {
+        if finish() { cancelSelection() }
+    }
+
+    func onTermination(_ handler: @escaping @Sendable () -> Void) {
+        let invoke = lock.withLock {
+            if ended { return true }
+            termination = handler
+            return false
+        }
+        if invoke { handler() }
+    }
+
+    @discardableResult
+    func finish() -> Bool {
+        let result = lock.withLock { () -> (Bool, (@Sendable () -> Void)?) in
+            guard !ended else { return (false, nil) }
+            ended = true
+            defer { termination = nil }
+            return (true, termination)
+        }
+        result.1?()
+        return result.0
+    }
 }
