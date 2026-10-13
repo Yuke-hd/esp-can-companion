@@ -167,6 +167,42 @@ public struct DemoTelemetry: Equatable, Sendable {
         return frame
     }
 
+    /// Adapt the existing synthetic drive into semantic engineering-unit readings.
+    /// This keeps the legacy and extensible producers on the same drive timeline.
+    public var extensibleReadings: [String: SignalReading<ExtensibleSignalValue>] {
+        let descriptors = DemoSignalCatalog.vehicle.catalog.descriptors
+        let enums = [2: turnState.rawValue, 3: selectorPosition.rawValue,
+                     4: actualGear.rawValue, 5: frontWiperPosition.rawValue]
+        var readings: [String: SignalReading<ExtensibleSignalValue>] = [:]
+        for (index, descriptor) in descriptors.enumerated() {
+            let status = index < statuses.count ? statuses[index] : .noData
+            let availability: SignalAvailability = switch status {
+            case .fresh: .fresh
+            case .unverified: .freshnessUnverified
+            case .stale: .stale
+            case .noData: .noData
+            }
+            var value: ExtensibleSignalValue?
+            if status == .fresh || status == .unverified {
+                switch index {
+                case 0: value = .number(Float(engineRPM))
+                case 1: value = .number(Float(speedKPH))
+                case 2...5:
+                    if let raw = enums[index], Int(raw) < descriptor.choices.count {
+                        value = .enumeration(choiceKey: descriptor.choices[Int(raw)].key)
+                    }
+                case 6...18: value = .boolean(booleans & (1 << (index - 6)) != 0)
+                case 19: value = .number(Float(longitudinalAcceleration))
+                case 20: value = .number(Float(lateralAcceleration))
+                default: break
+                }
+            }
+            readings[descriptor.key] = layoutVersion == 1 && index >= 19
+                ? .unknown : SignalReading(availability: availability, value: value)
+        }
+        return readings
+    }
+
     /// The encoded frame: 28 bytes for layout 2, 23 bytes for layout 1.
     /// `layoutVersion` must be 1 or 2. Values beyond a field's wire range
     /// saturate, and NaN encodes as 0.
@@ -219,12 +255,16 @@ extension DemoController {
         on radio: FakeRadio,
         from peripheral: PeripheralID,
         stopAfter: Duration? = nil,
-        frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = DemoTelemetry.drive
+        frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = DemoTelemetry.drive,
+        extensibleFrames: (@Sendable (Double, UInt16) -> [String: SignalReading<ExtensibleSignalValue>])? = nil
     ) {
         liveSignalTask?.cancel()
         liveSignalTask = Task { @MainActor [weak radio] in
             let start = ContinuousClock.now
             var sequence: UInt8 = 0
+            var extensibleSequence: UInt16 = 0
+            var wasExtensibleEnabled = false
+            var generation = catalogConnectionGeneration
             while !Task.isCancelled {
                 // Hold the radio only while sending, so it can go away while this sleeps.
                 guard let radio else { return }
@@ -234,6 +274,22 @@ extension DemoController {
                 var frame = frames(seconds, sequence)
                 frame.layoutVersion = deviceInfo.liveSignalLayoutVersion
                 radio.sendNotification(from: peripheral, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
+                let extensibleEnabled = radio.enabledNotifications[peripheral]?.contains(CompanionGATT.extensibleLiveSignals) == true
+                    && radio.connectedPeripherals.contains(peripheral) && deviceInfo.supportsExtensibleLiveSignals
+                if extensibleEnabled {
+                    if !wasExtensibleEnabled || generation != catalogConnectionGeneration { extensibleSequence = 0 }
+                    generation = catalogConnectionGeneration
+                    if let packets = try? signalCatalog.packets(sequence: extensibleSequence,
+                                                               started: frame.isTelemetryStarted,
+                                                               readings: extensibleFrames?(seconds, extensibleSequence) ?? frame.extensibleReadings) {
+                        for packet in packets {
+                            radio.sendNotification(from: peripheral, characteristic: CompanionGATT.extensibleLiveSignals,
+                                                   data: packet, immediately: true)
+                            extensibleSequence &+= 1
+                        }
+                    }
+                }
+                wasExtensibleEnabled = extensibleEnabled
                 sequence &+= 1
                 try? await Task.sleep(for: .milliseconds(100))
             }

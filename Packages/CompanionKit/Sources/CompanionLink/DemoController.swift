@@ -13,6 +13,12 @@ public final class DemoController {
     private var restartScheduled = false
     /// The demo drive started by `streamLiveSignals(on:from:)`.
     var liveSignalTask: Task<Void, Never>?
+    var catalogConnectionGeneration = 0
+
+    /// A complete synthetic export, independent of active configuration.
+    public var signalCatalog: DemoSignalCatalog {
+        didSet { installCatalog() }
+    }
 
     public var deviceInfo: DeviceInfo {
         get { controller.deviceInfo }
@@ -52,13 +58,16 @@ public final class DemoController {
         deviceInfo: DeviceInfo = DemoController.defaultDeviceInfo,
         activeSource: ConfigSourceCode = .factory,
         activeDocument: Data = DemoController.factoryDocument,
-        bootFlags: ConfigStatus.BootFlags = []
+        bootFlags: ConfigStatus.BootFlags = [],
+        signalCatalog: DemoSignalCatalog = .vehicle
     ) {
+        self.signalCatalog = signalCatalog
         self.deviceInfo = deviceInfo
         self.activeSource = activeSource
         self.activeDocument = activeSource == .none ? Data() : activeDocument
         self.bootFlags = bootFlags
         controller.factoryDocument = Self.factoryDocument
+        installCatalog()
     }
 
     /// A demo controller serves all the peripherals on this radio.
@@ -84,8 +93,20 @@ public final class DemoController {
         }
     }
 
+    private func installCatalog() {
+        controller.catalogDocument = signalCatalog.document
+        controller.catalogToken = signalCatalog.catalog.token
+        controller.catalogPageOffset = 0
+    }
+
     func read(_ characteristic: GATTUUID) -> Result<Data, RadioError> {
         guard let role = ConnectionManagerTransport.characteristic(for: characteristic) else { return .failure(.att(0x02)) }
+        // Device info is read when a new connection is prepared. A reconnect
+        // must start catalog discovery at zero, even if its token is unchanged.
+        if role == .deviceInfo {
+            controller.catalogPageOffset = 0
+            catalogConnectionGeneration &+= 1
+        }
         do { return .success(try controller.readImmediately(role)) }
         catch { return .failure(Self.radioError(error)) }
     }
@@ -124,8 +145,9 @@ public final class DemoController {
     // MARK: Sample data
 
     nonisolated public static let defaultDeviceInfo = DeviceInfo(
-        protocolMajor: 1, protocolMinor: 0, configSchemaVersion: 1, liveSignalLayoutVersion: 2,
-        flags: 0, maxConfigBytes: 4096, firmwareVersion: "0.4.0-demo", hardwareID: "weact-can485-v1.1"
+        protocolMajor: 1, protocolMinor: 1, configSchemaVersion: 1, liveSignalLayoutVersion: 2,
+        flags: 0, maxConfigBytes: 4096, firmwareVersion: "0.4.0-demo", hardwareID: "weact-can485-v1.1",
+        extensionVersion: 1, extensionFlags: 1
     )
 
     /// A verbatim copy of the firmware example
