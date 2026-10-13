@@ -117,7 +117,7 @@ jobs:
       - name: Upload UI test results
         # Keeps the captured Drive screenshots for a person to review.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ui-test-results
           path: UITests.xcresult
