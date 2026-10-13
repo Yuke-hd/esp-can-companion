@@ -23,6 +23,89 @@ final class ExtensibleDemoTests: XCTestCase {
         return (radio, peripheral, session)
     }
 
+    func testNamedUnavailableJourneysNeverSelectLegacyNotifier() async throws {
+        for scenario in [DemoScenario.discoveredUnsupported, .discoveredUnusable, .discoveredCatalogFailure] {
+            let session = scenario.makeSession(latency: 0)
+            defer { session.connection.disconnect() }
+            for _ in 0..<800 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertEqual(session.phase, .ready)
+            var unavailable: CompanionLiveTelemetryUnavailableReason?
+            let states = await session.client.extensibleLiveSignals()
+            let consumer = Task { @MainActor in
+                for await state in states { if case .unavailable(let reason) = state { unavailable = reason } }
+            }
+            defer { consumer.cancel() }
+            for _ in 0..<200 where unavailable == nil { try await Task.sleep(for: .milliseconds(5)) }
+            if scenario == .discoveredCatalogFailure {
+                guard case .catalogFailure = unavailable else { return XCTFail("expected catalog failure, got \(String(describing: unavailable))") }
+            } else {
+                XCTAssertEqual(unavailable, .capabilityUnavailable)
+            }
+            XCTAssertNil(session.connection.selectedLiveNotifier)
+            XCTAssertNotNil(session.activeConfig)
+        }
+    }
+
+    func testNamedMalformedValidPrefixNeverInstallsChangedBoolean() async throws {
+        let session = DemoScenario.discoveredMalformed.makeSession(latency: 0)
+        defer { session.connection.disconnect() }
+        for _ in 0..<800 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
+        let telemetry = LiveTelemetry(session: session)
+        let consumer = Task { await telemetry.run() }
+        defer { consumer.cancel() }
+        var rejectedPacketSeen = false
+        let observation = session.connection.observeNotifications { characteristic, data in
+            if characteristic == CompanionGATT.extensibleLiveSignals,
+               (try? ExtensibleLiveSignalPacket(decoding: data)) == nil { rejectedPacketSeen = true }
+        }
+        defer { observation.cancel() }
+        for _ in 0..<400 where telemetry.snapshot?.reading(for: "example.enabled")?.value != .boolean(true) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(telemetry.snapshot?.reading(for: "example.enabled")?.value, .boolean(true))
+        for _ in 0..<1600 where !rejectedPacketSeen { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(rejectedPacketSeen)
+        XCTAssertEqual(telemetry.snapshot?.reading(for: "example.enabled")?.value, .boolean(true), "a valid False prefix must not be partially installed")
+        for _ in 0..<600 where telemetry.snapshot?.isStalled != true { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(telemetry.snapshot?.isStalled, true)
+        XCTAssertNil(telemetry.snapshot?.reading(for: "example.enabled")?.value)
+    }
+
+    func testNamedReconnectDiscoversNewHandlesEvenWithSameToken() async throws {
+        let session = DemoScenario.discoveredReconnect.makeSession(latency: 0)
+        defer { session.connection.disconnect() }
+        var readyConnections = 0
+        let observation = session.connection.observeState { if $0.isConnected { readyConnections += 1 } }
+        defer { observation.cancel() }
+        for _ in 0..<800 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
+        let telemetry = LiveTelemetry(session: session)
+        let consumer = Task { await telemetry.run() }
+        defer { consumer.cancel() }
+        for _ in 0..<400 where telemetry.snapshot?.reading(for: "example.enabled")?.value != .boolean(true) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let initial = try XCTUnwrap(telemetry.snapshot?.catalog)
+        for _ in 0..<1600 where session.phase == .ready { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertNotEqual(session.phase, .ready)
+        await consumer.value
+        XCTAssertNil(telemetry.snapshot, "disconnect clears the old connection map")
+        for _ in 0..<800 where session.phase != .ready { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(session.phase, .ready)
+        let reconnectedConsumer = Task { await telemetry.run() }
+        defer { reconnectedConsumer.cancel() }
+        for _ in 0..<800 where telemetry.snapshot?.reading(for: "example.enabled")?.value != .boolean(false) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let remapped = try XCTUnwrap(telemetry.snapshot?.catalog)
+        XCTAssertGreaterThanOrEqual(readyConnections, 2)
+        XCTAssertEqual(telemetry.snapshot?.reading(for: "example.enabled")?.value, .boolean(false))
+        XCTAssertEqual(initial.token, remapped.token)
+        XCTAssertNotEqual(initial.descriptors.map(\.handle), remapped.descriptors.map(\.handle))
+        XCTAssertEqual(telemetry.snapshot?.reading(for: "example.mode")?.value, .enumeration(choiceKey: "new_choice"))
+        XCTAssertEqual(telemetry.snapshot?.reading(for: "example.signed")?.value, .number(2.5))
+        XCTAssertEqual(session.connection.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+    }
+
     func testExplicitSelectionOmitsRecordsAndKeepsOtherSignalClockIndependent() throws {
         let fixture = try DemoSignalCatalog(token: 2, entries: [
             .init(handle: 1, key: "first", type: .number), .init(handle: 2, key: "second", type: .number),

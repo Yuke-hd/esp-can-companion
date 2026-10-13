@@ -184,6 +184,14 @@ final class ControllerSessionTests: XCTestCase {
             .incompatible: { $0 == .disconnected(.unsupportedProtocol(major: 2), willReconnect: false) },
             .bluetoothOff: { $0 == .poweredOff },
             .noAccess: { $0 == .unauthorized },
+            .discoveredSignals: { $0.isConnected },
+            .discoveredPartial: { $0.isConnected },
+            .discoveredStalled: { $0.isConnected },
+            .discoveredMalformed: { $0.isConnected },
+            .discoveredReconnect: { $0.isConnected },
+            .discoveredUnsupported: { $0.isConnected },
+            .discoveredUnusable: { $0.isConnected },
+            .discoveredCatalogFailure: { $0.isConnected },
         ]
         for scenario in DemoScenario.allCases {
             let session = scenario.makeSession(latency: 0.001)

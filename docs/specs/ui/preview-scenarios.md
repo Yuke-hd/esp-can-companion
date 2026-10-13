@@ -157,6 +157,64 @@ If controller identity or its configuration differs on reconnect, preserve both
 sets of information and require explicit review/target selection before sending.
 The exact review UI is left to that feature; automatic merging is out of scope.
 
+## Discovered-signal journeys (#50)
+
+These fixtures run the actual app, catalog download and selected extensible
+notifier. Launch with `-FakeController YES -DemoScenario <name>`, scroll the
+Pit Wall to **Discovered signals**, and open the read-only sheet. **Done** closes
+it; reopening uses the same dashboard telemetry owner. They retain installed app
+storage, but create a fresh synthetic controller session on each launch. They do
+not test saved-draft persistence.
+
+| Name | Events after notifier activation | Expected sheet result |
+| --- | --- | --- |
+| `discoveredSignals` | Four generic synthetic keys: enabled Boolean, mode Enum with `new_choice`, signed Number, and changing peer Number. | `True`, `new_choice`, and signed `-1.25 m/s^2` appear with their supplied status/evidence. No curated key or fixed-offset addition is needed. |
+| `discoveredPartial` | After six seconds, packets omit `example.enabled`; peer records continue. | Enabled retains its last value until its independent three-second deadline, then shows no value/Unknown. Peer stays Fresh; the stream remains active. The signed record is Stale and is hidden by the current formatter. |
+| `discoveredStalled` | Valid records for eight active seconds, then no notifications. | The two-second stream watchdog clears every value and shows Telemetry stalled. |
+| `discoveredMalformed` | Valid data first; after six seconds append a truncated record to an otherwise valid packet (whose Boolean prefix changes to False). | The whole packet is rejected: False is never installed, neither stream nor signal liveness refreshes, and the sheet becomes stalled/Unknown. |
+| `discoveredReconnect` | Observe the first valid packet, then after six seconds power-cycle for two seconds. Remap all signal handles and enum choice handles while retaining token `0x12345678`. | Old readings/map clear during disconnect. Reopen the sheet after reconnect; Boolean becomes False, Enum remains `new_choice` despite its new choice handle, and signed Number becomes `2.5`. A complete catalog is downloaded again. |
+| `discoveredUnsupported` | Device info reports protocol 1.0 without extension capability. | Explicit Telemetry unavailable, no discovered values, no legacy subscription/fallback. Configuration remains usable. |
+| `discoveredUnusable` | Device info reports protocol 1.1 with extension version 1 and capability bit clear. | Explicit Telemetry unavailable with no legacy subscription/fallback. |
+| `discoveredCatalogFailure` | Advertise capability; catalog read returns synthetic ATT InvalidState. | Explicit Telemetry unavailable; no partial map or legacy subscription/fallback. |
+
+The timeline starts only when a selected notifier is enabled, so startup and
+catalog latency cannot consume the fixture's valid interval. The reconnect timer
+starts after a valid extensible packet traverses FakeRadio. A reconnect replaces
+the ready dashboard view and may dismiss its sheet; use the normal Discovered
+signals button to reopen it. All handles/evidence/readings are synthetic; the
+metadata `reference` token makes no vehicle-validation claim.
+
+Permanent interactions are in `AppUITests/DiscoveredSignalsUITests.swift`.
+Outcome-based waits cover values, expiry/stall, sheet close/reopen, and recovery;
+screenshots are full-screen XCTest attachments. The normal phone and SE checks
+also exercise scrolling. The larger-text test launches with the largest
+accessibility content-size category and verifies reachable rows/Done plus
+combined accessibility key/value/status/unit/evidence/choice labels. This checks
+Simulator accessibility metadata and reading order, not physical-phone VoiceOver
+audio or gestures. Report visual inspection and actual executed test results with
+the PR; a generated attachment alone is not a pass.
+
+### Shared synthetic vector provenance
+
+The software oracle is
+`Packages/CompanionKit/Tests/CompanionProtocolTests/Fixtures/golden-vectors/extensible-live-v1.json`,
+shared with firmware `tests/fixtures/companion/extensible-live-v1.json` under the
+[protocol contract](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/196).
+It identifies `fixture_id: extensible-live-v1`, `fixture_version: 1`; the supplied
+canonical firmware copy and Swift file are byte-identical (8,455 bytes), SHA-256
+`f7211540848f8bf87ed72080ae3cc6fd2aa04414469be0a60d9f1a39fc2d06bc`.
+The canonical seven-descriptor catalog is 369 bytes, served as 200 + 169 bytes.
+Both language expectations use those exact catalog/notification bytes for Boolean,
+signed binary32, Enum, invalid values, duplicate framing and token invalidation.
+Existing Swift protocol tests consume that oracle; the app journeys above are
+additional four-entry recipes, not replacements or invented golden vectors.
+
+Automated host/Simulator decoding, app interactions and screenshots establish
+software behavior only. This app run does not execute the sibling C++ suite or
+validate physical BLE bonding/service discovery, phone VoiceOver interaction,
+radio timing, CAN traffic, LED fail-off behavior, or any vehicle interpretation.
+Those phone/bench/vehicle checks remain unrun and require separate evidence.
+
 ## Extending a recipe
 
 For a new relevant scenario, record its name, starting controller/configuration,

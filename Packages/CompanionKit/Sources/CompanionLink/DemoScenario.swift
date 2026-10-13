@@ -32,6 +32,9 @@ public enum DemoScenario: String, CaseIterable, Sendable {
     case bluetoothOff
     /// The user denied Bluetooth access.
     case noAccess
+    /// Catalog-driven fixtures for the read-only discovered-signal sheet.
+    case discoveredSignals, discoveredPartial, discoveredStalled, discoveredMalformed
+    case discoveredReconnect, discoveredUnsupported, discoveredUnusable, discoveredCatalogFailure
 
     /// A session for this scenario. Pass `latency` 0 for snapshots or tests
     /// that should settle at once on the main actor's next turns.
@@ -48,8 +51,16 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             remembered = nil
         case .connecting:
             peripheral.isPoweredOn = false
-        case .connected, .relinking, .stalled, .selectorCycle, .driveLaps:
+        case .connected, .relinking, .stalled, .selectorCycle, .driveLaps,
+             .discoveredSignals, .discoveredPartial, .discoveredStalled, .discoveredMalformed,
+             .discoveredReconnect, .discoveredCatalogFailure:
             break
+        case .discoveredUnsupported:
+            demo.deviceInfo.protocolMinor = 0
+            demo.deviceInfo.extensionVersion = nil
+            demo.deviceInfo.extensionFlags = nil
+        case .discoveredUnusable:
+            demo.deviceInfo.extensionFlags = 0
         case .driveLapsLayout1:
             demo.deviceInfo.liveSignalLayoutVersion = LiveSignalFrame.layoutVersion
         case .validationError:
@@ -66,19 +77,27 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             radioState = .unauthorized
         }
 
+        if isDiscoveredJourney { demo.signalCatalog = Self.journeyCatalog(remapped: false) }
         let radio = FakeRadio(controllers: [peripheral], state: radioState, scheduler: scheduler, latency: latency)
         demo.attach(to: radio, scheduler: scheduler)
+        if self == .discoveredCatalogFailure {
+            radio.readHandler = { _, characteristic in
+                characteristic == CompanionGATT.signalCatalog ? .failure(.att(0x83)) : demo.read(characteristic)
+            }
+        }
         let frames: @Sendable (Double, UInt8) -> DemoTelemetry = switch self {
         case .selectorCycle: DemoTelemetry.selectorCycle
         case .driveLaps, .driveLapsLayout1: DemoTelemetry.driveLaps
         default: DemoTelemetry.drive
         }
-        demo.streamLiveSignals(
-            on: radio,
-            from: peripheral.id,
-            stopAfter: self == .stalled ? .seconds(3) : nil,
-            frames: frames
-        )
+        if isDiscoveredJourney {
+            startJourney(demo: demo, radio: radio, peripheral: peripheral.id)
+        } else {
+            demo.streamLiveSignals(
+                on: radio, from: peripheral.id,
+                stopAfter: self == .stalled ? .seconds(3) : nil, frames: frames
+            )
+        }
         let manager = ConnectionManager(
             radio: radio,
             store: InMemoryDeviceStore(rememberedDeviceID: remembered),
@@ -94,7 +113,61 @@ public enum DemoScenario: String, CaseIterable, Sendable {
                 radio.powerOff(id)
             }
         }
+        if self == .discoveredReconnect {
+            var observation: ObservationToken?
+            observation = manager.observeNotifications { characteristic, data in
+                guard characteristic == CompanionGATT.extensibleLiveSignals,
+                      let packet = try? ExtensibleLiveSignalPacket(decoding: data),
+                      !packet.records.isEmpty else { return }
+                observation?.cancel()
+                // Begin the event window only after actual valid data traversed
+                // the notifier. Startup/catalog latency cannot consume it.
+                scheduler.schedule(after: 6) {
+                    demo.signalCatalog = Self.journeyCatalog(remapped: true)
+                    self.startJourney(demo: demo, radio: radio, peripheral: peripheral.id, remapped: true)
+                    radio.powerCycle(peripheral.id, offFor: 2)
+                }
+            }
+        }
         manager.start()
         return session
     }
+
+    private var isDiscoveredJourney: Bool { rawValue.hasPrefix("discovered") }
+
+    private static func journeyCatalog(remapped: Bool) -> DemoSignalCatalog {
+        // Synthetic connection-local handles and evidence; no vehicle claims.
+        let handles: [UInt16] = remapped ? [400, 300, 200, 100] : [100, 200, 300, 400]
+        return try! DemoSignalCatalog(token: 0x12345678, entries: [
+            .init(handle: handles[0], key: "example.enabled", type: .boolean),
+            .init(handle: handles[1], key: "example.mode", type: .enumeration,
+                  choices: remapped ? ["new_choice", "idle"] : ["idle", "new_choice"]),
+            .init(handle: handles[2], key: "example.peer", type: .number, unit: "none"),
+            .init(handle: handles[3], key: "example.signed", type: .number, unit: "m/s^2"),
+        ])
+    }
+
+    @MainActor
+    private func startJourney(demo: DemoController, radio: FakeRadio, peripheral: PeripheralID,
+                              remapped: Bool = false) {
+        demo.streamLiveSignals(
+            on: radio, from: peripheral,
+            stopAfter: self == .discoveredStalled ? .seconds(8) : nil,
+            extensibleFrames: { seconds, _ in [
+                "example.enabled": .init(availability: .fresh,
+                                         value: .boolean(!remapped && !(self == .discoveredMalformed && seconds >= 6))),
+                "example.mode": .init(availability: .freshnessUnverified, value: .enumeration(choiceKey: "new_choice")),
+                "example.peer": .init(availability: .fresh, value: .number(Float(seconds))),
+                "example.signed": .init(availability: self == .discoveredPartial ? .stale : .fresh,
+                                        value: .number(remapped ? 2.5 : -1.25)),
+            ] },
+            extensibleSelection: { seconds in
+                self == .discoveredPartial && seconds >= 6 ? [200, 300, 400] : nil
+            },
+            transformExtensiblePackets: { seconds, packets in
+                self == .discoveredMalformed && seconds >= 6 ? packets.map { $0 + Data([1]) } : packets
+            }
+        )
+    }
+
 }
