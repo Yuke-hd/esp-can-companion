@@ -21,6 +21,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         if row("example.peer").exists {
             XCTAssertLessThan(row("example.peer").frame.minY, row("example.signed").frame.minY)
         }
+        app.scrollViews["signals.list"].swipeUp()
         capture("discovered-signed-number")
         closeSheet()
         XCTAssertTrue(app.buttons["signals.open"].waitForExistence(timeout: 5))
@@ -65,7 +66,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         assertRow("example.mode", contains: ["new_choice", "Choices: idle, new_choice"])
         capture("remap-before")
         let cleared = NSPredicate { _, _ in
-            !self.row("example.enabled").exists || self.row("example.enabled").label.contains("Unknown")
+            !self.row("example.enabled").exists
         }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: cleared, object: nil)], timeout: 20), .completed)
         capture("remap-disconnected-cleared")
@@ -74,6 +75,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         assertRow("example.mode", contains: ["new_choice", "Choices: new_choice, idle"])
         reveal("example.signed")
         assertRow("example.signed", contains: ["2.5", "Fresh"])
+        app.scrollViews["signals.list"].swipeUp()
         capture("remap-after")
     }
 
@@ -98,6 +100,10 @@ final class DiscoveredSignalsUITests: XCTestCase {
         reveal("example.signed")
         assertRow("example.signed", contains: ["example.signed, Number, -1.25, Fresh", "Unit: m/s^2"])
         capture("large-text-scrolled-number")
+        for page in 1...4 {
+            app.scrollViews["signals.list"].swipeUp()
+            capture("large-text-number-scroll-\(page)")
+        }
         XCTAssertTrue(app.buttons["signals.close"].isHittable)
         closeSheet()
     }
