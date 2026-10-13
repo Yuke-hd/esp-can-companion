@@ -19,6 +19,8 @@ public enum RadioEvent: Sendable, Equatable {
     /// The answer to `read(_:on:)`.
     case read(PeripheralID, GATTUUID, Result<Data, RadioError>)
     case received(PeripheralID, GATTUUID, Data)
+    case characteristicsDiscovered(PeripheralID, Set<GATTUUID>)
+    case notificationState(PeripheralID, GATTUUID, UUID, Bool, RadioError?)
     /// iOS relaunched the app for a Bluetooth event and handed back the
     /// peripherals it was tracking.
     case restored([RestoredPeripheral])
@@ -60,6 +62,16 @@ public protocol BLERadio: AnyObject {
     /// Reads the characteristic's whole value (Read, then Read Blob for long
     /// values). Reports `.read`.
     func read(_ characteristic: GATTUUID, on id: PeripheralID)
+    func setNotification(_ enabled: Bool, for characteristic: GATTUUID, on id: PeripheralID, requestID: UUID)
     func maximumWriteLength(for id: PeripheralID) -> Int
     func name(for id: PeripheralID) -> String?
+}
+
+/// Selected live notifier operation failures; no wire decoding belongs here.
+public enum LiveNotifierError: Error, Equatable, Sendable {
+    case notConnected
+    case disconnected
+    case unsupported(GATTUUID)
+    case busy
+    case failed(RadioError)
 }

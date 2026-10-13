@@ -18,8 +18,8 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     private var configuration: CompanionServiceConfiguration?
     /// Peripherals still waiting for the pairing read to finish.
     private var preparing: Set<PeripheralID> = []
-    /// `live_signal_layout_version` from each peripheral's device info.
-    private var liveSignalLayouts: [PeripheralID: UInt8] = [:]
+    private var pendingNotifications: [PeripheralID: [GATTUUID: (id: UUID, enabled: Bool)]] = [:]
+    private var preparingNotifications: [PeripheralID: Set<GATTUUID>] = [:]
     /// Reads issued with `read(_:on:)` and not answered yet, per characteristic.
     private var pendingReads: [PeripheralID: [GATTUUID: Int]] = [:]
 
@@ -74,6 +74,8 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
     public func cancelConnection(_ id: PeripheralID) {
         preparing.remove(id)
         pendingReads[id] = nil
+        pendingNotifications[id] = nil
+        preparingNotifications[id] = nil
         guard let peripheral = peripherals[id] else { return }
         central.cancelPeripheralConnection(peripheral)
     }
@@ -109,6 +111,19 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         pendingReads[id, default: [:]][characteristic, default: 0] += 1
         // CoreBluetooth follows up with Read Blob requests for long values.
         peripheral.readValue(for: target)
+    }
+
+    public func setNotification(_ enabled: Bool, for characteristic: GATTUUID, on id: PeripheralID, requestID: UUID) {
+        guard let configuration,
+              [configuration.liveSignalsCharacteristicUUID, CompanionGATT.extensibleLiveSignals].contains(characteristic),
+              let peripheral = peripherals[id], peripheral.state == .connected,
+              let target = self.characteristic(characteristic, on: peripheral), target.properties.contains(.notify)
+        else {
+            emit(.notificationState(id, characteristic, requestID, enabled, .characteristicNotFound(characteristic)))
+            return
+        }
+        pendingNotifications[id, default: [:]][characteristic] = (requestID, enabled)
+        peripheral.setNotifyValue(enabled, for: target)
     }
 
     public func maximumWriteLength(for id: PeripheralID) -> Int {
@@ -152,6 +167,7 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
                 + configuration.writableCharacteristicUUIDs
                 + configuration.readableCharacteristicUUIDs
                 + configuration.notifyingCharacteristicUUIDs
+                + [CompanionGATT.extensibleLiveSignals]
             if let match = configured.first(where: { CBUUID(string: $0.string) == characteristic.uuid }) {
                 return match
             }
@@ -178,11 +194,6 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             finishPreparing(id, .unsupportedProtocol(major: major))
             return
         }
-        if let value, value.count > 4 {
-            liveSignalLayouts[id] = value[value.startIndex + 4]
-        } else {
-            liveSignalLayouts[id] = nil
-        }
         // Reading an encrypted characteristic makes iOS pair (showing its prompt)
         // or re-encrypt with the stored bond. The controller answers with
         // Insufficient Authentication (0x05) or Insufficient Encryption (0x0F),
@@ -199,25 +210,27 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
             finishPreparing(id, Self.radioError(error))
             return
         }
-        // CCCD writes need the encrypted, bonded link too, so subscribe only now.
-        // Live signals only for a layout the app can decode (ble-protocol.md,
-        // versioning rule 5).
-        // TODO(#3): report subscription results (didUpdateNotificationStateFor);
-        // a failed subscription is currently silent.
-        for uuid in configuration.notifyingCharacteristicUUIDs {
-            if uuid == configuration.liveSignalsCharacteristicUUID,
-               !(liveSignalLayouts[id].map(configuration.supportedLiveSignalLayouts.contains) ?? false) {
-                continue
-            }
-            if let notifying = characteristic(uuid, on: peripheral) {
-                peripheral.setNotifyValue(true, for: notifying)
-            }
+        // Normalize restored live CCCDs before making the link available. Only
+        // config status is automatic; live selection belongs to the caller.
+        let live: Set<GATTUUID> = Set([configuration.liveSignalsCharacteristicUUID, CompanionGATT.extensibleLiveSignals].compactMap { $0 })
+        let discovered = Set(companionService(on: peripheral)?.characteristics?.map(gattUUID) ?? [])
+        emit(.characteristicsDiscovered(id, discovered))
+        let reset = live.intersection(discovered).filter {
+            characteristic($0, on: peripheral)?.isNotifying == true
         }
-        finishPreparing(id, nil)
+        preparingNotifications[id] = Set(reset)
+        for uuid in reset {
+            if let target = characteristic(uuid, on: peripheral) { peripheral.setNotifyValue(false, for: target) }
+        }
+        for uuid in configuration.notifyingCharacteristicUUIDs.subtracting(live) {
+            if let target = characteristic(uuid, on: peripheral) { peripheral.setNotifyValue(true, for: target) }
+        }
+        if reset.isEmpty { finishPreparing(id, nil) }
     }
 
     private func finishPreparing(_ id: PeripheralID, _ error: RadioError?) {
         guard preparing.remove(id) != nil else { return }
+        preparingNotifications[id] = nil
         emit(.prepared(id, error))
     }
 
@@ -269,6 +282,8 @@ extension CoreBluetoothRadio: CBCentralManagerDelegate {
                 // Peripheral objects are invalid after a reset; retrieve them again later.
                 peripherals.removeAll()
                 preparing.removeAll()
+                pendingNotifications.removeAll()
+                preparingNotifications.removeAll()
             }
             emit(.stateChanged(state))
         }
@@ -319,6 +334,8 @@ extension CoreBluetoothRadio: CBCentralManagerDelegate {
         MainActor.assumeIsolated {
             preparing.remove(peripheral.identifier)
             pendingReads[peripheral.identifier] = nil
+            pendingNotifications[peripheral.identifier] = nil
+            preparingNotifications[peripheral.identifier] = nil
             emit(.disconnected(peripheral.identifier, Self.radioError(error)))
         }
     }
@@ -401,6 +418,27 @@ extension CoreBluetoothRadio: CBPeripheralDelegate {
             }
             guard error == nil, let value = characteristic.value else { return }
             emit(.received(id, uuid, value))
+        }
+    }
+
+    nonisolated public func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        MainActor.assumeIsolated {
+            let id = peripheral.identifier
+            let uuid = gattUUID(characteristic)
+            if preparingNotifications[id]?.contains(uuid) == true {
+                preparingNotifications[id]?.remove(uuid)
+                if let error = Self.operationError(error) { finishPreparing(id, error) }
+                else if characteristic.isNotifying { finishPreparing(id, .other("Live notifier remained enabled.")) }
+                else if preparingNotifications[id]?.isEmpty == true { finishPreparing(id, nil) }
+                return
+            }
+            guard let request = pendingNotifications[id]?.removeValue(forKey: uuid) else { return }
+            let failure = Self.operationError(error) ?? (characteristic.isNotifying == request.enabled ? nil : .other("Notification state did not match request."))
+            emit(.notificationState(id, uuid, request.id, characteristic.isNotifying, failure))
         }
     }
 

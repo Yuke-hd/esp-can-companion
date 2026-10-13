@@ -29,6 +29,7 @@ public struct FakeController: Sendable {
     public var protocolMajor: UInt8
     /// When set, connection attempts fail with this error instead of connecting.
     public var connectError: RadioError?
+    public var availableCharacteristics: Set<GATTUUID> = [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus, CompanionGATT.liveSignals, CompanionGATT.command, CompanionGATT.signalCatalog, CompanionGATT.extensibleLiveSignals]
     public var maximumWriteLength: Int
 
     public init(
@@ -80,6 +81,15 @@ public final class FakeRadio: BLERadio {
     /// were missing.
     public var readHandler: (@MainActor (PeripheralID, GATTUUID) -> Result<Data, RadioError>)?
 
+    public private(set) var enabledNotifications: [PeripheralID: Set<GATTUUID>] = [:]
+    public private(set) var notificationRequests: [(characteristic: GATTUUID, enabled: Bool)] = []
+    /// Overrides the callback state to exercise inconsistent radio responses.
+    public var notificationReportedState: Bool?
+    /// Drops notification callbacks to exercise cancellation of stalled CCCDs.
+    public var hangsNotificationRequests = false
+    public var notificationHandler: (@MainActor (GATTUUID, Bool) -> RadioError?)?
+    private var notificationGeneration: [PeripheralID: UUID] = [:]
+
     private let scheduler: BLEScheduler
     private let latency: TimeInterval
     private var configuration: CompanionServiceConfiguration?
@@ -121,6 +131,8 @@ public final class FakeRadio: BLERadio {
     }
 
     public func cancelConnection(_ id: PeripheralID) {
+        notificationGeneration[id] = UUID()
+        enabledNotifications[id] = nil
         pendingConnections.remove(id)
         if connectedPeripherals.remove(id) != nil {
             emit(.disconnected(id, nil))
@@ -146,7 +158,11 @@ public final class FakeRadio: BLERadio {
             }
             onEvent?(.pairingStarted(id))
             switch controller.pairing {
-            case .succeeds: onEvent?(.prepared(id, nil))
+            case .succeeds:
+                notificationGeneration[id] = UUID()
+                enabledNotifications[id] = [CompanionGATT.configStatus]
+                onEvent?(.characteristicsDiscovered(id, controller.availableCharacteristics))
+                onEvent?(.prepared(id, nil))
             case .fails(let message): onEvent?(.prepared(id, .pairingFailed(message)))
             case .peerRemovedPairingInformation: onEvent?(.prepared(id, .peerRemovedPairingInformation))
             case .dropsLink:
@@ -174,6 +190,26 @@ public final class FakeRadio: BLERadio {
             guard connectedPeripherals.contains(id) else { return }
             let result = readHandler?(id, characteristic) ?? .failure(.characteristicNotFound(characteristic))
             onEvent?(.read(id, characteristic, result))
+        }
+    }
+
+    public func setNotification(_ enabled: Bool, for characteristic: GATTUUID, on id: PeripheralID, requestID: UUID) {
+        notificationRequests.append((characteristic, enabled))
+        let generation = notificationGeneration[id]
+        later { [self] in
+            guard connectedPeripherals.contains(id), generation == notificationGeneration[id] else { return }
+            guard [CompanionGATT.liveSignals, CompanionGATT.extensibleLiveSignals].contains(characteristic),
+                  controllers[id]?.availableCharacteristics.contains(characteristic) == true else {
+                onEvent?(.notificationState(id, characteristic, requestID, enabled, .characteristicNotFound(characteristic)))
+                return
+            }
+            guard !hangsNotificationRequests else { return }
+            let error = notificationHandler?(characteristic, enabled)
+            if error == nil {
+                if enabled { enabledNotifications[id, default: []].insert(characteristic) }
+                else { enabledNotifications[id, default: []].remove(characteristic) }
+            }
+            onEvent?(.notificationState(id, characteristic, requestID, notificationReportedState ?? enabled, error))
         }
     }
 
@@ -244,19 +280,24 @@ public final class FakeRadio: BLERadio {
     /// delivered now; call it that way from `writeHandler` to send a
     /// notification ahead of the write response, as the controller does.
     public func sendNotification(from id: PeripheralID, characteristic: GATTUUID, data: Data, immediately: Bool = false) {
-        guard connectedPeripherals.contains(id) else { return }
+        guard connectedPeripherals.contains(id), enabledNotifications[id, default: []].contains(characteristic) else { return }
+        let generation = notificationGeneration[id]
         if immediately {
             onEvent?(.received(id, characteristic, data))
         } else {
-            emit(.received(id, characteristic, data))
+            later { [self] in
+                guard connectedPeripherals.contains(id), generation == notificationGeneration[id], enabledNotifications[id, default: []].contains(characteristic) else { return }
+                onEvent?(.received(id, characteristic, data))
+            }
         }
     }
 
     /// Simulates iOS relaunching the app in the background and restoring the
     /// central manager. Send it before the radio reports `.poweredOn`, as iOS does.
-    public func restore(_ peripherals: [RestoredPeripheral]) {
+    public func restore(_ peripherals: [RestoredPeripheral], notifying: Set<GATTUUID> = []) {
         for peripheral in peripheralsToRestore(peripherals) where peripheral.isConnected {
             connectedPeripherals.insert(peripheral.id)
+            enabledNotifications[peripheral.id] = notifying
         }
         emit(.restored(peripherals))
     }
