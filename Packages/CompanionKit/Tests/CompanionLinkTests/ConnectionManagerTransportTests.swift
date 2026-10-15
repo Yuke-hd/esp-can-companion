@@ -77,7 +77,14 @@ final class ConnectionManagerTransportTests: XCTestCase {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)
         await bench.connect()
-        // The existing demo has neither extension endpoint.
+        // Explicitly model a pre-extension controller, independently of the
+        // default demo's catalog support. Its optional write is not permitted.
+        bench.demo.deviceInfo.protocolMinor = 0
+        bench.demo.deviceInfo.extensionVersion = nil
+        bench.demo.deviceInfo.extensionFlags = nil
+        bench.radio.writeHandler = { characteristic, value in
+            characteristic == CompanionGATT.signalCatalog ? .att(0x03) : bench.demo.write(value, to: characteristic)
+        }
         let read = Task { try await transport.read(.signalCatalog) }
         await bench.settle { bench.scheduler.nextDelay != nil }
         bench.scheduler.runUntilIdle()
