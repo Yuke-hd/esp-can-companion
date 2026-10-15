@@ -121,6 +121,7 @@ public actor CompanionClient {
     private var legacyActivationInProgress = false
     /// Complete mapping for this connection; nil after reset or token invalidation.
     public internal(set) var signalCatalog: SignalCatalog?
+    var extensibleTelemetrySession: ExtensibleTelemetrySession?
     var catalogGeneration: UInt64 = 0
     var catalogOperationInProgress = false
     var catalogTransportRequest: UUID?
@@ -147,6 +148,7 @@ public actor CompanionClient {
 
     /// Forgets device info, for example after the link dropped.
     public func reset() {
+        if let session = extensibleTelemetrySession { stopExtensibleTelemetry(session) }
         legacyStreamFinish?()
         legacyStreamFinish = nil
         deviceInfo = nil

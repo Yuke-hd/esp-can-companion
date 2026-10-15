@@ -12,7 +12,7 @@ public enum CompanionProtocol {
     public static let supportedProtocolMajors: Set<UInt8> = [supportedVersion]
     /// Highest protocol minor version this client knows. A newer minor is
     /// compatible: the client ignores fields, flag bits and codes it does not know.
-    public static let knownProtocolMinor: UInt8 = 0
+    public static let knownProtocolMinor: UInt8 = 1
     /// Controller config schema versions `ControllerConfig` models.
     public static let supportedConfigSchemaVersions: Set<UInt16> = [1]
     /// Live signals frame layouts `LiveSignalFrame` decodes.
