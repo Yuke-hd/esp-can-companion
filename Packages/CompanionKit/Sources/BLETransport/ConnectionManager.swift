@@ -20,6 +20,19 @@ public final class ConnectionManager {
     /// The controller the manager reconnects to on launch, if any.
     public private(set) var rememberedDeviceID: PeripheralID?
 
+    public private(set) var selectedLiveNotifier: GATTUUID?
+    public private(set) var selectedLiveNotifierID: UUID? {
+        didSet {
+            guard let oldValue, oldValue != selectedLiveNotifierID else { return }
+            notifierTerminations.removeValue(forKey: oldValue)?()
+        }
+    }
+    @ObservationIgnored private var notifierTerminations: [UUID: @MainActor () -> Void] = [:]
+    /// Discovered endpoints for this connection; reset when the link drops.
+    public private(set) var availableCharacteristics: Set<GATTUUID> = []
+    @ObservationIgnored private var notificationRequest: (id: UUID, uuid: GATTUUID, enabled: Bool, continuation: CheckedContinuation<Void, Error>)?
+    @ObservationIgnored private var selectionID: UUID?
+
     public let configuration: CompanionServiceConfiguration
 
     /// Called for every notification from the companion service.
@@ -187,6 +200,79 @@ public final class ConnectionManager {
         }
     }
 
+    /// Disables the previous notifier before enabling the selected live UUID.
+    /// Cancellation closes the link so an outstanding CCCD write cannot leave
+    /// an unowned stream running. Reconnect requires explicit selection again.
+    public func selectLiveNotifier(_ characteristic: GATTUUID?) async throws {
+        guard state.isConnected else { throw LiveNotifierError.notConnected }
+        if let characteristic {
+            guard liveNotifierUUIDs.contains(characteristic), availableCharacteristics.contains(characteristic) else {
+                throw LiveNotifierError.unsupported(characteristic)
+            }
+        }
+        guard selectionID == nil else { throw LiveNotifierError.busy }
+        let operationID = UUID()
+        selectionID = operationID
+        defer { if selectionID == operationID { selectionID = nil } }
+        selectedLiveNotifier = nil
+        selectedLiveNotifierID = nil
+        do {
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                // A prior failed enable/disable can leave the remote CCCD uncertain.
+                // Normalize both endpoints, not just the last confirmed selection.
+                for uuid in [configuration.liveSignalsCharacteristicUUID, CompanionGATT.extensibleLiveSignals].compactMap({ $0 }) where availableCharacteristics.contains(uuid) {
+                    try await updateNotifier(uuid, enabled: false)
+                    try Task.checkCancellation()
+                }
+                try Task.checkCancellation()
+                if let characteristic {
+                    try await updateNotifier(characteristic, enabled: true)
+                    try Task.checkCancellation()
+                    selectedLiveNotifier = characteristic
+                    selectedLiveNotifierID = operationID
+                }
+            } onCancel: {
+                Task { @MainActor [weak self] in
+                    guard let self, self.selectionID == operationID else { return }
+                    self.disconnect()
+                }
+            }
+        } catch {
+            if Task.isCancelled {
+                disconnect()
+                throw CancellationError()
+            }
+            throw error
+        }
+    }
+
+    /// Registers the activation lease's terminal callback. It also fires if
+    /// the selection ended before registration could reach the main actor.
+    public func onLiveNotifierTermination(selectionID: UUID, _ handler: @escaping @MainActor () -> Void) {
+        guard selectedLiveNotifierID == selectionID else { handler(); return }
+        notifierTerminations[selectionID] = handler
+    }
+
+    /// An older stream's termination cannot disable a newer selection.
+    public func clearLiveNotifier(ifSelectionID id: UUID) async throws {
+        guard selectedLiveNotifierID == id else { return }
+        try await selectLiveNotifier(nil)
+    }
+
+    private var liveNotifierUUIDs: Set<GATTUUID> {
+        Set([configuration.liveSignalsCharacteristicUUID, CompanionGATT.extensibleLiveSignals].compactMap { $0 })
+    }
+
+    private func updateNotifier(_ uuid: GATTUUID, enabled: Bool) async throws {
+        guard case .connected(let device) = state else { throw LiveNotifierError.disconnected }
+        try await withCheckedThrowingContinuation { continuation in
+            let requestID = UUID()
+            notificationRequest = (requestID, uuid, enabled, continuation)
+            radio.setNotification(enabled, for: uuid, on: device.id, requestID: requestID)
+        }
+    }
+
     /// Calls `handler` for every notification from the companion service, on
     /// the main actor and in arrival order, until the token is cancelled.
     @discardableResult
@@ -229,6 +315,7 @@ public final class ConnectionManager {
                 radio.cancelConnection(id)
                 return
             }
+            failPendingRequests(.disconnected)
             state = .pairing(id)
             radio.prepare(id, configuration: configuration)
 
@@ -286,8 +373,27 @@ public final class ConnectionManager {
             case .failure(let error): continuation.resume(throwing: ConnectionError.readFailed(error))
             }
 
+        case .characteristicsDiscovered(let id, let uuids):
+            guard id == target else { return }
+            availableCharacteristics = uuids
+
+        case .liveNotifierStopped(let id, let uuid, _):
+            guard id == target, selectedLiveNotifier == uuid else { return }
+            selectedLiveNotifier = nil
+            selectedLiveNotifierID = nil
+
+        case .notificationState(let id, let uuid, let requestID, let enabled, let error):
+            guard id == target, let request = notificationRequest, request.id == requestID else { return }
+            notificationRequest = nil
+            if let error { request.continuation.resume(throwing: LiveNotifierError.failed(error)) }
+            else if uuid != request.uuid || enabled != request.enabled {
+                request.continuation.resume(throwing: LiveNotifierError.failed(.other("Notification state did not match request.")))
+            }
+            else { request.continuation.resume() }
+
         case .received(let id, let characteristic, let data):
             guard id == target, state.isConnected else { return }
+            guard !liveNotifierUUIDs.contains(characteristic) || selectedLiveNotifier == characteristic else { return }
             onNotification?(characteristic, data)
             for observer in Array(notificationObservers.values) { observer(characteristic, data) }
 
@@ -356,6 +462,7 @@ public final class ConnectionManager {
             return
         }
 
+        failPendingRequests(.disconnected)
         if let reason = Self.terminalReason(for: error) {
             stopReconnecting(id, reason: reason)
         } else if !pairingFailureReachedLimit(id, message: error.message) {
@@ -452,6 +559,13 @@ public final class ConnectionManager {
     }
 
     private func failPendingRequests(_ error: ConnectionError) {
+        selectedLiveNotifier = nil
+        selectedLiveNotifierID = nil
+        availableCharacteristics = []
+        if let request = notificationRequest {
+            notificationRequest = nil
+            request.continuation.resume(throwing: LiveNotifierError.disconnected)
+        }
         let writes = pendingWrites.values.flatMap { $0 }
         let reads = pendingReads.values.flatMap { $0 }
         pendingWrites = [:]

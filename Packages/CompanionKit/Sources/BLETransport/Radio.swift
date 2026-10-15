@@ -19,6 +19,9 @@ public enum RadioEvent: Sendable, Equatable {
     /// The answer to `read(_:on:)`.
     case read(PeripheralID, GATTUUID, Result<Data, RadioError>)
     case received(PeripheralID, GATTUUID, Data)
+    case characteristicsDiscovered(PeripheralID, Set<GATTUUID>)
+    case liveNotifierStopped(PeripheralID, GATTUUID, RadioError?)
+    case notificationState(PeripheralID, GATTUUID, UUID, Bool, RadioError?)
     /// iOS relaunched the app for a Bluetooth event and handed back the
     /// peripherals it was tracking.
     case restored([RestoredPeripheral])
@@ -53,13 +56,25 @@ public protocol BLERadio: AnyObject {
     func cancelConnection(_ id: PeripheralID)
     /// Discovers the companion service, reads device info and checks the
     /// protocol major version, reads the encrypted pairing characteristic (which
-    /// pairs or re-encrypts), then subscribes to notifications. Reports `.prepared`.
+    /// pairs or re-encrypts), clears restored live CCCDs and subscribes to
+    /// configuration status. Live notifications require explicit selection.
+    /// Reports `.prepared`.
     func prepare(_ id: PeripheralID, configuration: CompanionServiceConfiguration)
     /// Writes with response. Reports `.wrote`.
     func write(_ data: Data, to characteristic: GATTUUID, on id: PeripheralID)
     /// Reads the characteristic's whole value (Read, then Read Blob for long
     /// values). Reports `.read`.
     func read(_ characteristic: GATTUUID, on id: PeripheralID)
+    func setNotification(_ enabled: Bool, for characteristic: GATTUUID, on id: PeripheralID, requestID: UUID)
     func maximumWriteLength(for id: PeripheralID) -> Int
     func name(for id: PeripheralID) -> String?
+}
+
+/// Selected live notifier operation failures; no wire decoding belongs here.
+public enum LiveNotifierError: Error, Equatable, Sendable {
+    case notConnected
+    case disconnected
+    case unsupported(GATTUUID)
+    case busy
+    case failed(RadioError)
 }

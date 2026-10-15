@@ -211,6 +211,7 @@ final class ControllerSessionTests: XCTestCase {
 
         let telemetry = LiveTelemetry(session: session)
         let run = Task { await telemetry.run() }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.liveSignals }
         var frame = DemoTelemetry()
         frame.engineRPM = 3200
         for sequence in 0..<200 where telemetry.frame.engineRPM.value != 3200 {

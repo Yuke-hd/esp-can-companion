@@ -46,6 +46,129 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertNotNil(scheduler.nextDelay, "the write never reached the radio")
     }
 
+    private func finishSelection(_ task: Task<Void, Error>) async throws {
+        await waitForRadioWork()
+        for _ in 0..<100 { scheduler.runUntilIdle(); await Task.yield() }
+        try await task.value
+    }
+
+    func testLiveNotifierIsExplicitAndSwitchDisablesBeforeEnabling() async throws {
+        makeManager(); connectAndPair()
+        XCTAssertNil(manager.selectedLiveNotifier)
+        var received: [GATTUUID] = []
+        manager.onNotification = { uuid, _ in received.append(uuid) }
+        radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([1]))
+        scheduler.runUntilIdle()
+        XCTAssertTrue(received.isEmpty)
+        try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) })
+        try await finishSelection(Task { try await manager.selectLiveNotifier(CompanionGATT.extensibleLiveSignals) })
+        XCTAssertEqual(radio.notificationRequests.suffix(3).map(\.characteristic), [telemetry, CompanionGATT.extensibleLiveSignals, CompanionGATT.extensibleLiveSignals])
+        XCTAssertEqual(radio.notificationRequests.suffix(3).map(\.enabled), [false, false, true])
+        // A restored or queued radio callback can arrive despite the remote gate.
+        radio.onEvent?(.received(controller.id, telemetry, Data([2])))
+        radio.sendNotification(from: controller.id, characteristic: CompanionGATT.extensibleLiveSignals, data: Data([3]))
+        radio.sendNotification(from: controller.id, characteristic: CompanionGATT.configStatus, data: Data([4]))
+        scheduler.runUntilIdle()
+        XCTAssertEqual(received, [CompanionGATT.extensibleLiveSignals, CompanionGATT.configStatus])
+        try await finishSelection(Task { try await manager.selectLiveNotifier(nil) })
+        XCTAssertNil(manager.selectedLiveNotifier)
+    }
+
+    func testNotifierErrorUnsupportedAndDisconnect() async throws {
+        makeManager(); connectAndPair()
+        radio.notificationHandler = { _, enabled in enabled ? .att(3) : nil }
+        do { try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) }); XCTFail("expected error") }
+        catch { XCTAssertEqual(error as? LiveNotifierError, .failed(.att(3))) }
+        XCTAssertNil(manager.selectedLiveNotifier)
+        do { try await manager.selectLiveNotifier(CompanionGATT.command); XCTFail("expected unsupported") }
+        catch { XCTAssertEqual(error as? LiveNotifierError, .unsupported(CompanionGATT.command)) }
+        radio.notificationHandler = nil
+        try await finishSelection(Task { try await manager.selectLiveNotifier(CompanionGATT.extensibleLiveSignals) })
+        XCTAssertEqual(radio.enabledNotifications[controller.id], [CompanionGATT.configStatus, CompanionGATT.extensibleLiveSignals])
+        let pending = Task { try await manager.selectLiveNotifier(telemetry) }
+        await waitForRadioWork()
+        manager.disconnect(); scheduler.runUntilIdle()
+        do { try await pending.value; XCTFail("expected disconnect") }
+        catch { XCTAssertEqual(error as? LiveNotifierError, .disconnected) }
+        XCTAssertTrue(manager.availableCharacteristics.isEmpty)
+    }
+
+    func testCancellationRacingSuccessfulEnableCannotLeaveUnownedStream() async throws {
+        makeManager(); connectAndPair()
+        var task: Task<Void, Error>?
+        radio.notificationHandler = { _, enabled in
+            if enabled { task?.cancel() }
+            return nil
+        }
+        task = Task { try await manager.selectLiveNotifier(telemetry) }
+        do { try await finishSelection(try XCTUnwrap(task)); XCTFail("expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        scheduler.runUntilIdle()
+        XCTAssertNil(manager.selectedLiveNotifier)
+        XCTAssertFalse(radio.connectedPeripherals.contains(controller.id))
+    }
+
+    func testLateCallbackCannotAdvanceNewNotifierRequest() async throws {
+        makeManager(); connectAndPair()
+        let original = radio.onEvent
+        var lastCallback: RadioEvent?
+        radio.onEvent = { event in
+            if case .notificationState = event { lastCallback = event }
+            original?(event)
+        }
+        try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) })
+        let stale = try XCTUnwrap(lastCallback)
+        radio.hangsNotificationRequests = true
+        let next = Task { try await manager.selectLiveNotifier(CompanionGATT.extensibleLiveSignals) }
+        await waitForRadioWork(); scheduler.runUntilIdle()
+        let count = radio.notificationRequests.count
+        original?(stale)
+        for _ in 0..<100 { await Task.yield(); scheduler.runUntilIdle() }
+        XCTAssertEqual(radio.notificationRequests.count, count)
+        XCTAssertNil(manager.selectedLiveNotifier)
+        next.cancel()
+        for _ in 0..<100 { await Task.yield(); scheduler.runUntilIdle() }
+        do { try await next.value; XCTFail("expected cancellation") } catch { }
+    }
+
+    func testWrongNotificationStateCannotConfirmSelection() async throws {
+        makeManager(); connectAndPair()
+        radio.notificationReportedState = true
+        do { try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) }); XCTFail("expected mismatched disable failure") }
+        catch { XCTAssertEqual(error as? LiveNotifierError, .failed(.other("Notification state did not match request."))) }
+        XCTAssertNil(manager.selectedLiveNotifier)
+    }
+
+    func testCancelledSelectionClosesLinkAndReconnectRequiresSelection() async throws {
+        makeManager(); connectAndPair()
+        let pending = Task { try await manager.selectLiveNotifier(telemetry) }
+        radio.hangsNotificationRequests = true
+        await waitForRadioWork(); scheduler.runUntilIdle(); pending.cancel()
+        for _ in 0..<100 { await Task.yield() }
+        scheduler.runUntilIdle()
+        do { try await pending.value; XCTFail("expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError || error as? LiveNotifierError == .disconnected) }
+        manager.reconnect(); scheduler.runUntilIdle()
+        XCTAssertTrue(manager.state.isConnected)
+        XCTAssertNil(manager.selectedLiveNotifier)
+        XCTAssertFalse(radio.enabledNotifications[controller.id, default: []].contains(telemetry))
+    }
+
+    func testRestoredSubscriptionsClearedAndMissingOptionalIsMetadata() async throws {
+        var device = FakeController()
+        device.availableCharacteristics.remove(CompanionGATT.extensibleLiveSignals)
+        makeManager(controllers: [device], radioState: .unknown, remembered: device.id)
+        radio.restore([RestoredPeripheral(id: device.id, isConnected: true)], notifying: [telemetry, CompanionGATT.extensibleLiveSignals])
+        scheduler.runUntilIdle()
+        radio.setRadioState(.poweredOn); scheduler.runUntilIdle()
+        XCTAssertTrue(manager.state.isConnected)
+        XCTAssertNil(manager.selectedLiveNotifier)
+        XCTAssertFalse(manager.availableCharacteristics.contains(CompanionGATT.extensibleLiveSignals))
+        XCTAssertEqual(radio.enabledNotifications[device.id], [CompanionGATT.configStatus])
+        do { try await manager.selectLiveNotifier(CompanionGATT.extensibleLiveSignals); XCTFail("missing") }
+        catch { XCTAssertEqual(error as? LiveNotifierError, .unsupported(CompanionGATT.extensibleLiveSignals)) }
+    }
+
     // MARK: Radio and permission states
 
     func testRadioStatesMapToLinkStates() async {
@@ -493,10 +616,11 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertTrue(manager.state.isConnected)
     }
 
-    func testNotificationsAreForwarded() async {
+    func testNotificationsAreForwarded() async throws {
         makeManager()
         connectAndPair()
 
+        try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) })
         var received: [(GATTUUID, Data)] = []
         manager.onNotification = { received.append(($0, $1)) }
         radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([0xAA]))
@@ -602,10 +726,11 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(seen.last, .disconnected(.userRequested, willReconnect: false))
     }
 
-    func testNotificationObserversReceiveInOrderUntilCancelled() async {
+    func testNotificationObserversReceiveInOrderUntilCancelled() async throws {
         makeManager()
         connectAndPair()
 
+        try await finishSelection(Task { try await manager.selectLiveNotifier(telemetry) })
         var received: [Data] = []
         let token = manager.observeNotifications { _, data in received.append(data) }
         radio.sendNotification(from: controller.id, characteristic: telemetry, data: Data([0x01]))
