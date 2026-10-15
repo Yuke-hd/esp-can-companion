@@ -90,6 +90,35 @@ final class DriveNavigationUITests: XCTestCase {
         captureLandscape("drive-not-linked")
     }
 
+    func testDriveStyleButtonSwitchesToClusterAndBack() {
+        launch(scenario: "driveLaps")
+        openDrive()
+        waitForLandscape()
+        let cluster = app.descendants(matching: .any)["drive.cluster"]
+        let throttle = app.descendants(matching: .any)["drive.throttle"]
+        XCTAssertTrue(throttle.waitForExistence(timeout: 10))
+        XCTAssertFalse(cluster.exists)
+
+        let style = app.descendants(matching: .any)["drive.style"]
+        XCTAssertTrue(style.waitForExistence(timeout: 5))
+        style.tap()
+
+        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "first tap should switch to the Cluster style")
+        XCTAssertFalse(throttle.exists, "Cluster style should drop the throttle readout")
+        assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
+        assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6"])
+        assertText(for: "drive.speed", matchingAny: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+        assertText(for: "drive.gmeter", containing: "g")
+        XCTAssertTrue(app.descendants(matching: .any)["drive.exit"].isHittable)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForLandscape()
+        capture("drive-cluster-style")
+
+        style.tap()
+        XCTAssertTrue(cluster.waitForNonExistence(timeout: 5), "second tap should return to Motorsport")
+        XCTAssertTrue(throttle.waitForExistence(timeout: 5))
+    }
+
     private func launchConnected() {
         launch(scenario: "connected")
     }
@@ -106,6 +135,10 @@ final class DriveNavigationUITests: XCTestCase {
     private func openDrive() {
         app.buttons["Drive"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["drive.exit"].waitForExistence(timeout: 10))
+        // The chosen Drive style persists between launches; start each test from Motorsport.
+        if app.descendants(matching: .any)["drive.cluster"].exists {
+            app.descendants(matching: .any)["drive.style"].tap()
+        }
     }
 
     private func exitDrive() {

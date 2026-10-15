@@ -12,6 +12,7 @@ struct MotorsportDriveView: View {
     /// Why the live stream cannot be read, if it cannot.
     var telemetryFailure: String?
     let onExit: () -> Void
+    var onSwitchStyle: (() -> Void)?
     /// Whether the G-meter has the centre and the gear the corner slot.
     @State private var gMeterCentred = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -75,7 +76,8 @@ struct MotorsportDriveView: View {
                 },
                 link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
             ),
-            onExit: onExit
+            onExit: onExit,
+            onSwitchStyle: onSwitchStyle
         )
         .onAppear { Theme.DriveTypography.registerFonts() }
     }

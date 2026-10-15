@@ -99,12 +99,42 @@ extension EnvironmentValues {
 
 /// A landscape-only shell for the passive Drive display.
 struct DriveScreen: View {
-    let slots: DriveScreenSlots
-    let onExit: () -> Void
+    /// How a style fills the screen: the column slots, or one view of its
+    /// own with the controls floating over it.
+    private enum Layout {
+        case slots(DriveScreenSlots)
+        case fill(backdrop: AnyView, content: AnyView)
+    }
 
-    init(slots: DriveScreenSlots = .placeholder, onExit: @escaping () -> Void = {}) {
-        self.slots = slots
+    private let layout: Layout
+    let onExit: () -> Void
+    /// Switches to the next Drive style, or nil to hide the control.
+    var onSwitchStyle: (() -> Void)?
+
+    init(slots: DriveScreenSlots = .placeholder, onExit: @escaping () -> Void = {}, onSwitchStyle: (() -> Void)? = nil) {
+        self.layout = .slots(slots)
         self.onExit = onExit
+        self.onSwitchStyle = onSwitchStyle
+    }
+
+    /// A style that draws its whole layout itself, across the screen's full
+    /// width, under the controls.
+    init<Backdrop: View, Content: View>(
+        onExit: @escaping () -> Void,
+        onSwitchStyle: (() -> Void)? = nil,
+        @ViewBuilder backdrop: () -> Backdrop = { Color.clear },
+        @ViewBuilder content: () -> Content
+    ) {
+        self.layout = .fill(backdrop: AnyView(backdrop()), content: AnyView(content()))
+        self.onExit = onExit
+        self.onSwitchStyle = onSwitchStyle
+    }
+
+    private var backdrop: AnyView {
+        switch layout {
+        case .slots(let slots): slots.backdrop
+        case .fill(let backdrop, _): backdrop
+        }
     }
 
     var body: some View {
@@ -128,7 +158,7 @@ struct DriveScreen: View {
             )
             let metrics = DriveMetrics.make(contentSize: contentSize)
 
-            content(metrics: metrics, contentWidth: contentSize.width)
+            content(metrics: metrics, contentWidth: contentSize.width, horizontalMargin: horizontalMargin)
                 .frame(width: contentSize.width, height: contentSize.height)
                 .padding(.horizontal, horizontalMargin)
                 .padding(.top, topMargin)
@@ -139,19 +169,35 @@ struct DriveScreen: View {
         }
         // The backdrop spans the whole screen, under the island and the
         // home indicator, for effects such as the turn-signal glow.
-        .background(slots.backdrop.ignoresSafeArea().allowsHitTesting(false))
+        .background(backdrop.ignoresSafeArea().allowsHitTesting(false))
         .background(Theme.Colors.background.ignoresSafeArea())
         .statusBarHidden(true)
     }
 
-    private func content(metrics: DriveMetrics, contentWidth: CGFloat) -> some View {
+    @ViewBuilder private func content(metrics: DriveMetrics, contentWidth: CGFloat, horizontalMargin: CGFloat) -> some View {
+        switch layout {
+        case .slots(let slots):
+            columns(slots, metrics: metrics, contentWidth: contentWidth)
+        case .fill(_, let content):
+            // A style that draws itself runs edge to edge, under the island,
+            // with the controls floating over its top corner.
+            ZStack(alignment: .topTrailing) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, -horizontalMargin)
+                controls
+            }
+        }
+    }
+
+    private func columns(_ slots: DriveScreenSlots, metrics: DriveMetrics, contentWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
                 slots.shiftLights
                     .frame(width: min(600, contentWidth * 0.72), height: 26)
                     .frame(maxWidth: .infinity)
 
-                exitButton
+                controls
             }
             .frame(height: 30)
 
@@ -191,9 +237,18 @@ struct DriveScreen: View {
         }
     }
 
-    private var exitButton: some View {
-        Button(action: onExit) {
-            Label("Exit Drive", systemImage: "xmark")
+    private var controls: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if let onSwitchStyle {
+                controlButton("Change Drive style", systemImage: "gauge.with.dots.needle.67percent", identifier: "drive.style", action: onSwitchStyle)
+            }
+            controlButton("Exit Drive", systemImage: "xmark", identifier: "drive.exit", action: onExit)
+        }
+    }
+
+    private func controlButton(_ title: String, systemImage: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Theme.Colors.textSecondary)
@@ -202,8 +257,8 @@ struct DriveScreen: View {
                 .contentShape(Circle().inset(by: -8))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Exit Drive")
-        .accessibilityIdentifier("drive.exit")
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(identifier)
     }
 }
 

@@ -4,8 +4,8 @@ import os
 
 extension Theme {
     /// Typefaces named by the Drive draft. They are bundled under the SIL Open
-    /// Font License (see `Fonts/OFL-*.txt`, with provenance in
-    /// `Fonts/SOURCES.md`) and used on Drive only; the rest of the app keeps
+    /// Font License or CC BY-SA 4.0 (licence texts and provenance in `Fonts/`,
+    /// see `Fonts/SOURCES.md`) and used on Drive only; the rest of the app keeps
     /// the system faces.
     ///
     /// Sizes are fixed on purpose: Drive is a glanceable landscape gauge
@@ -30,6 +30,12 @@ extension Theme {
             return .custom("JetBrains Mono", fixedSize: size).weight(weight)
         }
 
+        /// The Cluster style's wide display face: New Academy by Gustavo Paz L.
+        public static func academy(_ size: CGFloat) -> Font {
+            registerFonts()
+            return .custom("NEWACADEMY", fixedSize: size)
+        }
+
         /// Registers the bundled faces with the process once. Safe to call repeatedly.
         public static func registerFonts() {
             _ = registration
@@ -42,6 +48,7 @@ extension Theme {
                 "BarlowCondensed-BoldItalic",
                 "BarlowCondensed-ExtraBoldItalic",
                 "JetBrainsMono-Variable",
+                "NewAcademy",
             ]
             for name in names {
                 guard let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: "Fonts") else {
