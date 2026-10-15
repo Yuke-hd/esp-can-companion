@@ -216,3 +216,77 @@ final class PitWallReadoutTests: XCTestCase {
         }
     }
 }
+
+extension PitWallReadoutTests {
+    func testSemanticProjectionMatchesFixedDashboardExpectations() throws {
+        // The synthetic fixed frame is only a parity oracle; no legacy stream is used.
+        let fixed = try frame {
+            $0.engineRPM = 4820
+            $0.speedKPH = 71.6
+            $0.actualGear = .fourth
+            $0.turnState = .left
+        }
+        let signals = [
+            projectionSignal("vehicle.engine_rpm", .number, unit: "rpm", availability: .freshnessUnverified, value: .number(4820)),
+            projectionSignal("vehicle.speed_kph", .number, unit: "km/h", availability: .freshnessUnverified, value: .number(71.6)),
+            projectionSignal("vehicle.actual_gear", .enumeration, availability: .freshnessUnverified, value: .enumeration(choiceKey: "fourth"), choices: ["fourth"]),
+            projectionSignal("vehicle.selector_position", .enumeration, availability: .freshnessUnverified, value: .enumeration(choiceKey: "drive"), choices: ["drive"]),
+            projectionSignal("vehicle.turn_state", .enumeration, value: .enumeration(choiceKey: "left"), choices: ["left"]),
+            projectionSignal("vehicle.wiper.front_position", .enumeration, availability: .stale, value: nil, choices: ["off"]),
+            projectionSignal("vehicle.acceleration.longitudinal", .number, unit: "m/s^2", value: .number(0)),
+            projectionSignal("vehicle.acceleration.lateral", .number, unit: "m/s^2", value: .number(0)),
+        ] + ["vehicle.hazard_request", "vehicle.liftgate_open", "vehicle.door.rear_right",
+             "vehicle.door.rear_left", "vehicle.door.front_left_rhd", "vehicle.door.front_right_rhd",
+             "vehicle.doors_unlocked"].map { projectionSignal($0, .boolean, availability: $0 == "vehicle.hazard_request" ? .fresh : .freshnessUnverified, value: .boolean(false)) }
+          + [projectionSignal("vehicle.brake_pressed", .boolean, availability: .freshnessUnverified, value: .boolean(false))]
+        let projected = LiveSignalProjection.frame(from: projectionSnapshot(signals))
+        XCTAssertEqual(projected.speedKPH.value!, fixed.speedKPH.value!, accuracy: 0.00001)
+        XCTAssertEqual(PitWallReadout(frame: projected, band: factoryBand), PitWallReadout(frame: fixed, band: factoryBand))
+        XCTAssertEqual(DriveReadout(frame: projected), DriveReadout(frame: fixed))
+    }
+
+    func testSymbolicChoicesAreIndependentOfRuntimeOrdinals() {
+        for (key, choice, expected) in [
+            ("vehicle.turn_state", "unknown", "Unknown"),
+            ("vehicle.turn_state", "hazard", "Both"),
+            ("vehicle.actual_gear", "park_or_neutral", "P/N"),
+            ("vehicle.actual_gear", "shifting", "Shift"),
+        ] {
+            let projected = LiveSignalProjection.frame(from: projectionSnapshot([
+                projectionSignal(key, .enumeration, value: .enumeration(choiceKey: choice), choices: [choice]),
+            ]))
+            let readout = PitWallReadout(frame: projected)
+            if key == "vehicle.turn_state" {
+                XCTAssertEqual(readout.tiles.first { $0.title == "Turn" }?.value, expected)
+            } else {
+                XCTAssertEqual(readout.gear, expected)
+            }
+        }
+        let unknownChoice = LiveSignalProjection.frame(from: projectionSnapshot([
+            projectionSignal("vehicle.actual_gear", .enumeration, value: .enumeration(choiceKey: "seventh"), choices: ["seventh"]),
+        ]))
+        XCTAssertEqual(unknownChoice.actualGear, .unknown)
+    }
+
+    func testProjectionClearsExpiredRecordsAndReconnectSnapshot() throws {
+        func little(_ value: UInt16) -> [UInt8] { [UInt8(truncatingIfNeeded: value), UInt8(value >> 8)] }
+        func tlv(_ tag: UInt8, _ bytes: [UInt8]) -> [UInt8] { [tag] + little(UInt16(bytes.count)) + bytes }
+        let body = little(91) + tlv(1, Array("vehicle.engine_rpm".utf8)) + tlv(2, [2])
+            + tlv(3, Array("rpm".utf8)) + tlv(4, Array("candidate".utf8))
+        let catalog = try SignalCatalog(decoding: Data([1, 1, 0] + little(UInt16(body.count)) + body), token: 1)
+        var feed = ExtensibleSignalFeed()
+        feed.install(catalog: catalog)
+        let start = ContinuousClock.now
+        let header: [UInt8] = [1, 1, 0, 1, 1, 0, 0, 0]
+        // Float32 4000, unverified, with deliberately non-provider handle 91.
+        feed.receive(Data(header + [8, 91, 0, 2, 11, 0, 0, 122, 69]), at: start)
+        XCTAssertEqual(LiveSignalProjection.frame(from: feed.snapshot(at: start)).engineRPM.value, 4000)
+        feed.receive(Data(header), at: start + .seconds(1))
+        feed.receive(Data(header), at: start + .seconds(2))
+        XCTAssertEqual(LiveSignalProjection.frame(from: feed.snapshot(at: start + .seconds(3))).engineRPM, .unknown)
+        feed.reset()
+        XCTAssertEqual(LiveSignalProjection.frame(from: feed.snapshot(at: start + .seconds(3))), .unknown)
+        feed.install(catalog: catalog)
+        XCTAssertEqual(LiveSignalProjection.frame(from: feed.snapshot(at: start + .seconds(3))).engineRPM, .unknown)
+    }
+}

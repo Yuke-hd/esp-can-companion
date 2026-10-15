@@ -211,21 +211,29 @@ final class ControllerSessionTests: XCTestCase {
 
         let telemetry = LiveTelemetry(session: session)
         let run = Task { await telemetry.run() }
-        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.liveSignals }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.extensibleLiveSignals }
         var frame = DemoTelemetry()
         frame.engineRPM = 3200
         for sequence in 0..<200 where telemetry.frame.engineRPM.value != 3200 {
-            frame.sequence = UInt8(sequence)
-            bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
+            for packet in try bench.demo.signalCatalog.packets(sequence: UInt16(sequence),
+                started: true, readings: frame.extensibleReadings) {
+                bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals, data: packet, immediately: true)
+            }
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(telemetry.frame.engineRPM, SignalReading(availability: .freshnessUnverified, value: 3200))
         XCTAssertGreaterThan(telemetry.framesPerSecond, 0)
+        XCTAssertNotNil(telemetry.snapshot)
+        XCTAssertEqual(telemetry.catalog, bench.demo.signalCatalog.catalog)
+        XCTAssertEqual(telemetry.readings.count, 21)
 
         run.cancel()
         await run.value
         XCTAssertEqual(telemetry.frame, .unknown)
         XCTAssertEqual(telemetry.framesPerSecond, 0)
+        XCTAssertNil(telemetry.snapshot)
+        XCTAssertNil(telemetry.catalog)
+        XCTAssertTrue(telemetry.readings.isEmpty)
     }
 
     func testLiveTelemetryWaitsForAReadySession() async {
@@ -237,11 +245,24 @@ final class ControllerSessionTests: XCTestCase {
         XCTAssertNil(telemetry.failure)
     }
 
-    func testStallFrameDoesNotCountAsArrival() async {
+    func testWatchdogAndStallDoNotCountAsArrivals() async {
         let bench = Bench()
         let telemetry = LiveTelemetry(session: ControllerSession(connection: bench.manager))
         let now = ContinuousClock.now
-        telemetry.receive(.unknown, at: now)
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.engine_rpm", .number, unit: "rpm", value: .number(3200)),
+        ])
+        telemetry.receive(.active(snapshot), at: now)
+        XCTAssertEqual(telemetry.framesPerSecond, 1)
+        telemetry.receive(.active(snapshot), at: now + .milliseconds(100))
+        XCTAssertEqual(telemetry.framesPerSecond, 1, "synthetic snapshots must not count as arrivals")
+        // 513 and 769 share their low byte; use the full negotiated sequence.
+        telemetry.receive(.active(projectionSnapshot(snapshot.signals, sequence: 769)), at: now + .milliseconds(200))
+        XCTAssertEqual(telemetry.framesPerSecond, 2)
+        telemetry.receive(.discovering, at: now + .milliseconds(300))
+        telemetry.receive(.active(snapshot), at: now + .milliseconds(400))
+        XCTAssertEqual(telemetry.framesPerSecond, 1, "discovery begins a new sequence generation")
+        telemetry.receive(.active(projectionSnapshot([], stalled: true)), at: now + .seconds(2))
         XCTAssertEqual(telemetry.framesPerSecond, 0)
     }
 
@@ -260,5 +281,79 @@ final class ControllerSessionTests: XCTestCase {
         await track.settle { trackSession.phase == .ready }
         guard case .summary(let trackSummary)? = trackSession.activeConfig else { return XCTFail("expected a summary") }
         XCTAssertEqual(trackSummary.profile, .preset("Track"))
+    }
+}
+
+
+extension ControllerSessionTests {
+    func testTelemetryUnavailableNeverSelectsLegacyNotifier() async {
+        let demo = DemoController()
+        demo.deviceInfo.extensionFlags = 0
+        let bench = Bench(demo: demo)
+        let session = ControllerSession(connection: bench.manager)
+        await bench.connect()
+        await bench.settle { session.phase == .ready }
+        let telemetry = LiveTelemetry(session: session)
+        await telemetry.run()
+        XCTAssertNotNil(telemetry.failure)
+        XCTAssertEqual(telemetry.unavailableReason, .capabilityUnavailable)
+        XCTAssertNil(bench.manager.selectedLiveNotifier)
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertNil(telemetry.snapshot)
+    }
+
+    func testTelemetryDiscoveryAndNotifierLossClearGenericAndCuratedState() async {
+        let bench = Bench()
+        let session = ControllerSession(connection: bench.manager)
+        let telemetry = LiveTelemetry(session: session)
+        let now = ContinuousClock.now
+        let active = CompanionLiveTelemetryState.active(projectionSnapshot([
+            projectionSignal("vendor.future", .number, unit: "future", value: .number(12)),
+            projectionSignal("vehicle.engine_rpm", .number, unit: "rpm", value: .number(3200)),
+        ]))
+        telemetry.receive(active, at: now)
+        XCTAssertEqual(telemetry.readings.count, 2)
+        XCTAssertEqual(telemetry.frame.engineRPM.value, 3200)
+        telemetry.receive(.discovering, at: now)
+        XCTAssertNil(telemetry.snapshot)
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertEqual(telemetry.framesPerSecond, 0)
+        telemetry.receive(active, at: now)
+        telemetry.receive(.unavailable(.notifierEnded), at: now)
+        XCTAssertNil(telemetry.snapshot)
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertEqual(telemetry.framesPerSecond, 0)
+        XCTAssertEqual(telemetry.unavailableReason, .notifierEnded)
+        XCTAssertEqual(telemetry.failure, "Live signals stopped.")
+    }
+}
+
+
+extension ControllerSessionTests {
+    func testDisconnectEndsLiveTelemetryAndClearsGenericState() async throws {
+        let bench = Bench()
+        let session = ControllerSession(connection: bench.manager)
+        await bench.connect()
+        await bench.settle { session.phase == .ready }
+        let telemetry = LiveTelemetry(session: session)
+        let run = Task { await telemetry.run() }
+        defer { run.cancel() }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.extensibleLiveSignals }
+        var demo = DemoTelemetry()
+        demo.engineRPM = 3200
+        for sequence in 0..<200 where telemetry.frame.engineRPM.value != 3200 {
+            for packet in try bench.demo.signalCatalog.packets(sequence: UInt16(sequence), readings: demo.extensibleReadings) {
+                bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals, data: packet, immediately: true)
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertNotNil(telemetry.snapshot)
+        bench.manager.disconnect()
+        await bench.settle { session.phase == .offline }
+        await run.value
+        XCTAssertNil(telemetry.snapshot)
+        XCTAssertTrue(telemetry.readings.isEmpty)
+        XCTAssertEqual(telemetry.frame, .unknown)
+        XCTAssertEqual(telemetry.framesPerSecond, 0)
     }
 }

@@ -2,59 +2,91 @@ import Foundation
 import Observation
 import CompanionProtocol
 
-/// The controller's Live signals for a screen that shows them. Call `run()`
-/// from the screen's `.task` while the session is ready; it subscribes until
-/// cancelled, then shows every signal as unknown again.
+/// Negotiated live signals for curated dashboards and generic consumers.
+/// Run from the screen's task while the controller session is ready.
 @MainActor
 @Observable
 public final class LiveTelemetry {
-    /// The latest frame, or all unknown before the first one and while the
-    /// stream is stalled.
     public private(set) var frame: LiveSignalFrame = .unknown
-    /// Frames received in the last second, the rate the draft shows as "10 HZ".
+    /// Complete metadata and readings, including unfamiliar semantic keys.
+    public private(set) var snapshot: ExtensibleSignalSnapshot?
+    public var catalog: SignalCatalog? { snapshot?.catalog }
+    public var readings: [ExtensibleSignalState] { snapshot?.signals ?? [] }
+    /// Observed packet sequences in the last second, excluding watchdog updates.
     public private(set) var framesPerSecond = 0
-    /// Why the stream could not start, such as an unsupported frame layout.
     public private(set) var failure: String?
+    public private(set) var unavailableReason: CompanionLiveTelemetryUnavailableReason?
 
     @ObservationIgnored private let session: ControllerSession
     @ObservationIgnored private var arrivals: [ContinuousClock.Instant] = []
+    @ObservationIgnored private var lastSequence: UInt16?
+    @ObservationIgnored private var lastToken: UInt32?
     @ObservationIgnored private let clock = ContinuousClock()
 
     public init(session: ControllerSession) {
         self.session = session
     }
 
-    /// Streams frames until the task is cancelled or the stream ends.
     public func run() async {
+        clear()
+        failure = nil
+        unavailableReason = nil
         defer { clear() }
         guard session.phase == .ready else { return }
-        let stream: AsyncStream<LiveSignalFrame>
-        do {
-            stream = try await session.client.liveSignals()
-            failure = nil
-        } catch CompanionClientError.unsupportedLiveSignalLayout(let version) {
-            failure = "This controller sends live signals in layout \(version), which this app cannot read."
-            return
-        } catch {
-            failure = "Live signals are not available."
-            return
-        }
+        let stream = await session.client.extensibleLiveSignals()
         for await next in stream {
+            guard !Task.isCancelled else { break }
             receive(next, at: clock.now)
         }
     }
 
-    func receive(_ next: LiveSignalFrame, at now: ContinuousClock.Instant) {
-        frame = next
-        // The stall frame is synthetic, not something the controller sent.
-        if next != .unknown { arrivals.append(now) }
-        arrivals.removeAll { now - $0 > .seconds(1) }
-        framesPerSecond = arrivals.count
+    func receive(_ next: CompanionLiveTelemetryState, at now: ContinuousClock.Instant) {
+        switch next {
+        case .discovering:
+            clear()
+            failure = nil
+            unavailableReason = nil
+        case .unavailable(let reason):
+            clear()
+            unavailableReason = reason
+            failure = switch reason {
+            case .capabilityUnavailable:
+                "Live signals are not supported by this controller."
+            case .missingEndpoints:
+                "Live signals could not be started."
+            case .catalogFailure:
+                "The controller's signal catalog could not be read."
+            case .notifierEnded:
+                "Live signals stopped."
+            case .connectionEnded:
+                "Live signals stopped because the controller disconnected."
+            case .deviceUnavailable, .notifierFailure:
+                "Live signals are not available."
+            }
+        case .active(let snapshot):
+            failure = nil
+            unavailableReason = nil
+            self.snapshot = snapshot
+            frame = LiveSignalProjection.frame(from: snapshot)
+            // Expiry snapshots retain the same full-width sequence. Rediscovery
+            // clears this identity, so a restarted sequence counts once again.
+            if !snapshot.isStalled, let sequence = snapshot.sequence,
+               sequence != lastSequence || snapshot.catalog?.token != lastToken {
+                arrivals.append(now)
+                lastSequence = sequence
+                lastToken = snapshot.catalog?.token
+            }
+            arrivals.removeAll { now - $0 > .seconds(1) }
+            framesPerSecond = snapshot.isStalled ? 0 : arrivals.count
+        }
     }
 
     private func clear() {
+        snapshot = nil
         frame = .unknown
         arrivals.removeAll()
+        lastSequence = nil
+        lastToken = nil
         framesPerSecond = 0
     }
 }

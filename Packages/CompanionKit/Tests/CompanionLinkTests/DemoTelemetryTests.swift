@@ -177,7 +177,6 @@ final class DemoTelemetryTests: XCTestCase {
 
     private func liveFrame(
         _ scenario: DemoScenario,
-        onRawPacket: (@Sendable (Data) -> Void)? = nil,
         until condition: (LiveSignalFrame) -> Bool
     ) async throws -> (ControllerSession, LiveSignalFrame) {
         let session = scenario.makeSession(latency: 0.001)
@@ -185,8 +184,6 @@ final class DemoTelemetryTests: XCTestCase {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(session.phase, .ready, "\(scenario)")
-        let subscription = onRawPacket.map { session.client.transport.subscribe(to: .liveSignals, handler: $0) }
-        defer { subscription?.cancel() }
         let telemetry = LiveTelemetry(session: session)
         let run = Task { await telemetry.run() }
         defer { run.cancel() }
@@ -194,7 +191,14 @@ final class DemoTelemetryTests: XCTestCase {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertNil(telemetry.failure)
-        return (session, telemetry.frame)
+        let frame = telemetry.frame
+        run.cancel()
+        await run.value
+        for _ in 0..<500 where session.connection.selectedLiveNotifier != nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertNil(session.connection.selectedLiveNotifier)
+        return (session, frame)
     }
 
     func testDriveLapsScenarioStreamsLayout2ThroughTheSession() async throws {
@@ -205,13 +209,42 @@ final class DemoTelemetryTests: XCTestCase {
     }
 
     func testDriveLapsLayout1ScenarioStreamsLayout1ThroughTheSession() async throws {
-        let lengths = OSAllocatedUnfairLock(initialState: [Int]())
-        let (session, frame) = try await liveFrame(.driveLapsLayout1, onRawPacket: { data in
-            lengths.withLock { $0.append(data.count) }
-        }) { $0.engineRPM.value != nil && lengths.withLock { $0.count >= 3 } }
+        // First verify the curated layout-one scenario through extensible telemetry.
+        let (session, frame) = try await liveFrame(.driveLapsLayout1) { $0.engineRPM.value != nil }
         XCTAssertEqual(session.deviceInfo?.liveSignalLayoutVersion, 1)
-        // Inspect bytes while the explicit legacy activation lease is alive.
-        let received = lengths.withLock { $0 }
+        XCTAssertNotNil(frame.engineRPM.value)
+        XCTAssertEqual(frame.longitudinalAcceleration, .unknown)
+        XCTAssertEqual(frame.lateralAcceleration, .unknown)
+
+        // That consumer has stopped. Activate the historical notifier explicitly
+        // to test the fixed codec independently, without a runtime fallback.
+        let packets = OSAllocatedUnfairLock(initialState: [Data]())
+        let subscription = session.client.transport.subscribe(to: .liveSignals) { data in
+            packets.withLock { $0.append(data) }
+        }
+        defer { subscription.cancel() }
+        // Lease disposal completes asynchronously after run cancellation. Retry
+        // only the selection-busy result until that prior CCCD operation finishes.
+        var historicalLease: CompanionSubscription?
+        for _ in 0..<500 where historicalLease == nil {
+            do {
+                historicalLease = try await session.client.transport.activateLiveNotifier(.liveSignals)
+            } catch CompanionTransportError.other(let detail) where detail?.contains("busy") == true {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        let lease = try XCTUnwrap(historicalLease)
+        defer { lease.cancel() }
+        for _ in 0..<500 where packets.withLock({ $0.count < 3 }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let rawPackets = packets.withLock { $0 }
+        let received = rawPackets.map(\.count)
+        for packet in rawPackets {
+            let historical = try LiveSignalFrame(decoding: packet)
+            XCTAssertEqual(historical.longitudinalAcceleration, .unknown)
+            XCTAssertEqual(historical.lateralAcceleration, .unknown)
+        }
         XCTAssertGreaterThanOrEqual(received.count, 3)
         XCTAssertTrue(received.allSatisfy { $0 == LiveSignalFrame.length }, "layout 1 frames are 23 bytes: \(received)")
         XCTAssertNotNil(frame.engineRPM.value)
