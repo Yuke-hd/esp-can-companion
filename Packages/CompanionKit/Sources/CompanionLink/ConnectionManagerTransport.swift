@@ -17,6 +17,10 @@ import CompanionProtocol
 public final class ConnectionManagerTransport: CompanionTransport, @unchecked Sendable {
     public let manager: ConnectionManager
 
+    // A departing screen's asynchronous CCCD cleanup must finish before the
+    // next screen activates its stream on the same connection.
+    @MainActor private var notifierTransition: Task<Void, Never>?
+
     private let lock = NSLock()
     private var subscribers: [CompanionCharacteristic: [UUID: @Sendable (Data) -> Void]] = [:]
 
@@ -71,14 +75,30 @@ public final class ConnectionManagerTransport: CompanionTransport, @unchecked Se
 
     @MainActor
     private func activateOnManager(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
+        let previous = notifierTransition
+        let activation = Task {
+            await previous?.value
+            try Task.checkCancellation()
+            return try await self.selectNotifier(characteristic)
+        }
+        notifierTransition = Task { _ = try? await activation.value }
+        return try await withTaskCancellationHandler {
+            try await activation.value
+        } onCancel: {
+            activation.cancel()
+        }
+    }
+
+    @MainActor
+    private func selectNotifier(_ characteristic: CompanionCharacteristic) async throws -> CompanionSubscription {
         guard characteristic == .liveSignals || characteristic == .extensibleLiveSignals else {
             throw CompanionTransportError.other("Characteristic is not a live notifier.")
         }
         do {
             try await manager.selectLiveNotifier(Self.gattUUID(for: characteristic))
             guard let generation = manager.selectedLiveNotifierID else { throw CompanionTransportError.disconnected }
-            let lease = NotifierLease { [weak manager] in
-                Task { @MainActor in try? await manager?.clearLiveNotifier(ifSelectionID: generation) }
+            let lease = NotifierLease {
+                Task { @MainActor in self.enqueueNotifierCleanup(selectionID: generation) }
             }
             manager.onLiveNotifierTermination(selectionID: generation) { [weak lease] in lease?.finish() }
             return lease
@@ -89,6 +109,15 @@ public final class ConnectionManagerTransport: CompanionTransport, @unchecked Se
             case .failed(.att(let code)): throw CompanionTransportError.att(ATTError(rawValue: code))
             default: throw CompanionTransportError.other(String(describing: error))
             }
+        }
+    }
+
+    @MainActor
+    private func enqueueNotifierCleanup(selectionID: UUID) {
+        let previous = notifierTransition
+        notifierTransition = Task { [weak manager] in
+            await previous?.value
+            try? await manager?.clearLiveNotifier(ifSelectionID: selectionID)
         }
     }
 

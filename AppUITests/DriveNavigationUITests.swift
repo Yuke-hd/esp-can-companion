@@ -26,6 +26,24 @@ final class DriveNavigationUITests: XCTestCase {
         capturePortrait("drive-exit-pit-wall-portrait")
     }
 
+    func testDriveReceivesTelemetryAfterLeavingLivePitWall() {
+        launchConnected()
+        for _ in 0..<3 {
+            // Wait for an active Pit Wall subscription before handing it off.
+            let frameRate = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@", "frames per second")
+            ).firstMatch
+            XCTAssertTrue(frameRate.waitForExistence(timeout: 30))
+            openDrive()
+            waitForLandscape()
+            assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6", "7", "8", "9"])
+            assertText(for: "drive.speed", matchingAny: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+            XCTAssertFalse(accessibilitySummary(of: app.descendants(matching: .any)["drive.link"]).contains("Live signals are not available"))
+            exitDrive()
+            waitForPortrait()
+        }
+    }
+
     func testDriveExitsToSetupAndCanBeReentered() {
         launchConnected()
         XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 10))
