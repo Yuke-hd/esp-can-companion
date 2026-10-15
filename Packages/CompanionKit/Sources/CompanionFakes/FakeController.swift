@@ -50,6 +50,15 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
     /// A Revert to factory command was accepted; `restart()` applies it.
     public private(set) var isRevertPending = false
 
+    // Catalog selector state is independent of config transfer/read-back.
+    public var catalogDocument = Data([1, 0, 0])
+    public var catalogToken: UInt32 = 1
+    public var catalogPageOffset = 0
+    public var catalogPageLength = 200
+    public var catalogReadOverride: Data?
+    public var readDelay: Duration?
+    public var hangingReads: Set<CompanionCharacteristic> = []
+
     // Fault injection.
     /// Called before each write is handled; may change state or throw.
     public var beforeWrite: ((FakeController, CompanionCharacteristic, Data) throws -> Void)?
@@ -118,6 +127,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             result = 0
             buffer = Data()
             readPageOffset = 0
+            catalogPageOffset = 0
             isConnected = true
         }
     }
@@ -125,7 +135,9 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
     // MARK: CompanionTransport
 
     public func read(_ characteristic: CompanionCharacteristic) async throws -> Data {
-        try readImmediately(characteristic)
+        if let readDelay { try await Task.sleep(for: readDelay) }
+        if withLock({ hangingReads.contains(characteristic) }) { try await Task.sleep(for: .seconds(3600)) }
+        return try readImmediately(characteristic)
     }
 
     /// Answers a radio callback synchronously; protocol behavior matches `read`.
@@ -138,7 +150,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             case .deviceInfo: return Self.encode(deviceInfo)
             case .configStatus: return statusValue()
             case .config: return readPage()
-            case .signalCatalog: throw CompanionTransportError.other("Signal catalog characteristic is unavailable.")
+            case .signalCatalog: return try catalogPage()
             case .liveSignals, .extensibleLiveSignals, .command: throw CompanionTransportError.att(.unknown(0x02))
             }
         }
@@ -170,6 +182,9 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
                 switch characteristic {
                 case .config: try handleConfig(value)
                 case .command: try handleCommand(value)
+                case .signalCatalog:
+                    guard deviceInfo.supportsExtensibleLiveSignals else { throw CompanionTransportError.att(.unknown(0x03)) }
+                    try handleCatalogSelector(value)
                 default: throw CompanionTransportError.att(.unknown(0x03))
                 }
                 if before != (state, result) { notifications.append(statusValue()) }
@@ -342,6 +357,35 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             value.append(UInt8(string.utf8.count))
             value.append(contentsOf: string.utf8)
         }
+        if let version = info.extensionVersion {
+            value.append(version)
+            if let flags = info.extensionFlags { value.append(flags) }
+        }
+        return value
+    }
+
+    private func handleCatalogSelector(_ value: Data) throws {
+        guard value.count == 7 else { throw CompanionTransportError.att(.unknown(0x0D)) }
+        guard value.first == 1 else { throw CompanionTransportError.att(.known(.unsupportedOperation)) }
+        guard deviceInfo.supportsExtensibleLiveSignals else { throw CompanionTransportError.att(.known(.invalidState)) }
+        let selector = try SignalCatalogSelector(decoding: value)
+        guard selector.token == catalogToken else { throw CompanionTransportError.att(.known(.invalidState)) }
+        guard Int(selector.offset) <= catalogDocument.count else { throw CompanionTransportError.att(.known(.invalidPDU)) }
+        catalogPageOffset = Int(selector.offset)
+    }
+
+    private func catalogPage() throws -> Data {
+        guard deviceInfo.supportsExtensibleLiveSignals else {
+            throw CompanionTransportError.other("Signal catalog characteristic is unavailable.")
+        }
+        if let catalogReadOverride { return catalogReadOverride }
+        var value = Data([1])
+        value.appendLE(catalogToken)
+        value.appendLE(UInt16(catalogDocument.count))
+        value.appendLE(UInt16(catalogPageOffset))
+        let end = min(catalogDocument.count, catalogPageOffset + catalogPageLength)
+        value.appendLE(UInt16(end - catalogPageOffset))
+        value.append(catalogDocument[catalogPageOffset..<end])
         return value
     }
 }

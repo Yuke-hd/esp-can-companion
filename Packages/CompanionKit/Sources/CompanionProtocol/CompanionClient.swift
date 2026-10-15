@@ -3,6 +3,7 @@ import Foundation
 /// A step of a client operation, used to say where a failure happened.
 public enum CompanionOperationStep: Equatable, Sendable {
     case readDeviceInfo
+    case readSignalCatalog
     case readConfigStatus
     case readConfig
     case abort
@@ -16,6 +17,9 @@ public enum CompanionOperationStep: Equatable, Sendable {
 public enum CompanionClientError: Error, Equatable, Sendable {
     /// Device info has not been read on this connection. It must be read first.
     case deviceInfoNotRead
+    case signalCatalogUnavailable
+    case signalCatalogInconsistent
+    case connectionChanged
     /// The controller speaks a protocol major version this app does not
     /// support. The app or the firmware needs an update.
     case unsupportedProtocol(major: UInt8)
@@ -113,6 +117,12 @@ public actor CompanionClient {
     /// Device info read on this connection.
     public private(set) var deviceInfo: DeviceInfo?
     private var isUploading = false
+    /// Complete mapping for this connection; nil after reset or token invalidation.
+    public internal(set) var signalCatalog: SignalCatalog?
+    var catalogGeneration: UInt64 = 0
+    var catalogOperationInProgress = false
+    var catalogTransportRequest: UUID?
+    var catalogDiscoveryToken: UInt32?
 
     public init(transport: CompanionTransport, timeouts: Timeouts = Timeouts()) {
         self.transport = transport
@@ -125,7 +135,9 @@ public actor CompanionClient {
     /// before pairing; an unsupported major is reported, not thrown.
     @discardableResult
     public func readDeviceInfo() async throws -> DeviceInfo {
+        let generation = catalogGeneration
         let value = try await read(.deviceInfo, step: .readDeviceInfo)
+        guard generation == catalogGeneration else { throw CompanionClientError.connectionChanged }
         let info = try decode { try DeviceInfo(decoding: value) }
         deviceInfo = info
         return info
@@ -134,6 +146,9 @@ public actor CompanionClient {
     /// Forgets device info, for example after the link dropped.
     public func reset() {
         deviceInfo = nil
+        signalCatalog = nil
+        catalogDiscoveryToken = nil
+        catalogGeneration &+= 1
     }
 
     // MARK: - Config
@@ -340,7 +355,7 @@ public actor CompanionClient {
 
     // MARK: - Helpers
 
-    private func requireSupportedDevice() throws -> DeviceInfo {
+    func requireSupportedDevice() throws -> DeviceInfo {
         guard let info = deviceInfo else { throw CompanionClientError.deviceInfoNotRead }
         guard info.compatibility().isProtocolSupported else {
             throw CompanionClientError.unsupportedProtocol(major: info.protocolMajor)
@@ -411,13 +426,13 @@ public actor CompanionClient {
         }
     }
 
-    private func read(_ characteristic: CompanionCharacteristic, step: CompanionOperationStep) async throws -> Data {
+    func read(_ characteristic: CompanionCharacteristic, step: CompanionOperationStep) async throws -> Data {
         try await perform(step, timeout: timeouts.operation) {
             try await self.transport.read(characteristic)
         }
     }
 
-    private func decode<T>(_ body: () throws -> T) throws -> T {
+    func decode<T>(_ body: () throws -> T) throws -> T {
         do {
             return try body()
         } catch let error as ProtocolDecodingError {
@@ -426,7 +441,7 @@ public actor CompanionClient {
     }
 
     /// Runs a transport call with a timeout and maps its errors.
-    private func perform<T: Sendable>(
+    func perform<T: Sendable>(
         _ step: CompanionOperationStep,
         timeout: Duration,
         cancellable: Bool = true,
