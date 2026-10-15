@@ -15,6 +15,14 @@ public struct DeviceInfo: Equatable, Sendable {
     public var firmwareVersion: String
     /// Informational board record identifier.
     public var hardwareID: String
+    public var extensionVersion: UInt8?
+    public var extensionFlags: UInt8?
+
+    /// Capability only; endpoints and complete discovery are also required.
+    public var supportsExtensibleLiveSignals: Bool {
+        protocolMajor == 1 && protocolMinor >= 1 && extensionVersion == 1
+            && (extensionFlags.map { $0 & 1 != 0 } ?? false)
+    }
 
     public init(
         protocolMajor: UInt8,
@@ -24,7 +32,9 @@ public struct DeviceInfo: Equatable, Sendable {
         flags: UInt8,
         maxConfigBytes: UInt16,
         firmwareVersion: String,
-        hardwareID: String
+        hardwareID: String,
+        extensionVersion: UInt8? = nil,
+        extensionFlags: UInt8? = nil
     ) {
         self.protocolMajor = protocolMajor
         self.protocolMinor = protocolMinor
@@ -34,6 +44,8 @@ public struct DeviceInfo: Equatable, Sendable {
         self.maxConfigBytes = maxConfigBytes
         self.firmwareVersion = firmwareVersion
         self.hardwareID = hardwareID
+        self.extensionVersion = extensionVersion
+        self.extensionFlags = extensionFlags
     }
 
     /// Flags bit 0: the controller accepts a new pairing right now.
@@ -51,6 +63,8 @@ public struct DeviceInfo: Equatable, Sendable {
         maxConfigBytes = try reader.u16("max_config_bytes")
         firmwareVersion = try reader.lengthPrefixedString("firmware_version")
         hardwareID = try reader.lengthPrefixedString("hardware_id")
+        extensionVersion = reader.remaining > 0 ? try reader.u8("extension_version") : nil
+        extensionFlags = reader.remaining > 0 ? try reader.u8("extension_flags") : nil
     }
 
     /// Checks this controller against what the client supports, following the

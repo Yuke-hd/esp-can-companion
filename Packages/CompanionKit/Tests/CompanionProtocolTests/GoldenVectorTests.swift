@@ -55,6 +55,59 @@ final class GoldenVectorTests: XCTestCase {
         try assertInvalid(fixture.invalid) { try DeviceInfo(decoding: $0) }
     }
 
+    /// Canonical synthetic fixture from firmware PR #255, commit
+    /// 251444d62600c7582943a409012b5f0c0ffef401; copied byte-for-byte.
+    func testExtensibleCatalogVectors() throws {
+        struct Fixture: Decodable {
+            struct Catalog: Decodable {
+                struct Descriptor: Decodable {
+                    struct Choice: Decodable { let handle: UInt16; let key: String }
+                    let handle: UInt16; let key: String; let type: String; let typeCode: UInt8?
+                    let unit: String; let evidence: String; let choices: [Choice]?
+                }
+                struct Page: Decodable {
+                    let responseHex: String; let selectorWriteHex: String?
+                    let offset: UInt16; let dataLength: Int; let responseLength: Int
+                }
+                let documentHex: String; let documentLength: Int; let signalCount: Int
+                let descriptors: [Descriptor]; let pages: [Page]
+            }
+            let catalog: Catalog
+        }
+        let fixture = try Fixtures.load(Fixture.self, "extensible-live-v1.json").catalog
+        let document = try Fixtures.hex(fixture.documentHex)
+        let catalog = try SignalCatalog(decoding: document, token: 0x12345678)
+        XCTAssertEqual(document.count, fixture.documentLength)
+        XCTAssertEqual(catalog.descriptors.count, fixture.signalCount)
+        for (decoded, expected) in zip(catalog.descriptors, fixture.descriptors) {
+            XCTAssertEqual(decoded.handle, expected.handle)
+            XCTAssertEqual(decoded.key, expected.key)
+            XCTAssertEqual(decoded.unit, expected.unit)
+            XCTAssertEqual(decoded.evidence, expected.evidence)
+            let codes: [String: UInt8] = ["Boolean": 1, "Number": 2, "Enum": 3]
+            XCTAssertEqual(decoded.type.rawValue, expected.typeCode ?? codes[expected.type])
+            XCTAssertEqual(decoded.choices.map(\.key), expected.choices?.map(\.key) ?? [])
+            XCTAssertEqual(decoded.choices.map(\.handle), expected.choices?.map(\.handle) ?? [])
+        }
+        var assembled = Data()
+        for expected in fixture.pages {
+            let response = try Fixtures.hex(expected.responseHex)
+            let page = try SignalCatalogPage(decoding: response)
+            XCTAssertEqual(page.token, catalog.token)
+            XCTAssertEqual(Int(page.totalBytes), document.count)
+            XCTAssertEqual(page.offset, expected.offset)
+            XCTAssertEqual(page.data.count, expected.dataLength)
+            XCTAssertEqual(response.count, expected.responseLength)
+            XCTAssertEqual(Int(page.offset), assembled.count)
+            assembled.append(page.data)
+            if let hex = expected.selectorWriteHex {
+                XCTAssertEqual(try SignalCatalogSelector(token: page.token, offset: page.offset).encoded, try Fixtures.hex(hex))
+            }
+        }
+        XCTAssertEqual(assembled, document)
+        XCTAssertEqual(try SignalCatalog(decoding: assembled, token: catalog.token), catalog)
+    }
+
     // MARK: Config transfer
 
     func testConfigWritePDUVectors() throws {
