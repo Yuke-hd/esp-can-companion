@@ -250,17 +250,21 @@ extension DemoController {
     /// Sends `frames` (the demo drive by default) to `peripheral` on `radio` at 10 Hz while it is
     /// connected. Like the firmware, frames use the layout Device info reports. Stops when the radio goes away or `stopAfter` elapses,
     /// leaving the link connected so the normal live-signal stall timeout can
-    /// clear the last frame.
+    /// clear the last frame. The timeline starts with the selected notifier,
+    /// so discovery latency cannot consume a scenario's active interval.
+    /// Selection and packet transforms are fake-only failure/recovery hooks.
     public func streamLiveSignals(
         on radio: FakeRadio,
         from peripheral: PeripheralID,
         stopAfter: Duration? = nil,
         frames: @escaping @Sendable (Double, UInt8) -> DemoTelemetry = DemoTelemetry.drive,
-        extensibleFrames: (@Sendable (Double, UInt16) -> [String: SignalReading<ExtensibleSignalValue>])? = nil
+        extensibleFrames: (@Sendable (Double, UInt16) -> [String: SignalReading<ExtensibleSignalValue>])? = nil,
+        extensibleSelection: (@Sendable (Double) -> Set<UInt16>?)? = nil,
+        transformExtensiblePackets: (@Sendable (Double, [Data]) -> [Data])? = nil
     ) {
         liveSignalTask?.cancel()
         liveSignalTask = Task { @MainActor [weak radio] in
-            let start = ContinuousClock.now
+            var start: ContinuousClock.Instant?
             var sequence: UInt8 = 0
             var extensibleSequence: UInt16 = 0
             var wasExtensibleEnabled = false
@@ -268,27 +272,40 @@ extension DemoController {
             while !Task.isCancelled {
                 // Hold the radio only while sending, so it can go away while this sleeps.
                 guard let radio else { return }
-                let elapsed = ContinuousClock.now - start
+                let enabled = radio.enabledNotifications[peripheral] ?? []
+                let extensibleEnabled = enabled.contains(CompanionGATT.extensibleLiveSignals)
+                    && deviceInfo.supportsExtensibleLiveSignals
+                let streaming = radio.connectedPeripherals.contains(peripheral)
+                    && (enabled.contains(CompanionGATT.liveSignals) || extensibleEnabled)
+                guard streaming else {
+                    start = nil
+                    wasExtensibleEnabled = false
+                    try? await Task.sleep(for: .milliseconds(100))
+                    continue
+                }
+                if start == nil || generation != catalogConnectionGeneration { start = .now }
+                let elapsed = ContinuousClock.now - (start ?? .now)
                 if let stopAfter, elapsed >= stopAfter { return }
                 let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
                 var frame = frames(seconds, sequence)
                 frame.layoutVersion = deviceInfo.liveSignalLayoutVersion
                 radio.sendNotification(from: peripheral, characteristic: CompanionGATT.liveSignals, data: frame.encoded, immediately: true)
-                let extensibleEnabled = radio.enabledNotifications[peripheral]?.contains(CompanionGATT.extensibleLiveSignals) == true
-                    && radio.connectedPeripherals.contains(peripheral) && deviceInfo.supportsExtensibleLiveSignals
                 if extensibleEnabled {
                     if !wasExtensibleEnabled || generation != catalogConnectionGeneration { extensibleSequence = 0 }
                     generation = catalogConnectionGeneration
                     if let packets = try? signalCatalog.packets(sequence: extensibleSequence,
                                                                started: frame.isTelemetryStarted,
-                                                               readings: extensibleFrames?(seconds, extensibleSequence) ?? frame.extensibleReadings) {
-                        for packet in packets {
+                                                               readings: extensibleFrames?(seconds, extensibleSequence) ?? frame.extensibleReadings,
+                                                               selecting: extensibleSelection?(seconds) ?? nil) {
+                        // Count attempted source packets even when a fixture drops them.
+                        extensibleSequence &+= UInt16(packets.count)
+                        for packet in transformExtensiblePackets?(seconds, packets) ?? packets {
                             radio.sendNotification(from: peripheral, characteristic: CompanionGATT.extensibleLiveSignals,
                                                    data: packet, immediately: true)
-                            extensibleSequence &+= 1
                         }
                     }
                 }
+                generation = catalogConnectionGeneration
                 wasExtensibleEnabled = extensibleEnabled
                 sequence &+= 1
                 try? await Task.sleep(for: .milliseconds(100))

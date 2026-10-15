@@ -60,12 +60,17 @@ public struct DemoSignalCatalog: Sendable {
         self.document = document
     }
 
-    /// Pack complete records into independently parseable notifications. Missing,
+    /// Pack complete records into independently parseable notifications. Unselected handles are omitted; missing selected readings,
     /// wrong-type and unencodable values retain availability without a value.
     public func packets(sequence: UInt16, started: Bool = true,
                         readings: [String: SignalReading<ExtensibleSignalValue>],
-                        maximumBytes: Int = ExtensibleLiveSignalPacket.maximumBytes) throws -> [Data] {
+                        maximumBytes: Int = ExtensibleLiveSignalPacket.maximumBytes,
+                        selecting handles: Set<UInt16>? = nil) throws -> [Data] {
         guard (13...ExtensibleLiveSignalPacket.maximumBytes).contains(maximumBytes) else { throw Self.invalidFixture() }
+        if let handles {
+            guard handles.count <= SignalCatalog.maximumSignals,
+                  handles.isSubset(of: Set(catalog.descriptors.map(\.handle))) else { throw Self.invalidFixture() }
+        }
         var packets: [Data] = []
         func header(_ sequence: UInt16) -> Data {
             var data = Data([1])
@@ -75,7 +80,7 @@ public struct DemoSignalCatalog: Sendable {
             return data
         }
         var packet = header(sequence)
-        for descriptor in catalog.descriptors {
+        for descriptor in catalog.descriptors where handles?.contains(descriptor.handle) ?? true {
             let reading = readings[descriptor.key] ?? .unknown
             var status = Self.status(reading.availability)
             if descriptor.key == "vehicle.brake_pressed", status == 1 { status = 3 }
