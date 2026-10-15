@@ -282,15 +282,22 @@ final class PresetSyncModelTests: XCTestCase {
     }
 
     func testRefreshWaitsOutABusySync() async throws {
-        controller.writeDelay = .milliseconds(20)
+        let clientRequested = expectation(description: "Sync is waiting for its initial client")
+        let pausedLink = PausedPresetSyncLink(base: link, clientRequested: clientRequested)
+        model = PresetSyncModel(presets: presets, link: pausedLink)
         model.requestPush(earlyShift)
         let run = Task { await model.confirm() }
-        while !model.phase.isBusy { await Task.yield() }
+        await fulfillment(of: [clientRequested], timeout: 2)
+        XCTAssertTrue(model.phase.isBusy)
 
+        // Hold the sync before its own device-info read, so only refresh
+        // could account for any new client request or controller read.
         let readsBefore = controller.withLock { controller.reads }
         await model.refresh()
+        XCTAssertEqual(pausedLink.clientRequests, 1, "Refresh must not request a client while busy")
         XCTAssertEqual(controller.withLock { controller.reads }, readsBefore, "No reads while busy")
 
+        pausedLink.resumeSync()
         await run.value
         XCTAssertEqual(model.phase, .succeeded(.preset(earlyShift)))
     }
@@ -310,5 +317,39 @@ final class PresetSyncModelTests: XCTestCase {
         await model.refresh()
         XCTAssertNil(model.active)
         XCTAssertEqual(model.refreshError, "No controller is connected.")
+    }
+}
+
+/// Suspends only the sync's initial client request until the test releases it.
+@MainActor
+private final class PausedPresetSyncLink: PresetSyncLink {
+    private let base: FakePresetSyncLink
+    private let clientRequested: XCTestExpectation
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var clientRequests = 0
+
+    init(base: FakePresetSyncLink, clientRequested: XCTestExpectation) {
+        self.base = base
+        self.clientRequested = clientRequested
+    }
+
+    func currentClient() async throws -> CompanionClient {
+        clientRequests += 1
+        if clientRequests == 1 {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                clientRequested.fulfill()
+            }
+        }
+        return try await base.currentClient()
+    }
+
+    func clientAfterRestart() async throws -> CompanionClient {
+        try await base.clientAfterRestart()
+    }
+
+    func resumeSync() {
+        continuation?.resume()
+        continuation = nil
     }
 }
