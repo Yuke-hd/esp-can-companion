@@ -35,8 +35,14 @@ public struct DemoTelemetry: Equatable, Sendable {
     /// Layout 2 only. In m/s²; positive is a right turn, an
     /// unvalidated reference candidate like the longitudinal sign.
     public var lateralAcceleration: Double = 0
-    /// One status per signal index, 0...20. Layout 1 sends only 0...18.
-    public var statuses: [Status] = Array(repeating: .unverified, count: 21)
+    /// One status per signal index, 0...22. Layout 1 omits only the two
+    /// acceleration readings from the legacy frame; extensible signals remain.
+    public var statuses: [Status] = Array(repeating: .unverified, count: 23)
+    /// Normalized accelerator pedal position from the extensible catalog.
+    public var acceleratorPedalPosition: Double = 0
+    /// Brake pressure in bar from the extensible catalog. The demo values are
+    /// synthetic and do not claim a vehicle pressure limit.
+    public var brakePressureBar: Double = 0
 
     /// As on the car: only turn state, hazard, the turn requests and (in
     /// layout 2) acceleration have a freshness timeout, so only they can be
@@ -63,6 +69,7 @@ public struct DemoTelemetry: Equatable, Sendable {
         frame.speedKPH = 30 + Double(gear) * 22 + pull * 20
         // Easing off as each gear winds out.
         frame.longitudinalAcceleration = 3.5 - pull * 2
+        frame.acceleratorPedalPosition = 0.2 + pull * 0.65
         let indicatorOn = Int(seconds * 2.5).isMultiple(of: 2)
         frame.turnState = .left
         frame.booleans = (1 << 1) // turn request left
@@ -111,12 +118,15 @@ public struct DemoTelemetry: Equatable, Sendable {
             let p = progress(0, 4)
             frame.longitudinalAcceleration = lerp(4.5, 2.5, p)
             frame.lateralAcceleration = 0.2 * sin(t * 3)
+            frame.acceleratorPedalPosition = lerp(0.9, 0.5, p)
             frame.speedKPH = lerp(0, 60, p)
             frame.actualGear = p < 0.5 ? .first : .second
             frame.engineRPM = 2500 + (p.truncatingRemainder(dividingBy: 0.5) / 0.5) * 4000
         case ..<6.5: // Hard braking for the first corner.
             let p = progress(4, 6.5)
             frame.longitudinalAcceleration = lerp(-7.5, -5, p)
+            frame.acceleratorPedalPosition = 0
+            frame.brakePressureBar = lerp(35, 5, p)
             frame.speedKPH = lerp(60, 35, p)
             frame.actualGear = .second
             frame.engineRPM = lerp(4200, 2800, p)
@@ -125,11 +135,13 @@ public struct DemoTelemetry: Equatable, Sendable {
             let p = progress(6.5, 10.5)
             frame.lateralAcceleration = -6.5 * sin(.pi * p)
             frame.longitudinalAcceleration = lerp(-0.5, 1.5, p)
+            frame.acceleratorPedalPosition = lerp(0.1, 0.55, p)
             frame.speedKPH = lerp(35, 50, p)
             frame.actualGear = .second
             frame.engineRPM = lerp(2800, 4000, p)
         case ..<11.5: // The acceleration source drops out: both axes stale.
             frame.longitudinalAcceleration = 1.5
+            frame.acceleratorPedalPosition = 0.45
             frame.statuses[19] = .stale
             frame.statuses[20] = .stale
             frame.speedKPH = 52
@@ -139,6 +151,7 @@ public struct DemoTelemetry: Equatable, Sendable {
             let p = progress(11.5, 15.5)
             frame.lateralAcceleration = 6 * sin(.pi * p)
             frame.longitudinalAcceleration = 1
+            frame.acceleratorPedalPosition = 0.5
             frame.speedKPH = lerp(52, 60, p)
             frame.actualGear = .third
             frame.engineRPM = lerp(3000, 3500, p)
@@ -146,12 +159,14 @@ public struct DemoTelemetry: Equatable, Sendable {
             let p = progress(15.5, 17.5)
             frame.longitudinalAcceleration = 2
             frame.lateralAcceleration = -0.8
+            frame.acceleratorPedalPosition = 0.55
             frame.statuses[20] = .unverified
             frame.speedKPH = lerp(60, 75, p)
             frame.actualGear = .third
             frame.engineRPM = lerp(3500, 4500, p)
         case ..<19.5: // Longitudinal has no data; only lateral is live.
             frame.lateralAcceleration = 0.5
+            frame.acceleratorPedalPosition = 0.35
             frame.statuses[19] = .noData
             frame.speedKPH = 75
             frame.actualGear = .fourth
@@ -159,6 +174,8 @@ public struct DemoTelemetry: Equatable, Sendable {
         default: // Braking to a stop at the line, then waiting.
             let p = min(1, progress(19.5, 23))
             frame.longitudinalAcceleration = p < 1 ? -3 : 0
+            frame.acceleratorPedalPosition = 0
+            frame.brakePressureBar = lerp(28, 0, p)
             frame.speedKPH = lerp(75, 0, p)
             frame.actualGear = p < 1 ? .third : .first
             frame.engineRPM = lerp(2600, 800, p)
@@ -194,10 +211,12 @@ public struct DemoTelemetry: Equatable, Sendable {
                 case 6...18: value = .boolean(booleans & (1 << (index - 6)) != 0)
                 case 19: value = .number(Float(longitudinalAcceleration))
                 case 20: value = .number(Float(lateralAcceleration))
+                case 21: value = .number(Float(acceleratorPedalPosition))
+                case 22: value = .number(Float(brakePressureBar))
                 default: break
                 }
             }
-            readings[descriptor.key] = layoutVersion == 1 && index >= 19
+            readings[descriptor.key] = layoutVersion == 1 && (index == 19 || index == 20)
                 ? .unknown : SignalReading(availability: availability, value: value)
         }
         return readings

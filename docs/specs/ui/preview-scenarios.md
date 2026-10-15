@@ -18,8 +18,8 @@ These names currently exist in `DemoScenario` and can be passed as
 | `connected` | Controller running factory configuration; upload/command writes fail with Unsupported Operation. | Configuration read, confirmations, and send/revert error presentation. |
 | `customConfig` | Controller running a custom override. | Confirmed custom configuration presentation. |
 | `selectorCycle` | Parked car whose selector steps P, R, N, D, N, R every 2.5 seconds, reporting "shifting" for 0.4 seconds before each position. | Drive's selector animation replaces the gear briefly on each change, animating from the last position across the shifting window. |
-| `driveLaps` | Controller reports Live signals layout 2 and streams 28-byte frames at 10 Hz: a 24-second lap that loops. See [driveLaps lap](#drivelaps-lap) below. | Acceleration readings for the g-meter, including no-data windows. |
-| `driveLapsLayout1` | The same lap from a controller that reports layout 1, so it streams 23-byte frames with no acceleration. | A layout 1 controller: RPM, speed and gear still move; acceleration stays unknown. |
+| `driveLaps` | Controller reports Live signals layout 2 and streams 28-byte frames at 10 Hz: a 24-second lap that loops. The extensible catalog also streams normalized accelerator position and synthetic brake pressure in bar. See [driveLaps lap](#drivelaps-lap) below. | Acceleration readings for the g-meter, plus throttle percentage and brake pressure bars. |
+| `driveLapsLayout1` | The same lap from a controller that reports layout 1, so it streams 23-byte frames with no acceleration. The extensible catalog remains available for the pedal signals. | A layout 1 controller: RPM, speed and gear still move; acceleration stays unknown while throttle and brake pressure remain available. |
 | `stalled` | Controller streams valid frames, then stops while remaining linked. | The two-second watchdog clears RPM, speed, and gear to Unknown. |
 | `relinking` | Connection succeeds and then the fake controller powers off. | Waiting to reconnect. |
 | `incompatible` | Synthetic controller reports unsupported protocol major. | Clear incompatibility state. |
@@ -45,8 +45,12 @@ explicitly as well as the phone's saved working copy.
 
 The demo controller reports Live signals layout 2 in Device info for every
 scenario except `driveLapsLayout1`. It encodes each frame in the layout it
-reports, and the app decodes it with the normal decoder. Other drives carry plain
-acceleration values: longitudinal follows each gear pull and lateral is zero.
+reports, and the app decodes it with the normal decoder. The extensible catalog
+also carries normalized accelerator position and synthetic brake pressure. The
+Drive brake fill uses a configurable 70 bar visual span by default; the value
+shown remains the actual pressure when it exceeds that span. Other drives carry
+plain acceleration values: longitudinal follows each gear pull and lateral is
+zero.
 
 ### driveLaps lap
 
@@ -65,6 +69,12 @@ unvalidated reference candidate, not vehicle behavior.
 | 15.5–17.5 | Lateral unverified | Live, +2 | Freshness unverified, value −0.8 |
 | 17.5–19.5 | Longitudinal missing | No data | Live, +0.5 |
 | 19.5–24 | Braking to a stop, then waiting | Live, −3 then 0 | Live, 0 |
+
+The synthetic pedal values follow those phases: throttle is high during the
+launch, drops to zero during hard braking, and varies through the corners;
+brake pressure is about 35 bar at the start of hard braking and tapers toward
+zero at the stop. These values exercise the readout path and do not claim a
+vehicle pressure limit. A stalled stream clears both side meters to Unknown.
 
 ## Current checks
 

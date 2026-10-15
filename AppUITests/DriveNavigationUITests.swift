@@ -64,7 +64,7 @@ final class DriveNavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
     }
 
-    func testDriveShowsNumericReadoutsAndUnsupportedSignalsAsInactive() {
+    func testDriveShowsNumericReadoutsAndPedalSignals() {
         launchConnected()
         openDrive()
         waitForLandscape()
@@ -72,9 +72,42 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
         assertText(for: "drive.rpm", matchingAny: ["2", "3", "4", "5", "6"])
         assertText(for: "drive.speed", matchingAny: ["3", "5", "7", "9"])
-        assertText(for: "drive.throttle", containing: "Not supported")
+        assertText(for: "drive.throttle", containing: "%")
+        assertText(for: "drive.brake", containing: "bar")
         assertText(for: "drive.gmeter", containing: "g accelerating")
-        captureLandscape("drive-readouts-and-unsupported-signals")
+        captureLandscape("drive-readouts-and-pedal-signals")
+    }
+
+    func testDriveBrakePressureRisesDuringDemoLap() {
+        launch(scenario: "driveLaps")
+        openDrive()
+        waitForLandscape()
+        let brake = app.descendants(matching: .any)["drive.brake"]
+        XCTAssertTrue(brake.waitForExistence(timeout: 10))
+        let pressure = NSPredicate { _, _ in
+            let label = self.accessibilitySummary(of: brake)
+            return label.contains("bar") && !label.contains("0.0 bar")
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: pressure, object: nil)], timeout: 30), .completed)
+        captureLandscape("drive-brake-pressure-active")
+    }
+
+    func testDrivePedalSignalsAtLargeText() {
+        launch(scenario: "connected", largeText: true)
+        openDrive()
+        waitForLandscape()
+        assertText(for: "drive.throttle", containing: "%")
+        assertText(for: "drive.brake", containing: "bar")
+        // This check covers the changed meters; the full dashboard bounds
+        // remain covered by the existing navigation/readout checks.
+        let window = app.windows.element(boundBy: 0).frame
+        for identifier in ["drive.brake", "drive.throttle"] {
+            let frame = app.descendants(matching: .any)[identifier].frame
+            XCTAssertGreaterThan(frame.width, 0)
+            XCTAssertGreaterThan(frame.height, 0)
+            XCTAssertTrue(window.contains(frame), "\(identifier) is clipped: \(frame)")
+        }
+        capture("drive-pedal-signals-large-text")
     }
 
     func testDriveShowsUnknownValuesAfterStalledScenario() {
@@ -86,6 +119,8 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.speed", containing: "Unknown")
         assertText(for: "drive.gear", containing: "Unknown")
         assertText(for: "drive.gmeter", containing: "no data")
+        assertText(for: "drive.throttle", containing: "Unknown")
+        assertText(for: "drive.brake", containing: "Unknown")
         captureLandscape("drive-stalled-unknown")
     }
 
@@ -141,11 +176,14 @@ final class DriveNavigationUITests: XCTestCase {
         launch(scenario: "connected")
     }
 
-    private func launch(scenario: String) {
+    private func launch(scenario: String, largeText: Bool = false) {
         app.launchArguments = [
             "-FakeController", "YES",
             "-DemoScenario", scenario
         ]
+        if largeText {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
         app.launch()
         XCTAssertTrue(app.buttons["Drive"].waitForExistence(timeout: 15))
     }
@@ -301,7 +339,7 @@ final class DriveNavigationUITests: XCTestCase {
     }
 
     private func capture(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)

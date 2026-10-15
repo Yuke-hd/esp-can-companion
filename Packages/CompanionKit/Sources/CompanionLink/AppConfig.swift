@@ -18,12 +18,18 @@ public struct RPMBand: Equatable, Sendable {
 /// Settings of the app itself, independent of the connected controller.
 public struct AppConfig: Equatable, Sendable {
     public var rpmBand: RPMBand
+    /// The rounded display span for brake pressure. This is a visual scale,
+    /// not a vehicle limit or a claim about the controller's 91.071 bar
+    /// encoding ceiling.
+    public var brakePressureBarScale: Double
 
-    public init(rpmBand: RPMBand) {
+    public init(rpmBand: RPMBand, brakePressureBarScale: Double = 70) {
         self.rpmBand = rpmBand
+        self.brakePressureBarScale = brakePressureBarScale
     }
 
     public static let `default` = AppConfig(
-        rpmBand: RPMBand(fill: .init(from: 0, to: 6500), redline: 6000)
+        rpmBand: RPMBand(fill: .init(from: 0, to: 6500), redline: 6000),
+        brakePressureBarScale: 70
     )
 }

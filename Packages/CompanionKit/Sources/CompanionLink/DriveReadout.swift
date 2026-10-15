@@ -43,15 +43,21 @@ public struct DriveReadout: Equatable, Sendable {
     /// Pit Wall's readout is the single source for gear text, freshness,
     /// turn/hazard tile wording and RPM scaling.
     private let pitWall: PitWallReadout
+    private let brakePressureScaleBar: Double
     public let selector: String?
     public let selectorFreshness: PitWallReadout.Freshness
     public let redlineState: RedlineState
     public let status: Status
-    /// Layout v1 has no throttle, brake pressure or boost signals. These
-    /// tiles are explicit placeholders rather than fabricated zero values.
+    /// Throttle and brake pressure come from the extensible signal snapshot;
+    /// the fixed legacy frame has neither signal. Boost remains unsupported.
     public let throttle: PitWallReadout.Tile
     public let brakePressure: PitWallReadout.Tile
     public let boost: PitWallReadout.Tile
+    /// Normalized accelerator position, when the extensible signal is live or
+    /// freshness-unverified. The controller contract publishes `0...1`.
+    public let throttleFraction: Double?
+    /// Brake pressure in the controller's bar presentation, when available.
+    public let brakePressureBar: Double?
     /// Acceleration in g, only when both axes are fresh with values. Nil
     /// otherwise, never zero: a lone axis would put the g-meter dot in the
     /// wrong place, and layout 1 or a stalled stream has no acceleration.
@@ -66,11 +72,14 @@ public struct DriveReadout: Equatable, Sendable {
         frame: LiveSignalFrame,
         activeConfig: ConfigSummary? = nil,
         rpmBand band: RPMBand? = nil,
+        snapshot: ExtensibleSignalSnapshot? = nil,
+        brakePressureBarScale: Double = AppConfig.default.brakePressureBarScale,
         linkState: LinkState = .unknown,
         framesPerSecond: Int = 0
     ) {
         let pitWall = PitWallReadout(frame: frame, band: band)
         self.pitWall = pitWall
+        self.brakePressureScaleBar = Self.validBrakePressureScale(brakePressureBarScale)
 
         selectorFreshness = PitWallReadout.Freshness(frame.selectorPosition.availability)
         selector = selectorFreshness.showsValue
@@ -94,8 +103,11 @@ public struct DriveReadout: Equatable, Sendable {
         )
 
         let unsupported = frame == .unknown ? PitWallReadout.Freshness.unknown : .unsupported
-        throttle = Self.placeholder(title: "Throttle", freshness: unsupported)
-        brakePressure = Self.placeholder(title: "Brake pressure", freshness: unsupported)
+        let sideSignals = Self.sideSignals(snapshot: snapshot, frame: frame)
+        throttle = sideSignals.throttle.tile
+        throttleFraction = sideSignals.throttle.value
+        brakePressure = sideSignals.brakePressure.tile
+        brakePressureBar = sideSignals.brakePressure.value
         boost = Self.placeholder(title: "Boost", freshness: unsupported)
 
         let longitudinal = frame.longitudinalAcceleration
@@ -135,10 +147,17 @@ public struct DriveReadout: Equatable, Sendable {
     public var lock: PitWallReadout.Tile { status.lock }
     public var hazard: PitWallReadout.Tile { status.hazard }
 
-    /// Explicitly unavailable values for the signals absent in layout v1.
-    public var throttlePercent: Double? { nil }
+    /// Accelerator position as a percentage for the Drive captions.
+    public var throttlePercent: Double? { throttleFraction.map { $0 * 100 } }
     public var throttleFreshness: PitWallReadout.Freshness { throttle.freshness }
-    public var brakePressurePercent: Double? { nil }
+    /// Brake pressure as a percentage of the configured visual scale.
+    public var brakePressurePercent: Double? { brakePressureFraction.map { $0 * 100 } }
+    /// Fill fraction for the brake pressure bar. The scale is configurable
+    /// and is deliberately a rounded visual span, not a vehicle limit.
+    public var brakePressureFraction: Double? {
+        guard let brakePressureBar else { return nil }
+        return min(brakePressureBar, brakePressureScaleBar) / brakePressureScaleBar
+    }
     public var brakePressureFreshness: PitWallReadout.Freshness { brakePressure.freshness }
     public var boostValue: Double? { nil }
     public var boostFreshness: PitWallReadout.Freshness { boost.freshness }
@@ -166,6 +185,86 @@ public struct DriveReadout: Equatable, Sendable {
 
     private static func placeholder(title: String, freshness: PitWallReadout.Freshness) -> PitWallReadout.Tile {
         PitWallReadout.Tile(title: title, value: nil, tone: .muted, freshness: freshness)
+    }
+
+    private static func numberTile(
+        title: String,
+        reading: SignalReading<Double>?,
+        format: (Double) -> String
+    ) -> (tile: PitWallReadout.Tile, value: Double?) {
+        guard let reading else {
+            return (placeholder(title: title, freshness: .unsupported), nil)
+        }
+        let freshness = PitWallReadout.Freshness(reading.availability)
+        guard freshness.showsValue, let value = reading.value else {
+            return (placeholder(title: title, freshness: freshness), nil)
+        }
+        return (
+            PitWallReadout.Tile(title: title, value: format(value), tone: .normal, freshness: freshness),
+            value
+        )
+    }
+
+    private static func sideSignals(
+        snapshot: ExtensibleSignalSnapshot?,
+        frame: LiveSignalFrame
+    ) -> (
+        throttle: (tile: PitWallReadout.Tile, value: Double?),
+        brakePressure: (tile: PitWallReadout.Tile, value: Double?)
+    ) {
+        let fallback: SignalAvailability = frame == .unknown ? .unknown : .notSupported
+        let accelerator = number(
+            key: "vehicle.accelerator_pedal_position", unit: "none", snapshot: snapshot,
+            range: 0...1
+        )
+        var pressure = number(
+            key: "vehicle.brake_pressure", unit: "none", snapshot: snapshot,
+            range: -Double.greatestFiniteMagnitude...Double.greatestFiniteMagnitude
+        )
+        if let value = pressure?.value {
+            pressure?.value = max(0, value)
+        }
+        let throttle = accelerator ?? .init(availability: fallback, value: nil)
+        let brake = pressure ?? .init(availability: fallback, value: nil)
+        return (
+            numberTile(title: "Throttle", reading: throttle) {
+                String(format: "%.0f%%", $0 * 100)
+            },
+            numberTile(title: "Brake pressure", reading: brake) {
+                String(format: "%.1f bar", $0)
+            }
+        )
+    }
+
+    private static func number(
+        key: String,
+        unit: String,
+        snapshot: ExtensibleSignalSnapshot?,
+        range: ClosedRange<Double>
+    ) -> SignalReading<Double>? {
+        guard let snapshot else { return nil }
+        guard !snapshot.isStalled else { return .unknown }
+        guard let state = snapshot.signals.first(where: {
+            $0.descriptor.key.utf8.elementsEqual(key.utf8)
+        }) else {
+            return snapshot.catalog == nil ? nil : .init(availability: .notSupported, value: nil)
+        }
+        guard state.descriptor.type.known == .number, state.descriptor.unit == unit else {
+            return .unknown
+        }
+        let availability = state.reading.availability
+        guard let value = state.reading.value else {
+            return .init(availability: availability, value: nil)
+        }
+        guard case .number(let number) = value, number.isFinite,
+              range.contains(Double(number)) else {
+            return .unknown
+        }
+        return .init(availability: availability, value: Double(number))
+    }
+
+    private static func validBrakePressureScale(_ value: Double) -> Double {
+        value.isFinite && value > 0 ? value : AppConfig.default.brakePressureBarScale
     }
 
     private static func redlineState(rpm: Double?, threshold: Double?) -> RedlineState {

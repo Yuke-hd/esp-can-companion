@@ -14,6 +14,28 @@ final class MotorsportDriveTextTests: XCTestCase {
         )))
     }
 
+    private func extensibleReadout(
+        accelerator: SignalReading<ExtensibleSignalValue>,
+        brakePressure: SignalReading<ExtensibleSignalValue>
+    ) throws -> DriveReadout {
+        let frame = try LiveSignalFrame(decoding: DemoTelemetry().encoded, layoutVersion: DemoTelemetry().layoutVersion)
+        let readings: [String: SignalReading<ExtensibleSignalValue>] = [
+            "vehicle.accelerator_pedal_position": accelerator,
+            "vehicle.brake_pressure": brakePressure,
+        ]
+        let packets = try DemoSignalCatalog.vehicle.packets(sequence: 0, readings: readings)
+        var feed = ExtensibleSignalFeed()
+        feed.install(catalog: DemoSignalCatalog.vehicle.catalog)
+        for packet in packets {
+            XCTAssertNotNil(feed.receive(packet, at: .now))
+        }
+        return DriveReadout(
+            frame: frame,
+            snapshot: feed.snapshot(at: .now),
+            linkState: .connected(.init(id: UUID(), name: "Demo Controller", maximumWriteLength: 182))
+        )
+    }
+
     func testGearAccessibilityCombinesGearSelectorAndFreshness() throws {
         let value = try readout {
             $0.actualGear = .fourth
@@ -59,10 +81,46 @@ final class MotorsportDriveTextTests: XCTestCase {
         let value = try readout()
 
         XCTAssertEqual(value.throttleDisplayText, "NO SIGNAL")
-        XCTAssertEqual(value.throttleAccessibilityText, "Throttle, Not supported")
+        XCTAssertEqual(value.throttleAccessibilityText, "Throttle, no value, Not supported")
 
         let stalled = DriveReadout(frame: .unknown)
         XCTAssertEqual(stalled.throttleDisplayText, "UNKNOWN")
+    }
+
+    func testPedalAccessibilityIncludesNumericUnitsAndStatus() throws {
+        let value = try extensibleReadout(
+            accelerator: .init(availability: .freshnessUnverified, value: .number(0.375)),
+            brakePressure: .init(availability: .freshnessUnverified, value: .number(37.5))
+        )
+
+        XCTAssertEqual(value.throttleValueText, "38")
+        XCTAssertEqual(value.brakePressureValueText, "37.5")
+        XCTAssertEqual(value.throttleDisplayText, "UNVERIFIED")
+        XCTAssertEqual(value.brakePressureStatusText, "UNVERIFIED")
+        XCTAssertEqual(value.throttleAccessibilityText, "Throttle, 38%, Unverified")
+        XCTAssertEqual(value.brakePressureAccessibilityText, "Brake pressure, 37.5 bar, Unverified")
+    }
+
+    func testPedalTextClearsStaleAndStalledValues() throws {
+        let stale = try extensibleReadout(
+            accelerator: .init(availability: .stale, value: .number(0.375)),
+            brakePressure: .init(availability: .stale, value: .number(37.5))
+        )
+
+        XCTAssertEqual(stale.throttleValueText, "—")
+        XCTAssertEqual(stale.brakePressureValueText, "—")
+        XCTAssertEqual(stale.throttleDisplayText, "STALE")
+        XCTAssertEqual(stale.brakePressureStatusText, "STALE")
+        XCTAssertEqual(stale.throttleAccessibilityText, "Throttle, no value, Stale")
+        XCTAssertEqual(stale.brakePressureAccessibilityText, "Brake pressure, no value, Stale")
+
+        let stalled = DriveReadout(frame: .unknown)
+        XCTAssertEqual(stalled.throttleValueText, "—")
+        XCTAssertEqual(stalled.brakePressureValueText, "—")
+        XCTAssertEqual(stalled.throttleDisplayText, "UNKNOWN")
+        XCTAssertEqual(stalled.brakePressureStatusText, "UNKNOWN")
+        XCTAssertEqual(stalled.throttleAccessibilityText, "Throttle, no value, Unknown")
+        XCTAssertEqual(stalled.brakePressureAccessibilityText, "Brake pressure, no value, Unknown")
     }
 
     // MARK: G-meter

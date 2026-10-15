@@ -233,7 +233,7 @@ final class ControllerSessionTests: XCTestCase {
         XCTAssertGreaterThan(telemetry.framesPerSecond, 0)
         XCTAssertNotNil(telemetry.snapshot)
         XCTAssertEqual(telemetry.catalog, bench.demo.signalCatalog.catalog)
-        XCTAssertEqual(telemetry.readings.count, 21)
+        XCTAssertEqual(telemetry.readings.count, 23)
 
         run.cancel()
         await run.value
