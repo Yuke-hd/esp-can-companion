@@ -24,7 +24,7 @@ struct MotorsportDriveView: View {
             slots: DriveScreenSlots(
                 backdrop: {
                     ZStack {
-                        MotorsportLivery()
+                        MotorsportLivery(parted: gMeterCentred)
                         MotorsportTurnGlow(left: leftActive, right: rightActive)
                     }
                 },

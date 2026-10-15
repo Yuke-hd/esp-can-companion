@@ -4,15 +4,18 @@ import DesignSystem
 /// Decorative racing livery behind the Motorsport Drive gauges: twin slanted
 /// stripes through the centre and a chequered band in the bottom-left corner.
 ///
-/// Purely ornamental and static: kept low in contrast so it never competes
-/// with a reading, and hidden from accessibility.
+/// Purely ornamental: kept low in contrast so it never competes with a
+/// reading, and hidden from accessibility. `parted` slides the stripes apart
+/// to frame the enlarged G-meter when it takes the centre.
 struct MotorsportLivery: View {
     /// Horizontal shift per point of height, matching the brand mark's slant.
     static let slant: CGFloat = 0.35
 
+    var parted = false
+
     var body: some View {
         ZStack {
-            MotorsportLiveryStripes()
+            MotorsportLiveryStripes(parted: parted)
             // Clear of the display's rounded corner and the home indicator.
             MotorsportChequer()
                 .padding(.horizontal, 44)
@@ -25,7 +28,12 @@ struct MotorsportLivery: View {
 
 /// Two broad bands with a narrow gap, edged in red pinstripes, leaning like
 /// the italic numerals and centred behind the gear.
+///
+/// When `parted`, each half slides outward until its inner edge clears the
+/// centred G-meter ring, so the stripes no longer cut through the dial.
 private struct MotorsportLiveryStripes: View {
+    let parted: Bool
+
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
@@ -34,16 +42,26 @@ private struct MotorsportLiveryStripes: View {
             let pinstripe: CGFloat = 2
             let pinGap: CGFloat = 4
             let centre = size.width / 2
+            let outer = gap / 2 + band + pinGap + pinstripe / 2
+            // The centred ring is roughly 0.56 of the height across; a slanted
+            // edge clears it once it sits ~1.06 radii (1 / cos of the lean)
+            // from the centre.
+            let spread = parted ? (size.height * 0.3 - gap / 2).rounded() : 0
             ZStack {
-                stripe(in: size, centre: centre - (gap + band) / 2, width: band)
-                    .fill(Theme.Colors.textPrimary.opacity(0.035))
-                stripe(in: size, centre: centre + (gap + band) / 2, width: band)
-                    .fill(Theme.Colors.textPrimary.opacity(0.035))
-                let outer = gap / 2 + band + pinGap + pinstripe / 2
-                stripe(in: size, centre: centre - outer, width: pinstripe)
-                    .fill(Theme.Colors.accent.opacity(0.35))
-                stripe(in: size, centre: centre + outer, width: pinstripe)
-                    .fill(Theme.Colors.accent.opacity(0.35))
+                ZStack {
+                    stripe(in: size, centre: centre - (gap + band) / 2, width: band)
+                        .fill(Theme.Colors.textPrimary.opacity(0.035))
+                    stripe(in: size, centre: centre - outer, width: pinstripe)
+                        .fill(Theme.Colors.accent.opacity(0.35))
+                }
+                .offset(x: -spread)
+                ZStack {
+                    stripe(in: size, centre: centre + (gap + band) / 2, width: band)
+                        .fill(Theme.Colors.textPrimary.opacity(0.035))
+                    stripe(in: size, centre: centre + outer, width: pinstripe)
+                        .fill(Theme.Colors.accent.opacity(0.35))
+                }
+                .offset(x: spread)
             }
         }
     }

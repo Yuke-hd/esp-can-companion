@@ -38,7 +38,8 @@ struct MotorsportGMeter: View {
     let readout: DriveReadout
     var face: Face = .rings
     /// In the centre slot: the ring fills the space, its marks and dot growing
-    /// with it, the title row is hidden and the total sits large behind the ring.
+    /// with it, the title row is hidden and the total sits large behind the
+    /// ring without its unit.
     var fillsSpace = false
     /// The total's size behind the centre ring, as a share of its diameter.
     private static let backdropValueShare: CGFloat = 0.3
@@ -148,7 +149,7 @@ struct MotorsportGMeter: View {
                     .tracking(0.8)
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .minimumScaleFactor(0.7)
-            } else if face == .rings {
+            } else if face == .rings && !fillsSpace {
                 Text("G")
                     .font(Theme.DriveTypography.label(valueSize * 0.45))
                     .foregroundStyle(Theme.Colors.textTertiary)
