@@ -138,7 +138,8 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             case .deviceInfo: return Self.encode(deviceInfo)
             case .configStatus: return statusValue()
             case .config: return readPage()
-            case .liveSignals, .command: throw CompanionTransportError.att(.unknown(0x02))
+            case .signalCatalog: throw CompanionTransportError.other("Signal catalog characteristic is unavailable.")
+            case .liveSignals, .extensibleLiveSignals, .command: throw CompanionTransportError.att(.unknown(0x02))
             }
         }
     }

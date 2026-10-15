@@ -8,6 +8,11 @@ public enum CompanionCharacteristic: Hashable, Sendable, CaseIterable {
     case configStatus
     case liveSignals
     case command
+    /// Optional protected catalog page read and selector write with response.
+    case signalCatalog
+    /// Optional extensible notifications. Both extension endpoints must be
+    /// available before the client uses extensible telemetry.
+    case extensibleLiveSignals
 }
 
 /// Why a transport operation failed.

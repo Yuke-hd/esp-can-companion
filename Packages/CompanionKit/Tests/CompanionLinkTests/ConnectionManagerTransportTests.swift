@@ -28,6 +28,92 @@ final class ConnectionManagerTransportTests: XCTestCase {
         )
     }
 
+    func testOptionalEndpointRolesAndPermissions() {
+        XCTAssertEqual(ConnectionManagerTransport.gattUUID(for: .signalCatalog), GATTUUID("AB490006-09B6-4509-BF8E-2790253BAF98"))
+        XCTAssertEqual(ConnectionManagerTransport.gattUUID(for: .extensibleLiveSignals), GATTUUID("AB490007-09B6-4509-BF8E-2790253BAF98"))
+        for role in CompanionCharacteristic.allCases {
+            XCTAssertEqual(ConnectionManagerTransport.characteristic(for: ConnectionManagerTransport.gattUUID(for: role)), role)
+        }
+        XCTAssertNil(ConnectionManagerTransport.characteristic(for: "AB490008-09B6-4509-BF8E-2790253BAF98"))
+        let configuration = CompanionServiceConfiguration.protocolV1
+        XCTAssertTrue(configuration.readableCharacteristicUUIDs.contains(CompanionGATT.signalCatalog))
+        XCTAssertTrue(configuration.writableCharacteristicUUIDs.contains(CompanionGATT.signalCatalog))
+        XCTAssertFalse(configuration.readableCharacteristicUUIDs.contains(CompanionGATT.extensibleLiveSignals))
+        XCTAssertFalse(configuration.writableCharacteristicUUIDs.contains(CompanionGATT.extensibleLiveSignals))
+        // Merely exposing the role must not choose a telemetry subscription.
+        XCTAssertEqual(configuration.notifyingCharacteristicUUIDs, [CompanionGATT.configStatus, CompanionGATT.liveSignals])
+        XCTAssertEqual(configuration.pairingCharacteristicUUID, CompanionGATT.configStatus)
+    }
+
+    func testCatalogSelectorAndReadUseOnlyTheCatalogEndpoint() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let selector = Data([1, 0x78, 0x56, 0x34, 0x12, 200, 0])
+        let page = Data([1, 0x78, 0x56, 0x34, 0x12, 201, 0, 200, 0, 1, 0, 0xAA])
+        let reads = LockedEvents()
+        bench.radio.readHandler = { _, uuid in
+            reads.append(uuid.string)
+            return uuid == CompanionGATT.signalCatalog ? .success(page) : .failure(.characteristicNotFound(uuid))
+        }
+        bench.radio.writeHandler = { uuid, value in
+            uuid == CompanionGATT.signalCatalog && value == selector ? nil : .other("Unexpected endpoint")
+        }
+        let write = Task { try await transport.write(selector, to: .signalCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        try await write.value
+        let read = Task { try await transport.read(.signalCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        let value = try await read.value
+        XCTAssertEqual(value, page)
+        XCTAssertEqual(reads.values, [CompanionGATT.signalCatalog.string])
+        XCTAssertEqual(bench.radio.receivedWrites.map(\.characteristic), [CompanionGATT.signalCatalog])
+        XCTAssertEqual(bench.radio.receivedWrites.map(\.data), [selector])
+    }
+
+    func testMissingCatalogKeepsConnectionAndConfigurationUsable() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        // The existing demo has neither extension endpoint.
+        let read = Task { try await transport.read(.signalCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        do {
+            _ = try await read.value
+            XCTFail("expected missing optional endpoint to fail")
+        } catch CompanionTransportError.other { }
+        let selector = Task { try await transport.write(Data([1, 0, 0, 0, 0, 0, 0]), to: .signalCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        await expectError(.att(.unknown(0x03))) { try await selector.value }
+        XCTAssertTrue(bench.manager.state.isConnected)
+        let write = Task { try await transport.write(ConfigWritePDU.abort.encoded, to: .config) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        try await write.value
+        XCTAssertEqual(bench.radio.receivedWrites.map(\.characteristic), [CompanionGATT.config])
+    }
+
+    func testExtensibleNotificationsRouteWithoutLegacyOrUnknownDelivery() async {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let events = LockedEvents()
+        let subscription = transport.subscribe(to: .extensibleLiveSignals) { data in events.append(data.base64EncodedString()) }
+        let packet = Data([1, 0, 0, 1, 0x78, 0x56, 0x34, 0x12])
+        bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.liveSignals, data: packet)
+        bench.radio.sendNotification(from: bench.peripheral.id, characteristic: "AB490008-09B6-4509-BF8E-2790253BAF98", data: packet)
+        bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals, data: packet)
+        bench.scheduler.runUntilIdle()
+        subscription.cancel()
+        bench.radio.sendNotification(from: bench.peripheral.id, characteristic: CompanionGATT.extensibleLiveSignals, data: packet)
+        bench.scheduler.runUntilIdle()
+        XCTAssertEqual(events.values, [packet.base64EncodedString()])
+    }
+
     func testNotConnected() async {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)
