@@ -24,6 +24,8 @@ struct DriveTab: View {
             frame: frame,
             activeConfig: summary,
             rpmBand: AppConfig.default.rpmBand,
+            snapshot: telemetry?.snapshot,
+            brakePressureBarScale: AppConfig.default.brakePressureBarScale,
             linkState: session?.connection.state ?? .unknown,
             framesPerSecond: telemetry?.framesPerSecond ?? 0
         )

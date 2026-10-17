@@ -24,7 +24,7 @@ that scope.
 - Visible freshness, with text or symbols as well as color. Stale or unknown
   telemetry clears to placeholders. By owner direction, Drive shows no freshness
   words: a value that is not current clears to a dash, and accessibility labels
-  still state its freshness.
+  still state its freshness and numeric units.
 - Drive's monitoring view is landscape and read-only. The Motorsport variant is
   the initial implementation; alternative visual variants remain future work.
 
@@ -46,15 +46,27 @@ appropriate when they keep information readable and controls reachable.
 
 Drafts show moments, not every state. Verify loading, missing data, failure, and
 recovery when affected. A label such as "Linked" cannot imply all readings are
-fresh. Brake cannot be presented as fresh under the current protocol. Stale or
-unknown readings must not be presented as current numeric values.
+fresh. The legacy brake input cannot be presented as fresh under the current
+protocol; brake pressure follows the availability supplied with its extensible
+signal. Stale or unknown readings must not be presented as current numeric
+values.
 
-Boost and throttle/brake percentages in the Drive drafts are placeholders not
-provided by the current live-signal model. The controller does not report actual
-live/idle LED output status, so the draft's output stack cannot claim it. Any
-future simulated lighting illustration must be identified as expected behavior,
-not physical-output feedback. "Valid config" cannot imply controller acceptance
-before the controller validates it.
+Drive reads the normalized `vehicle.accelerator_pedal_position` signal as a
+percentage and the `vehicle.brake_pressure` signal as bar. Both meters fill
+upward from the bottom, with BRK/THR labels at the top and numeric values and
+units at the bottom. Finite negative brake pressure displays as zero bar.
+The brake meter uses
+the app's rounded 70 bar display span by default, configurable through
+`AppConfig`; this is a fill scale, not a vehicle limit or a restatement of the
+controller's 91.071 bar encoding ceiling. Both values clear to a dash when the
+signal is stale, unavailable, invalid, or the extensible stream is stalled. The
+controller currently supplies these readings without an arrival freshness
+timeout, so a connected value may be labelled unverified in accessibility.
+Boost remains an explicit unsupported placeholder. The controller does not
+report actual live/idle LED output status, so the draft's output stack cannot
+claim it. Any future simulated lighting illustration must be identified as
+expected behavior, not physical-output feedback. "Valid config" cannot imply
+controller acceptance before the controller validates it.
 
 An inspected screenshot from the actual app can serve as the visual reference
 for subsequent changes. Keep the reason for intentional deviations visible; a

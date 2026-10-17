@@ -230,6 +230,128 @@ func projectionSignal(_ key: String, _ type: SignalType, unit: String = "none",
 }
 
 extension DriveReadoutTests {
+    func testDriveReadoutProjectsNormalizedAcceleratorAndBrakePressure() throws {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.accelerator_pedal_position", .number,
+                             availability: .freshnessUnverified, value: .number(0.5)),
+            projectionSignal("vehicle.brake_pressure", .number,
+                             availability: .freshnessUnverified, value: .number(37.5)),
+        ])
+        let readout = DriveReadout(frame: .unknown, snapshot: snapshot)
+
+        XCTAssertEqual(readout.throttleFraction, 0.5)
+        XCTAssertEqual(readout.throttlePercent, 50)
+        XCTAssertEqual(readout.throttle.value, "50%")
+        XCTAssertEqual(readout.throttle.freshness, .unverified)
+        XCTAssertEqual(readout.brakePressureBar, 37.5)
+        guard let brakePressureFraction = readout.brakePressureFraction else {
+            return XCTFail("expected a brake pressure fill")
+        }
+        XCTAssertEqual(brakePressureFraction, 37.5 / 70, accuracy: 0.000001)
+        XCTAssertEqual(readout.brakePressure.value, "37.5 bar")
+        XCTAssertEqual(readout.brakePressure.freshness, .unverified)
+
+        let freshSnapshot = projectionSnapshot([
+            projectionSignal("vehicle.accelerator_pedal_position", .number,
+                             availability: .fresh, value: .number(0.25)),
+            projectionSignal("vehicle.brake_pressure", .number,
+                             availability: .fresh, value: .number(10)),
+        ])
+        let freshReadout = DriveReadout(frame: .unknown, snapshot: freshSnapshot)
+        XCTAssertEqual(freshReadout.throttle.freshness, .fresh)
+        XCTAssertEqual(freshReadout.brakePressure.freshness, .fresh)
+    }
+
+    func testDriveReadoutClearsStaleAndInvalidSideSignalValues() {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.accelerator_pedal_position", .number,
+                             availability: .stale, value: .number(0.5)),
+            projectionSignal("vehicle.brake_pressure", .number,
+                             availability: .fresh, value: .number(.nan)),
+        ])
+        let readout = DriveReadout(frame: .unknown, snapshot: snapshot)
+
+        XCTAssertNil(readout.throttleFraction)
+        XCTAssertNil(readout.throttlePercent)
+        XCTAssertEqual(readout.throttle.freshness, .stale)
+        XCTAssertNil(readout.brakePressureBar)
+        XCTAssertNil(readout.brakePressureFraction)
+        XCTAssertEqual(readout.brakePressure.freshness, .unknown)
+
+        let aboveNormalizedRange = projectionSnapshot([
+            projectionSignal("vehicle.accelerator_pedal_position", .number, value: .number(1.01)),
+        ])
+        let invalidReadout = DriveReadout(frame: .unknown, snapshot: aboveNormalizedRange)
+        XCTAssertNil(invalidReadout.throttlePercent)
+        XCTAssertEqual(invalidReadout.throttle.freshness, .unknown)
+    }
+
+    func testNegativeBrakePressureDisplaysZeroWithoutChangingFreshness() {
+        for availability in [SignalAvailability.fresh, .freshnessUnverified] {
+            for pressure: Float in [-0.01, -1, -100] {
+                let snapshot = projectionSnapshot([
+                    projectionSignal("vehicle.brake_pressure", .number,
+                                     availability: availability, value: .number(pressure)),
+                ])
+                let readout = DriveReadout(frame: .unknown, snapshot: snapshot)
+                XCTAssertEqual(readout.brakePressureBar, 0)
+                XCTAssertEqual(readout.brakePressureFraction, 0)
+                XCTAssertEqual(readout.brakePressure.value, "0.0 bar")
+                XCTAssertEqual(readout.brakePressureFreshness,
+                               availability == .fresh ? .fresh : .unverified)
+            }
+        }
+        let stale = projectionSnapshot([
+            projectionSignal("vehicle.brake_pressure", .number,
+                             availability: .stale, value: .number(-1)),
+        ])
+        let readout = DriveReadout(frame: .unknown, snapshot: stale)
+        XCTAssertNil(readout.brakePressureBar)
+        XCTAssertEqual(readout.brakePressureFreshness, .stale)
+    }
+
+    func testDriveReadoutMarksStalledExtensibleSideSignalsUnknown() {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.accelerator_pedal_position", .number, value: .number(0.5)),
+            projectionSignal("vehicle.brake_pressure", .number, value: .number(20)),
+        ], stalled: true)
+        let readout = DriveReadout(frame: .unknown, snapshot: snapshot)
+
+        XCTAssertNil(readout.throttlePercent)
+        XCTAssertEqual(readout.throttle.freshness, .unknown)
+        XCTAssertNil(readout.brakePressureBar)
+        XCTAssertEqual(readout.brakePressure.freshness, .unknown)
+    }
+
+    func testDriveReadoutUsesDefaultBrakePressureScaleForInvalidConfiguration() throws {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.brake_pressure", .number, value: .number(35)),
+        ])
+        for scale in [0, -1, .nan, .infinity] {
+            let readout = DriveReadout(frame: .unknown, snapshot: snapshot,
+                                       brakePressureBarScale: scale)
+            XCTAssertEqual(try XCTUnwrap(readout.brakePressureFraction), 0.5, accuracy: 0.000001)
+        }
+    }
+
+    func testBrakePressureKeepsActualValueWhenVisualScaleSaturates() throws {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.brake_pressure", .number, value: .number(85)),
+        ])
+        let readout = DriveReadout(frame: .unknown, snapshot: snapshot)
+
+        XCTAssertEqual(readout.brakePressureBar, 85)
+        XCTAssertEqual(readout.brakePressure.value, "85.0 bar")
+        XCTAssertEqual(try XCTUnwrap(readout.brakePressureFraction), 1)
+
+        let tinyScale = DriveReadout(frame: .unknown, snapshot: snapshot,
+                                    brakePressureBarScale: .leastNonzeroMagnitude)
+        XCTAssertEqual(tinyScale.brakePressureFraction, 1)
+
+        let customScale = DriveReadout(frame: .unknown, snapshot: snapshot, brakePressureBarScale: 100)
+        XCTAssertEqual(try XCTUnwrap(customScale.brakePressureFraction), 0.85, accuracy: 0.000001)
+    }
+
     func testSemanticProjectionKeepsSignedAccelerationAndBothAxesRule() throws {
         let snapshot = projectionSnapshot([
             projectionSignal("vehicle.acceleration.longitudinal", .number, unit: "m/s^2", value: .number(-9.80665)),

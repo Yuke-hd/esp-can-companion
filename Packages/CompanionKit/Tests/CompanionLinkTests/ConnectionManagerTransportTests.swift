@@ -303,6 +303,62 @@ final class ConnectionManagerTransportTests: XCTestCase {
         bench.scheduler.runUntilIdle()
         XCTAssertEqual(events.values, ["frame"])
     }
+
+    func testImmediateReplacementPreservesNewNotifier() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let first = Task { try await transport.activateLiveNotifier(.extensibleLiveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier == CompanionGATT.extensibleLiveSignals }
+        let oldLease = try await first.value
+
+        // Request the replacement immediately without waiting for old cleanup;
+        // if cleanup arrives later, its generation guard must preserve the new
+        // selection.
+        oldLease.cancel()
+        var completed = false
+        let replacement = Task {
+            defer { completed = true }
+            return try await transport.activateLiveNotifier(.extensibleLiveSignals)
+        }
+        await bench.settle { completed }
+        let newLease = try await replacement.value
+        defer { newLease.cancel() }
+
+        XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+        bench.scheduler.runUntilIdle()
+        XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+    }
+
+    func testNewConsumerWaitsForPreviousNotifierCleanup() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let first = Task { try await transport.activateLiveNotifier(.extensibleLiveSignals) }
+        await bench.settle { bench.manager.selectedLiveNotifier != nil }
+        let oldLease = try await first.value
+        let requestCount = bench.radio.notificationRequests.count
+        oldLease.cancel()
+        // Do not advance the radio scheduler: leave the first disable in flight.
+        for _ in 0..<2_000 {
+            if bench.radio.notificationRequests.count > requestCount { break }
+            await Task.yield()
+        }
+        XCTAssertGreaterThan(bench.radio.notificationRequests.count, requestCount)
+        var completed = false
+        let replacement = Task {
+            defer { completed = true }
+            return try await transport.activateLiveNotifier(.extensibleLiveSignals)
+        }
+        await bench.settle { completed }
+        let newLease = try await replacement.value
+        defer { newLease.cancel() }
+        XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+        oldLease.cancel()
+        bench.scheduler.runUntilIdle()
+        XCTAssertEqual(bench.manager.selectedLiveNotifier, CompanionGATT.extensibleLiveSignals)
+    }
+
     func testNegotiationThroughManagerSelectsOnlyExtensibleAndClearsOnRemoteLifecycleLoss() async throws {
         for loss in 0..<3 {
             var info = DemoController.defaultDeviceInfo

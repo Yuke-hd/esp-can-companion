@@ -223,17 +223,9 @@ final class DemoTelemetryTests: XCTestCase {
             packets.withLock { $0.append(data) }
         }
         defer { subscription.cancel() }
-        // Lease disposal completes asynchronously after run cancellation. Retry
-        // only the selection-busy result until that prior CCCD operation finishes.
-        var historicalLease: CompanionSubscription?
-        for _ in 0..<500 where historicalLease == nil {
-            do {
-                historicalLease = try await session.client.transport.activateLiveNotifier(.liveSignals)
-            } catch CompanionTransportError.other(let detail) where detail?.contains("busy") == true {
-                try await Task.sleep(for: .milliseconds(5))
-            }
-        }
-        let lease = try XCTUnwrap(historicalLease)
+        // The transport waits for the canceled extensible notifier's CCCD
+        // cleanup before selecting the historical notifier.
+        let lease = try await session.client.transport.activateLiveNotifier(.liveSignals)
         defer { lease.cancel() }
         for _ in 0..<500 where packets.withLock({ $0.count < 3 }) {
             try await Task.sleep(for: .milliseconds(5))

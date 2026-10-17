@@ -79,12 +79,16 @@ extension DriveReadout {
 
     var brakeAccessibilityText: String { tileAccessibility(brake) }
     var turnAccessibilityText: String { tileAccessibility(turn) }
-    // Throttle has no live signal. Its wording follows the readout's
-    // placeholder tile, so a future signal changes it in one place.
     var throttleDisplayText: String {
         throttle.freshness == .unsupported ? "NO SIGNAL" : throttle.freshness.title.uppercased()
     }
-    var throttleAccessibilityText: String { ["Throttle", throttle.freshness.title].joined(separator: ", ") }
+    var throttleAccessibilityText: String { tileAccessibility(throttle) }
+    var brakePressureAccessibilityText: String { tileAccessibility(brakePressure) }
+    var throttleValueText: String { throttlePercent.map { String(format: "%.0f", $0) } ?? "—" }
+    var brakePressureValueText: String { brakePressureBar.map { String(format: "%.1f", $0) } ?? "—" }
+    var brakePressureStatusText: String {
+        brakePressureFreshness == .unsupported ? "NO SIGNAL" : brakePressureFreshness.title.uppercased()
+    }
 
     // MARK: G-meter
 

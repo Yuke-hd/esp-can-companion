@@ -225,6 +225,13 @@ final class ExtensibleDemoTests: XCTestCase {
         XCTAssertEqual(active.reading(for: "vehicle.turn_state")?.value, .enumeration(choiceKey: "left"))
         XCTAssertEqual(active.reading(for: "vehicle.engine_rpm")?.availability, .freshnessUnverified)
         XCTAssertEqual(active.reading(for: "vehicle.brake_pressed")?.availability, .freshnessUnverified)
+        guard case .number(let accelerator)? = active.reading(for: "vehicle.accelerator_pedal_position")?.value else {
+            return XCTFail("expected normalized accelerator position")
+        }
+        XCTAssertEqual(accelerator, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(active.reading(for: "vehicle.accelerator_pedal_position")?.availability, .freshnessUnverified)
+        XCTAssertEqual(active.reading(for: "vehicle.brake_pressure")?.value, .number(0))
+        XCTAssertEqual(active.reading(for: "vehicle.brake_pressure")?.availability, .freshnessUnverified)
         XCTAssertTrue(radio.receivedWrites.contains { $0.characteristic == CompanionGATT.signalCatalog })
         XCTAssertEqual(radio.notificationRequests.filter { $0.enabled }.map(\.characteristic), [CompanionGATT.extensibleLiveSignals])
     }
@@ -292,7 +299,7 @@ final class ExtensibleDemoTests: XCTestCase {
         }
         let catalog = try SignalCatalog(decoding: document, token: page.token)
         XCTAssertEqual(catalog, DemoSignalCatalog.vehicle.catalog)
-        XCTAssertEqual(catalog.descriptors.count, 21)
+        XCTAssertEqual(catalog.descriptors.count, 23)
         XCTAssertEqual(Set(catalog.descriptors.map(\.unit)), ["none", "rpm", "km/h", "m/s^2"])
         XCTAssertTrue(catalog.descriptors.allSatisfy { $0.evidence == "reference" })
         let selected = try demo.read(CompanionGATT.signalCatalog).get()
@@ -335,13 +342,18 @@ final class ExtensibleDemoTests: XCTestCase {
     func testLegacyDriveAdapterPreservesEngineeringUnitsStatusesAndChoices() throws {
         for seconds in [1.0, 5, 8, 11, 13, 16, 18, 22] {
             let frame = DemoTelemetry.driveLaps(at: seconds, sequence: 0)
-            let packets = try DemoSignalCatalog.vehicle.packets(sequence: 0, readings: frame.extensibleReadings)
-            XCTAssertEqual(packets.count, 1)
-            XCTAssertLessThanOrEqual(packets[0].count, 150)
-            XCTAssertEqual(try ExtensibleLiveSignalPacket(decoding: packets[0]).records.count, 21)
+            let packets = try DemoSignalCatalog.vehicle.packets(sequence: 0, readings: frame.extensibleReadings,
+                                                                maximumBytes: 150)
+            XCTAssertEqual(packets.count, 2)
+            XCTAssertTrue(packets.allSatisfy { $0.count <= 150 })
+            let recordCount = try packets.reduce(0) { count, packet in
+                let decoded = try ExtensibleLiveSignalPacket(decoding: packet)
+                return count + decoded.records.count
+            }
+            XCTAssertEqual(recordCount, 23)
             var feed = ExtensibleSignalFeed()
             feed.install(catalog: DemoSignalCatalog.vehicle.catalog)
-            XCTAssertNotNil(feed.receive(packets[0], at: .now))
+            for packet in packets { XCTAssertNotNil(feed.receive(packet, at: .now)) }
             let snapshot = feed.snapshot(at: .now)
             for (key, reading) in frame.extensibleReadings {
                 XCTAssertEqual(snapshot.reading(for: key), reading, "\(key) at \(seconds)")

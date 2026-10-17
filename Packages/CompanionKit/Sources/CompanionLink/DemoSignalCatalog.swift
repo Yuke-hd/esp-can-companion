@@ -159,6 +159,8 @@ public struct DemoSignalCatalog: Sendable {
             ("vehicle.brake_pressed", .boolean, "none", []),
             ("vehicle.acceleration.longitudinal", .number, "m/s^2", []),
             ("vehicle.acceleration.lateral", .number, "m/s^2", []),
+            ("vehicle.accelerator_pedal_position", .number, "none", []),
+            ("vehicle.brake_pressure", .number, "none", []),
         ]
         // Static fixture mistakes must fail during development, never truncate.
         return try! DemoSignalCatalog(token: 0x44454D4F, entries: rows.enumerated().map { index, row in

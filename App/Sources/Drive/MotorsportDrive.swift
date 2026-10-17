@@ -60,7 +60,7 @@ struct MotorsportDriveView: View {
                         gear(compact: false)
                     }
                 },
-                sideMeters: { MotorsportSideMeters(readout: readout, brakePressed: signals.brakePressed) },
+                sideMeters: { MotorsportSideMeters(readout: readout) },
                 auxiliary: {
                     Group {
                         if gMeterCentred {
@@ -585,31 +585,25 @@ private struct MotorsportSideMeters: View {
     static let signalWidth: CGFloat = 84
 
     let readout: DriveReadout
-    /// Nil while the brake value must not be shown.
-    let brakePressed: Bool?
-
     var body: some View {
-        let brakeKnown = brakePressed != nil
-        let brakeOn = brakePressed == true
         HStack(spacing: 0) {
             MotorsportSideSignal(
                 title: "BRK",
-                value: brakeKnown ? (brakeOn ? "ON" : "OFF") : "—",
+                unit: "bar",
+                value: readout.brakePressureValueText,
                 color: Theme.Colors.accent,
-                fill: brakeOn ? 1 : 0,
-                tag: nil,
+                fill: readout.brakePressureFraction ?? 0,
                 mirrored: false,
-                accessibilityText: readout.brakeAccessibilityText,
+                accessibilityText: readout.brakePressureAccessibilityText,
                 identifier: "drive.brake"
             )
             Spacer(minLength: 0)
-            // No throttle signal yet: show the empty track, labelled.
             MotorsportSideSignal(
                 title: "THR",
-                value: "—",
+                unit: "%",
+                value: readout.throttleValueText,
                 color: Theme.Colors.signalGreen,
-                fill: 0,
-                tag: readout.throttleDisplayText,
+                fill: readout.throttleFraction ?? 0,
                 mirrored: true,
                 accessibilityText: readout.throttleAccessibilityText,
                 identifier: "drive.throttle"
@@ -620,11 +614,11 @@ private struct MotorsportSideMeters: View {
 
 private struct MotorsportSideSignal: View {
     let title: String
+    let unit: String
     let value: String
     let color: Color
     /// Lit share of the arc from the bottom, `0...1`.
     let fill: Double
-    let tag: String?
     let mirrored: Bool
     let accessibilityText: String
     let identifier: String
@@ -641,7 +635,7 @@ private struct MotorsportSideSignal: View {
                 GaugeArc(part: .tube)
                     .fill(Theme.Colors.surface)
                 GaugeArc(part: .arc)
-                    .trim(from: 0, to: fill)
+                    .trim(from: 1 - fill, to: 1)
                     .stroke(color, style: StrokeStyle(lineWidth: GaugeArc.tubeWidth - 4, lineCap: .butt))
                     .shadow(color: color.opacity(lit && !reduceMotion ? 0.7 : 0), radius: lit && !reduceMotion ? 8 : 0)
                 GaugeArc(part: .border)
@@ -663,28 +657,26 @@ private struct MotorsportSideSignal: View {
 
     private func caption(alignment: HorizontalAlignment, lit: Bool) -> some View {
         VStack(alignment: alignment, spacing: 0) {
-            Text(value)
-                .font(Theme.DriveTypography.numerals(24))
-                .foregroundStyle(lit ? color : (value == "—" ? Theme.Colors.textDisabled : Theme.Colors.textSecondary))
             Text(title)
                 .font(Theme.DriveTypography.label(10))
                 .tracking(1.2)
                 .foregroundStyle(lit ? color : Theme.Colors.textTertiary)
-            if let tag {
-                Text(tag)
-                    .font(Theme.DriveTypography.label(8))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .minimumScaleFactor(0.6)
-            }
+            Spacer(minLength: 0)
+            Text(value)
+                .font(Theme.DriveTypography.numerals(24))
+                .minimumScaleFactor(0.65)
+                .foregroundStyle(lit ? color : (value == "—" ? Theme.Colors.textDisabled : Theme.Colors.textSecondary))
+            Text(unit)
+                .font(Theme.DriveTypography.label(9))
+                .foregroundStyle(Theme.Colors.textSecondary)
         }
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .bottom))
     }
 }
 
-/// A "(" shaped arc of a circle, drawn bottom to top so `trim` fills it
-/// upwards; the tube around it, for the outline; or quarter ticks on its
+/// A "(" shaped arc of a circle, drawn top to bottom. Trimming its trailing
+/// share fills upwards; the tube gives the outline, with quarter ticks on its
 /// outer side. The arc bows to the left; mirror it for the right-hand gauge.
 private struct GaugeArc: Shape {
     /// The centre line, the whole tube, the tube's open outline (both ends
