@@ -1,0 +1,35 @@
+name: Set up iOS build
+description: Selects Xcode, installs XcodeGen, generates the project and waits for the simulator.
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      # Newest installed Xcode 16 or later; falls back to the image default if none match.
+      shell: bash
+      run: |
+        xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null \
+          | grep -E 'Xcode_(1[6-9]|[2-9][0-9])(\.[0-9]+)*\.app$' | sort -V | tail -1 || true)
+        if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+        xcodebuild -version
+
+    - name: Install XcodeGen
+      shell: bash
+      run: brew install xcodegen xcbeautify
+
+    - name: Generate Xcode project
+      shell: bash
+      run: xcodegen generate
+
+    - name: Wait for simulator
+      # CoreSimulator can still be loading when a job starts, so xcodebuild
+      # sees no iOS devices and fails the destination lookup.
+      shell: bash
+      run: |
+        for _ in $(seq 1 18); do
+          if xcrun simctl list devices available | grep -q "iPhone 16 Pro ("; then exit 0; fi
+          sleep 10
+        done
+        echo "::error::iPhone 16 Pro simulator did not become available"
+        xcrun simctl list devices available
+        exit 1
