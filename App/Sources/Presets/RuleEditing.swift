@@ -145,3 +145,166 @@ extension ControllerConfig {
         }
     }
 }
+
+/// What an output shows, as the effect editor offers it.
+enum EffectKind: String, CaseIterable, Identifiable {
+    case builtIn, fill, solid, flash
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .builtIn: "Built-in"
+        case .fill: "Fill"
+        case .solid: "Solid"
+        case .flash: "Flash"
+        }
+    }
+}
+
+extension ControllerConfig.OutputBinding {
+    static let defaultZone = ControllerConfig.Zone(start: 0, length: 10, direction: .startToEnd)
+    static let defaultColor = ControllerConfig.Color(red: 32, green: 32, blue: 32)
+    static let defaultFlashMs = 500
+
+    static func solid(for action: String) -> Self {
+        .ledSolid(.init(action: action, zone: defaultZone, color: defaultColor))
+    }
+
+    var effectKind: EffectKind {
+        switch self {
+        case .ledEffect: .builtIn
+        case .ledFill: .fill
+        case .ledSolid: .solid
+        case .ledTransient: .flash
+        }
+    }
+
+    var priority: Int {
+        switch self {
+        case .ledEffect(let binding): binding.priority
+        case .ledFill(let binding), .ledSolid(let binding), .ledTransient(let binding, _): binding.priority
+        }
+    }
+
+    var zoneBinding: ControllerConfig.ZoneBinding? {
+        switch self {
+        case .ledEffect: nil
+        case .ledFill(let binding), .ledSolid(let binding), .ledTransient(let binding, _): binding
+        }
+    }
+
+    /// The same action and priority as another kind of output. Zone and colour
+    /// carry over between fill, solid and flash.
+    func converted(to kind: EffectKind) -> Self {
+        guard kind != effectKind else { return self }
+        let zone = zoneBinding ?? .init(action: action, zone: Self.defaultZone, color: Self.defaultColor, priority: priority)
+        switch kind {
+        case .builtIn: return .ledEffect(.init(action: action, effect: .brake, priority: priority))
+        case .fill: return .ledFill(zone)
+        case .solid: return .ledSolid(zone)
+        case .flash: return .ledTransient(zone, durationMs: Self.defaultFlashMs)
+        }
+    }
+
+    func replacingZone(_ binding: ControllerConfig.ZoneBinding) -> Self {
+        switch self {
+        case .ledEffect: self
+        case .ledFill: .ledFill(binding)
+        case .ledSolid: .ledSolid(binding)
+        case .ledTransient(_, let durationMs): .ledTransient(binding, durationMs: durationMs)
+        }
+    }
+
+    func replacingPriority(_ priority: Int) -> Self {
+        switch self {
+        case .ledEffect(var binding):
+            binding.priority = priority
+            return .ledEffect(binding)
+        default:
+            guard var binding = zoneBinding else { return self }
+            binding.priority = priority
+            return replacingZone(binding)
+        }
+    }
+}
+
+extension ControllerConfig {
+    /// Adds a rule with an action and output of its own, so its effect can be
+    /// tuned without changing other rules. Returns the new rule's index.
+    @discardableResult
+    mutating func addCustomRule() -> Int {
+        var number = 1
+        while actions.contains(where: { $0.name == "custom_\(number)" }) { number += 1 }
+        let action = "custom_\(number)"
+        actions.append(.init(name: action))
+        rules.append(.state(.init(action: action, signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual,
+                                  operand: .number(6000), freshness: .freshOrUnverified)))
+        outputs.append(.solid(for: action))
+        return rules.count - 1
+    }
+
+    /// Removes a rule, and its action and outputs once no other rule uses them.
+    mutating func removeRule(at index: Int) {
+        guard rules.indices.contains(index) else { return }
+        let action = rules.remove(at: index).action
+        guard !rules.contains(where: { $0.action == action }) else { return }
+        actions.removeAll { $0.name == action }
+        outputs.removeAll { $0.action == action }
+    }
+}
+
+extension ControllerConfig {
+    enum RenameError: Error, Equatable {
+        case empty, taken
+    }
+
+    /// The stored form of a typed action name: "Shift Light" becomes "shift_light".
+    static func actionName(from text: String) -> String {
+        let words = text.lowercased().split { !($0.isLetter || $0.isNumber) }
+        return words.joined(separator: "_")
+    }
+
+    /// Renames an action along with every rule and output that uses it.
+    mutating func renameAction(_ old: String, to text: String) throws {
+        let name = Self.actionName(from: text)
+        guard !name.isEmpty else { throw RenameError.empty }
+        guard name != old else { return }
+        guard !actions.contains(where: { $0.name == name }) else { throw RenameError.taken }
+        for index in actions.indices where actions[index].name == old { actions[index].name = name }
+        rules = rules.map { $0.renamingAction(to: name, from: old) }
+        outputs = outputs.map { $0.action == old ? $0.renamingAction(to: name) : $0 }
+    }
+}
+
+extension ControllerConfig.Rule {
+    func renamingAction(to name: String, from old: String) -> Self {
+        guard action == old else { return self }
+        switch self {
+        case .state(var condition):
+            condition.action = name
+            return .state(condition)
+        case .sampledState(var condition, let release):
+            condition.action = name
+            return .sampledState(condition, releaseThreshold: release)
+        case .event(var condition, let edge):
+            condition.action = name
+            return .event(condition, edge: edge)
+        case .range(var rule):
+            rule.action = name
+            return .range(rule)
+        }
+    }
+}
+
+extension ControllerConfig.OutputBinding {
+    func renamingAction(to name: String) -> Self {
+        switch self {
+        case .ledEffect(var binding):
+            binding.action = name
+            return .ledEffect(binding)
+        default:
+            guard var binding = zoneBinding else { return self }
+            binding.action = name
+            return replacingZone(binding)
+        }
+    }
+}

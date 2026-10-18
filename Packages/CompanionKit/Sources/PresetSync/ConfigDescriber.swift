@@ -25,7 +25,17 @@ public enum ConfigDescriber {
         }
     }
 
-    static func title(_ name: String) -> String {
+    /// When a rule turns its action on, such as "While engine RPM is above 6,000".
+    public static func trigger(_ rule: ControllerConfig.Rule) -> String {
+        sentenceCase(phrase(rule))
+    }
+
+    /// What an output shows, such as "Lights pixels 35–64 solid red".
+    public static func effect(of output: ControllerConfig.OutputBinding) -> String {
+        sentenceCase(phrase(output))
+    }
+
+    public static func title(_ name: String) -> String {
         let words = name.split(separator: "_").map { word in
             word == "rpm" ? "RPM" : String(word)
         }

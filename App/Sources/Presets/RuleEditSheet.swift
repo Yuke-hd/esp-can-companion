@@ -2,100 +2,15 @@ import SwiftUI
 import CompanionProtocol
 import DesignSystem
 
-/// An advanced editor for the selected setup's rules. Rules may name a new
-/// action; edits stay local until the user saves the sheet.
-struct RuleEditorView: View {
-    @Binding var config: ControllerConfig
-    /// The connected controller's catalog; empty when none has been discovered.
-    var signals: [SignalDescriptor] = []
-    @State private var editing: RuleEditRequest?
-
-    var body: some View {
-        Card {
-            DisclosureGroup {
-                VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(Array(config.rules.enumerated()), id: \.offset) { index, rule in
-                        ruleRow(rule, at: index)
-                    }
-                    Button("ADD RULE", systemImage: "plus") { addRule() }
-                        .font(Theme.Typography.headline)
-                        .accessibilityIdentifier("rules.add")
-                    Text("Controller validates the full setup when you send it to the car.")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                .padding(.top, Theme.Spacing.md)
-            } label: {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text("FULL RULE EDITING").font(Theme.Typography.headline)
-                    Text("\(config.rules.count) RULES · ADVANCED").themeLabel()
-                }
-                // On the label, not the group, so rows keep their own identifiers.
-                .accessibilityIdentifier("rules.editor")
-            }
-            .tint(Theme.Colors.signalBlueText)
-        }
-        .sheet(item: $editing) { request in
-            RuleEditSheet(request: request, actions: config.actions.map(\.name), signals: signals) { rule in
-                config.save(rule, at: request.index)
-                editing = nil
-            }
-        }
-    }
-
-    private func ruleRow(_ rule: ControllerConfig.Rule, at index: Int) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            ruleButtons(rule, at: index)
-            ForEach(RPMValidation.issues(in: config).filter { $0.ruleIndex == index }) { issue in
-                RPMValidationMessage(message: issue.summary, id: "rule.\(issue.id).validation")
-            }
-        }
-        .padding(Theme.Spacing.sm)
-        .background(Theme.Colors.surfaceRaised)
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).stroke(Theme.Colors.separator))
-    }
-
-    private func ruleButtons(_ rule: ControllerConfig.Rule, at index: Int) -> some View {
-        let draft = RuleDraft(rule)
-        return HStack(spacing: Theme.Spacing.sm) {
-            Button { editing = RuleEditRequest(index: index, rule: rule) } label: {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(rule.action.replacingOccurrences(of: "_", with: " ").uppercased())
-                        .font(Theme.Typography.headline)
-                    Text(draft.kind.title).themeLabel(Theme.Colors.signalPurple)
-                    Text(draft.signalKey).font(Theme.Typography.body).foregroundStyle(Theme.Colors.textSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Edit rule \(index + 1), \(rule.action)")
-            .accessibilityIdentifier("rules.edit.\(index)")
-            Button(role: .destructive) { config.rules.remove(at: index) } label: {
-                Image(systemName: "trash").frame(minWidth: 44, minHeight: 44)
-            }
-            .tint(Theme.Colors.accentText)
-            .accessibilityLabel("Delete rule \(index + 1), \(rule.action)")
-            .accessibilityIdentifier("rules.delete.\(index)")
-        }
-    }
-
-    private func addRule() {
-        let rule = ControllerConfig.Rule.state(.init(
-            action: config.actions.first?.name ?? "", signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual,
-            operand: .number(6000), freshness: .freshOrUnverified
-        ))
-        editing = RuleEditRequest(index: nil, rule: rule)
-    }
-}
-
-private struct RuleEditRequest: Identifiable {
+/// A rule being edited in `RuleEditSheet`; a `nil` index adds a new rule.
+struct RuleEditRequest: Identifiable {
     let id = UUID()
     let index: Int?
     let rule: ControllerConfig.Rule
 }
 
-private struct RuleEditSheet: View {
+/// Edits a rule's trigger. Edits stay local until the user saves the sheet.
+struct RuleEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: RuleDraft
     @State private var inputError: String?

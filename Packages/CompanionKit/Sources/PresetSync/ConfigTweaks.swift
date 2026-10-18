@@ -101,14 +101,16 @@ public struct ConfigTweaks: Equatable, Sendable {
             + (config.version == original.version ? 0 : 1)
     }
 
-    private var rpmRuleIndex: Int? {
+    /// The rule the RPM fill controls edit.
+    public var rpmRuleIndex: Int? {
         config.rules.firstIndex {
             guard case .range(let rule) = $0 else { return false }
             return rule.action == SetupAction.rpmFill.rawValue && rule.signalKey == "vehicle.engine_rpm"
         }
     }
 
-    private var redZoneRuleIndex: Int? {
+    /// The rule the red zone controls edit.
+    public var redZoneRuleIndex: Int? {
         config.rules.firstIndex {
             guard case .sampledState(let condition, _) = $0,
                   case .number = condition.operand else { return false }
