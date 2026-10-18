@@ -32,7 +32,7 @@ struct PresetsView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     header
                     presetPicker
-                    PresetActiveConfigCard(model: model, isConnected: isConnected, isActiveConfigCurrent: isActiveConfigCurrent)
+                    if let configCard { configCard }
                     if let preset = selection.preset {
                         SetupTweaksView(selection: selection)
                             .id(selection.draftRevision)
@@ -62,6 +62,9 @@ struct PresetsView: View {
             if isConnected { await model.refresh() }
             chooseInitialPreset()
         }
+        .onChange(of: model.active) { chooseInitialPreset() }
+        .onChange(of: model.refreshError) { chooseInitialPreset() }
+        .onChange(of: isActiveConfigCurrent) { chooseInitialPreset() }
         .presetSyncSheet(model: model) { _ in true }
         .alert("Discard draft changes?", isPresented: replacingPreset, presenting: replacementPreset) { preset in
             Button("Discard changes", role: .destructive) {
@@ -92,25 +95,40 @@ struct PresetsView: View {
                 Text("No presets are bundled with this build.")
                     .font(Theme.Typography.body).foregroundStyle(Theme.Colors.textSecondary)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Theme.Spacing.xs) { presetButtons }
-                VStack(spacing: Theme.Spacing.xs) { presetButtons }
+            HStack(spacing: Theme.Spacing.xs) {
+                if let pinned = tiles.first(where: { $0.preset.id == selection.basePreset?.id }) {
+                    presetButton(pinned)
+                    Rectangle().fill(Theme.Colors.separator).frame(width: 1).padding(.vertical, Theme.Spacing.sm)
+                }
+                ScrollView(.horizontal) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        ForEach(tiles.filter { $0.preset.id != selection.basePreset?.id }, id: \.preset.id, content: presetButton)
+                    }
+                }
+                .scrollIndicators(.hidden)
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var presetButtons: some View {
-        ForEach(Array(model.presets.enumerated()), id: \.element.id) { index, preset in
-            Button { choosePreset(preset) } label: {
-                SetupPresetTile(preset: preset, index: index,
-                                selected: selection.basePreset?.id == preset.id,
-                                onCar: isConnected && isActiveConfigCurrent && model.refreshError == nil && model.active?.presetID == preset.id)
-            }
-            .buttonStyle(.plain)
-            .disabled(model.phase.isBusy)
-            .accessibilityAddTraits(selection.basePreset?.id == preset.id ? .isSelected : [])
-            .accessibilityIdentifier("setup.preset.\(preset.id)")
+    /// The controller's own config, when no bundled preset matches it, then the bundled presets.
+    private var tiles: [(preset: Preset, index: Int)] {
+        let bundled = model.presets.enumerated().map { (preset: $0.element, index: $0.offset) }
+        guard let controllerBase else { return bundled }
+        return [(preset: controllerBase, index: -1)] + bundled
+    }
+
+    private func presetButton(_ tile: (preset: Preset, index: Int)) -> some View {
+        let preset = tile.preset
+        let selected = selection.basePreset?.id == preset.id
+        let onCar = preset.id == SetupSelection.controllerPresetID || confirmedActive?.presetID == preset.id
+        return Button { choosePreset(preset) } label: {
+            SetupPresetTile(preset: preset, index: tile.index, selected: selected, onCar: onCar)
         }
+        .buttonStyle(.plain)
+        .disabled(model.phase.isBusy)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("setup.preset.\(preset.id)")
     }
 
     private var factorySection: some View {
@@ -130,7 +148,10 @@ struct PresetsView: View {
     private var sendFooter: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text(footerStatus).themeLabel(footerColor)
-            if dynamicTypeSize.isAccessibilitySize {
+            // Nothing to send while the draft is what the car already runs.
+            if selectionStatus == .onCar && !selection.hasInputErrors {
+                EmptyView()
+            } else if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) { validationLabel; sendButton }
             } else {
                 HStack(spacing: Theme.Spacing.md) {
@@ -139,6 +160,7 @@ struct PresetsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .background(Theme.Colors.background)
         .overlay(alignment: .top) { Rectangle().fill(Theme.Colors.separator).frame(height: 1) }
@@ -165,7 +187,27 @@ struct PresetsView: View {
     }
 
     private var selectionStatus: SetupSelection.Status {
-        selection.status(active: isConnected && isActiveConfigCurrent && model.refreshError == nil ? model.active : nil)
+        selection.status(active: confirmedActive)
+    }
+
+    /// What the controller runs, once read on the current connection.
+    private var confirmedActive: PresetSyncModel.ActiveConfig? {
+        isConnected && isActiveConfigCurrent && model.refreshError == nil ? model.active : nil
+    }
+
+    /// The controller config card, only when it adds something: a warning, or
+    /// a config no tile can mark as on car. While reading, the footer says so.
+    private var configCard: PresetActiveConfigCard? {
+        let card = PresetActiveConfigCard(model: model, isConnected: isConnected, isActiveConfigCurrent: isActiveConfigCurrent)
+        if card.detail != nil { return card }
+        guard let active = confirmedActive else { return isConnected && model.refreshError == nil ? nil : card }
+        return active.presetID != nil || controllerBase != nil ? nil : card
+    }
+
+    /// A tile for the controller's config when no bundled preset matches it.
+    private var controllerBase: Preset? {
+        guard let active = confirmedActive, active.presetID == nil else { return nil }
+        return SetupSelection.base(for: active, presets: model.presets)
     }
 
     private var footerColor: Color {
@@ -178,7 +220,7 @@ struct PresetsView: View {
         if !selection.rpmIssues.isEmpty { return "CHECK RPM SETTINGS BEFORE SENDING" }
         if selection.hasInputErrors { return "CHECK NUMERIC FIELDS BEFORE SENDING" }
         if !isConnected { return "CONNECT TO SEND A PRESET" }
-        if selectionStatus == .none { return "CHOOSE A PRESET" }
+        if selectionStatus == .none { return model.refreshError == nil ? "READING CONTROLLER CONFIG" : "CHOOSE A PRESET" }
         if selectionStatus == .onCar { return selection.isModified ? "DRAFT SETUP · ON CAR" : "SELECTED PRESET · ON CAR" }
         if selection.isModified { return "\(selection.changeCount) CHANGES · NOT ON CAR" }
         return "SELECTED PRESET · NOT CONFIRMED ON CAR"
@@ -199,7 +241,7 @@ struct PresetsView: View {
     @ViewBuilder
     private var draftReset: some View {
         if selection.isModified || selection.hasInputErrors {
-            Button("Reset tweaks to bundled preset") { selection.resetTweaks() }
+            Button(selection.isControllerBase ? "Reset tweaks to controller config" : "Reset tweaks to bundled preset") { selection.resetTweaks() }
                 .buttonStyle(.secondary)
                 .disabled(model.phase != .idle)
                 .accessibilityIdentifier("setup.reset")
@@ -214,10 +256,13 @@ struct PresetsView: View {
         selection.select(preset)
     }
 
+    /// Opens on what the controller runs. A bundled preset stands in only when
+    /// that cannot be read, so a read in progress never shows another preset.
     private func chooseInitialPreset() {
-        guard selection.preset == nil else { return }
-        let active = model.presets.first { $0.id == model.active?.presetID }
-        if let initial = active ?? model.presets.first { selection.select(initial) }
+        if let active = confirmedActive { selection.followController(active, presets: model.presets) }
+        guard !isConnected || model.refreshError != nil || confirmedActive.map({ $0.config == nil }) == true,
+              let first = model.presets.first else { return }
+        selection.selectFallback(first)
     }
 }
 
@@ -237,22 +282,48 @@ private struct SetupPresetTile: View {
             Text(preset.name.uppercased())
                 .font(Theme.Typography.headline)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(onCar ? "ON CAR" : selected ? "SELECTED" : "BUNDLED")
-                .themeLabel(onCar ? Theme.Colors.accentText : selected ? Theme.Colors.signalYellow : Theme.Colors.textSecondary)
+            Text(selected ? "SELECTED" : preset.id == SetupSelection.controllerPresetID ? "CONTROLLER" : "BUNDLED")
+                .themeLabel(selected ? (onCar ? Theme.Colors.accentText : Theme.Colors.signalYellow) : Theme.Colors.textSecondary)
         }
         .foregroundStyle(Theme.Colors.textPrimary)
-        .frame(minWidth: 84, maxWidth: .infinity, minHeight: 136)
+        .padding(.top, Theme.Spacing.md) // room for the ON CAR badge
+        .frame(width: 96)
+        .frame(minHeight: 136)
         .padding(Theme.Spacing.xs)
         .background(selected ? Theme.Colors.surfaceRaised : Theme.Colors.surface)
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).strokeBorder(onCar ? Theme.Colors.accent : selected ? Theme.Colors.signalYellow : Theme.Colors.separator, lineWidth: selected || onCar ? 2 : 1))
+        .overlay(alignment: .topLeading) { if onCar { onCarBadge } }
         .accessibilityElement(children: .combine)
+    }
+
+    private var onCarBadge: some View {
+        Text("ON CAR")
+            .themeLabel(Theme.Colors.textPrimary)
+            .padding(.leading, Theme.Spacing.xs)
+            .padding(.trailing, Theme.Spacing.md)
+            .padding(.vertical, 2)
+            .background(CornerFlag().fill(Theme.Colors.accent))
     }
 
     private var compoundColor: Color {
         switch index {
+        case ..<0: Theme.Colors.signalTeal
         case 0: Theme.Colors.signalYellow
         case 1: Theme.Colors.accent
         default: Theme.Colors.signalBlue
+        }
+    }
+}
+
+/// A tab with its trailing edge cut on the diagonal.
+private struct CornerFlag: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: rect.origin)
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - rect.height * 0.6, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
         }
     }
 }
@@ -287,7 +358,7 @@ private struct PresetActiveConfigCard: View {
         return active.source == .known(.persistedOverride) ? "Custom config" : "No config"
     }
 
-    private var detail: String? {
+    var detail: String? {
         if !isConnected { return "Connect to check which configuration is running on the car." }
         if let error = model.refreshError { return error }
         guard let active = model.active else { return nil }

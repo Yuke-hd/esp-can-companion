@@ -99,6 +99,38 @@ final class SetupSelectionTests: XCTestCase {
         selection.select(try XCTUnwrap(PresetCatalog.bundled().first))
         XCTAssertEqual(selection.status(activePresetID: nil), .pending)
     }
+
+    func testDraftFollowsTheControllersConfigUntilTheUserChoosesOrEdits() throws {
+        let presets = try PresetCatalog.bundled()
+        let factory = try PresetCatalog.factory()
+        let selection = SetupSelection()
+        selection.selectFallback(presets[0])
+        XCTAssertEqual(selection.basePreset, presets[0])
+
+        let onFactory = PresetSyncModel.ActiveConfig(source: .known(.factory), crc32: 0,
+                                                     config: factory)
+        selection.followController(onFactory, presets: presets)
+        XCTAssertTrue(selection.isControllerBase)
+        XCTAssertEqual(selection.preset?.config, factory)
+        XCTAssertEqual(selection.status(active: onFactory), .onCar)
+
+        let onTrack = PresetSyncModel.ActiveConfig(source: .known(.persistedOverride), crc32: 0, presetID: presets[1].id,
+                                                   config: presets[1].config)
+        selection.followController(onTrack, presets: presets)
+        XCTAssertEqual(selection.preset, presets[1])
+        XCTAssertEqual(selection.status(active: onTrack), .onCar)
+
+        selection.setRPMInputRange(.init(lower: 1_200, upper: 6_400))
+        selection.followController(onFactory, presets: presets)
+        XCTAssertEqual(selection.basePreset, presets[1])
+
+        selection.resetTweaks()
+        selection.select(presets[2])
+        selection.followController(onFactory, presets: presets)
+        XCTAssertEqual(selection.preset, presets[2])
+        XCTAssertEqual(selection.status(active: onFactory), .pending)
+    }
+
     func testTweakingPresetCreatesDistinctUploadIdentityAndResetRestoresBase() throws {
         let base = try XCTUnwrap(PresetCatalog.bundled().first)
         let selection = SetupSelection()

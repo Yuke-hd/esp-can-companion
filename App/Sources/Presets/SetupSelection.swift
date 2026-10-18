@@ -10,7 +10,12 @@ final class SetupSelection {
         case none, pending, onCar
     }
 
+    /// The id of a base built from the controller's own config.
+    static let controllerPresetID = "controller"
+
     private(set) var basePreset: Preset?
+    /// The user picked the base; until then Setup follows the controller.
+    private(set) var hasUserChoice = false
     private(set) var editableConfig: ControllerConfig?
     private var invalidFields: Set<String> = []
     private(set) var draftRevision = 0
@@ -64,8 +69,42 @@ final class SetupSelection {
         return tweaks?.changeCount(from: original) ?? 0
     }
 
+    /// The base is the controller's own config rather than a bundled preset.
+    var isControllerBase: Bool { basePreset?.id == Self.controllerPresetID }
+
     func select(_ preset: Preset) {
+        hasUserChoice = true
         guard basePreset?.id != preset.id else { return }
+        replaceBase(with: preset)
+    }
+
+    /// Starts the draft from what the controller runs: its bundled preset when
+    /// it matches one, else the config itself. Ignored once the user has
+    /// picked a base or changed the draft.
+    func followController(_ active: PresetSyncModel.ActiveConfig, presets: [Preset]) {
+        guard !hasUserChoice, !isModified, !hasInputErrors,
+              let base = Self.base(for: active, presets: presets), base != basePreset else { return }
+        replaceBase(with: base)
+    }
+
+    /// Before the controller is read, the first bundled preset stands in.
+    func selectFallback(_ preset: Preset) {
+        guard basePreset == nil else { return }
+        replaceBase(with: preset)
+    }
+
+    /// The base the controller's config gives, or `nil` when it was not read.
+    static func base(for active: PresetSyncModel.ActiveConfig, presets: [Preset]) -> Preset? {
+        if let preset = presets.first(where: { $0.id == active.presetID }) { return preset }
+        guard let config = active.config else { return nil }
+        let factory = active.isFactory
+        return Preset(id: controllerPresetID, name: factory ? "Factory" : "Custom",
+                      summary: factory ? "The controller's factory config, as it runs on the car."
+                                       : "The config saved on the controller, as it runs on the car.",
+                      config: config)
+    }
+
+    private func replaceBase(with preset: Preset) {
         basePreset = preset
         editableConfig = preset.config
         invalidFields.removeAll()
@@ -106,6 +145,7 @@ final class SetupSelection {
 
     func status(active: PresetSyncModel.ActiveConfig?) -> Status {
         guard let active else { return preset == nil ? .none : .pending }
+        if let config = active.config, let preset { return preset.config == config ? .onCar : .pending }
         return status(activeSource: active.source, activeCRC32: active.crc32)
     }
 
