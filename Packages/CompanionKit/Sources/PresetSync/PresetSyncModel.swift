@@ -47,11 +47,24 @@ public final class PresetSyncModel {
         public var crc32: UInt32
         /// The bundled preset this config matches, if any.
         public var presetID: String?
+        /// The config the controller runs: the decoded override, or the
+        /// bundled factory profile. `nil` when it could not be read.
+        public var config: ControllerConfig?
         /// Why a saved config was ignored at the last start-up, if it was.
         public var bootDiagnostic: BootDiagnostic?
         public var lightingSetupFailed: Bool
 
         public var isFactory: Bool { source == .known(.factory) }
+
+        public init(source: ConfigSource, crc32: UInt32, presetID: String? = nil, config: ControllerConfig? = nil,
+                    bootDiagnostic: BootDiagnostic? = nil, lightingSetupFailed: Bool = false) {
+            self.source = source
+            self.crc32 = crc32
+            self.presetID = presetID
+            self.config = config
+            self.bootDiagnostic = bootDiagnostic
+            self.lightingSetupFailed = lightingSetupFailed
+        }
     }
 
     public let presets: [Preset]
@@ -220,15 +233,19 @@ public final class PresetSyncModel {
 
     private func refresh(using client: CompanionClient) async throws {
         let status = try await client.readConfigStatus()
-        var presetID: String?
-        if status.activeSource == .known(.persistedOverride),
-           let config = try? await client.readActiveConfig().decodeConfig() {
-            presetID = presets.first { $0.config == config }?.id
+        var config: ControllerConfig?
+        switch status.activeSource {
+        case .known(.persistedOverride): config = try? await client.readActiveConfig().decodeConfig()
+        case .known(.factory): config = try? PresetCatalog.factory()
+        default: config = nil
         }
+        let presetID = status.activeSource == .known(.persistedOverride)
+            ? presets.first { $0.config == config }?.id : nil
         active = ActiveConfig(
             source: status.activeSource,
             crc32: status.activeCRC32,
             presetID: presetID,
+            config: config,
             bootDiagnostic: status.bootDiagnostic,
             lightingSetupFailed: status.bootFlags.contains(.lightingSetupFailed)
         )

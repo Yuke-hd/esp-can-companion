@@ -318,6 +318,19 @@ final class PresetSyncModelTests: XCTestCase {
         XCTAssertNil(model.active)
         XCTAssertEqual(model.refreshError, "No controller is connected.")
     }
+
+    func testRefreshReportsTheConfigTheControllerRuns() async throws {
+        await model.refresh()
+        XCTAssertEqual(model.active?.config, try PresetCatalog.factory())
+
+        var custom = presets[1].config
+        custom.rules.removeLast()
+        controller.activeSource = 1
+        controller.activeDocument = try custom.encodedJSON()
+        await model.refresh()
+        XCTAssertNil(model.active?.presetID)
+        XCTAssertEqual(model.active?.config, custom)
+    }
 }
 
 /// Suspends only the sync's initial client request until the test releases it.
