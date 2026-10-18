@@ -2,10 +2,10 @@ import SwiftUI
 import CompanionProtocol
 import DesignSystem
 
-/// A rule being edited in `RuleEditSheet`; a `nil` index adds a new rule.
+/// A rule being edited in `RuleEditSheet`.
 struct RuleEditRequest: Identifiable {
     let id = UUID()
-    let index: Int?
+    let index: Int
     let rule: ControllerConfig.Rule
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import PresetSync
 import CompanionProtocol
 
 /// Editable presentation values. The controller owns semantic validation;
@@ -254,12 +255,18 @@ extension ControllerConfig {
 
 extension ControllerConfig {
     enum RenameError: Error, Equatable {
-        case empty, taken
+        case empty, taken, reserved
+    }
+
+    /// Built-in actions are found by name for their inline controls and RPM
+    /// checks, so they keep the names the app knows.
+    static func isReservedAction(_ name: String) -> Bool {
+        SetupAction(rawValue: name) != nil
     }
 
     /// The stored form of a typed action name: "Shift Light" becomes "shift_light".
     static func actionName(from text: String) -> String {
-        let words = text.lowercased().split { !($0.isLetter || $0.isNumber) }
+        let words = text.lowercased().split { !($0.isASCII && ($0.isLetter || $0.isNumber)) }
         return words.joined(separator: "_")
     }
 
@@ -269,6 +276,7 @@ extension ControllerConfig {
         guard !name.isEmpty else { throw RenameError.empty }
         guard name != old else { return }
         guard !actions.contains(where: { $0.name == name }) else { throw RenameError.taken }
+        guard !Self.isReservedAction(old), !Self.isReservedAction(name) else { throw RenameError.reserved }
         for index in actions.indices where actions[index].name == old { actions[index].name = name }
         rules = rules.map { $0.renamingAction(to: name, from: old) }
         outputs = outputs.map { $0.action == old ? $0.renamingAction(to: name) : $0 }

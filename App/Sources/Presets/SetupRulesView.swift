@@ -49,12 +49,17 @@ struct SetupRulesView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(ConfigDescriber.title(rule.action)), \(isExpanded ? "collapse" : "expand")")
                     .accessibilityIdentifier("rules.toggle.\(index)")
-                ForEach(RPMValidation.issues(in: config).filter { $0.ruleIndex == index }) { issue in
-                    RPMValidationMessage(message: issue.summary, id: "rule.\(issue.id).validation")
+                // Expanded RPM cards show these under each field instead.
+                if !isExpanded || !hasInlineRPMControls(at: index) {
+                    ForEach(RPMValidation.issues(in: config).filter { $0.ruleIndex == index }) { issue in
+                        RPMValidationMessage(message: issue.summary, id: "rule.\(issue.id).validation")
+                    }
                 }
                 if isExpanded {
                     Divider().overlay(Theme.Colors.separator)
-                    ActionNameField(name: rule.action, id: "rules.name.\(index)") { rename(rule.action, to: $0) }
+                    ActionNameField(name: rule.action, id: "rules.name.\(index)",
+                                    isReserved: ControllerConfig.isReservedAction(rule.action)) { rename(rule.action, to: $0) }
+                        .id("\(index).\(rule.action)")
                     triggerSection(rule, at: index)
                     Divider().overlay(Theme.Colors.separator)
                     effectSection(rule, at: index, in: config)
@@ -68,10 +73,11 @@ struct SetupRulesView: View {
     }
 
     private func ruleHeader(_ rule: ControllerConfig.Rule, in config: ControllerConfig, isExpanded: Bool) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
+        let draft = RuleDraft(rule)
+        return HStack(spacing: Theme.Spacing.sm) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 Text(ConfigDescriber.title(rule.action).uppercased()).font(Theme.Typography.headline)
-                Text("\(RuleDraft(rule).kind.title) · \(RuleDraft(rule).signalKey)").themeLabel(Theme.Colors.signalPurple)
+                Text("\(draft.kind.title) · \(draft.signalKey)").themeLabel(Theme.Colors.signalPurple)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let colour = config.outputs.first(where: { $0.action == rule.action })?.zoneBinding?.color {
@@ -197,6 +203,10 @@ struct SetupRulesView: View {
         })
     }
 
+    private func hasInlineRPMControls(at index: Int) -> Bool {
+        index == selection.tweaks?.rpmRuleIndex || index == selection.tweaks?.redZoneRuleIndex
+    }
+
     private func toggle(_ index: Int) {
         withAnimation(.snappy) {
             if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
@@ -216,6 +226,8 @@ struct SetupRulesView: View {
             try config.renameAction(action, to: text)
         } catch ControllerConfig.RenameError.taken {
             return "Another action already uses that name."
+        } catch ControllerConfig.RenameError.reserved {
+            return "That name is used by a built-in action."
         } catch {
             return "Enter a name with at least one letter or number."
         }
@@ -244,14 +256,16 @@ struct SetupRulesView: View {
 private struct ActionNameField: View {
     let name: String
     let id: String
+    let isReserved: Bool
     let onCommit: (String) -> String?
     @State private var text: String
     @State private var error: String?
     @FocusState private var focused: Bool
 
-    init(name: String, id: String, onCommit: @escaping (String) -> String?) {
+    init(name: String, id: String, isReserved: Bool, onCommit: @escaping (String) -> String?) {
         self.name = name
         self.id = id
+        self.isReserved = isReserved
         self.onCommit = onCommit
         _text = State(initialValue: ConfigDescriber.title(name))
     }
@@ -259,6 +273,21 @@ private struct ActionNameField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Text("ACTION NAME").themeLabel(Theme.Colors.signalBlueText)
+            if isReserved {
+                Text(ConfigDescriber.title(name))
+                    .font(Theme.Typography.body)
+                    .accessibilityIdentifier(id)
+                Text("Built-in actions keep their name.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            } else {
+                editableName
+            }
+        }
+    }
+
+    private var editableName: some View {
+        Group {
             TextField("Action name", text: $text)
                 .font(Theme.Typography.body)
                 .textInputAutocapitalization(.words)
@@ -268,6 +297,7 @@ private struct ActionNameField: View {
                 .onSubmit { focused = false }
                 .onChange(of: focused) { _, editing in if !editing { commit() } }
                 .onChange(of: name) { _, stored in if !focused { text = ConfigDescriber.title(stored) } }
+                .onDisappear { if ControllerConfig.actionName(from: text) != name { commit() } }
                 .padding(Theme.Spacing.xs)
                 .background(Theme.Colors.surfaceRaised)
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).strokeBorder(
@@ -277,7 +307,8 @@ private struct ActionNameField: View {
             if let error {
                 RPMValidationMessage(message: error, id: "\(id).error")
             } else {
-                Text("Saved as \(ControllerConfig.actionName(from: text).isEmpty ? name : ControllerConfig.actionName(from: text))")
+                let stored = ControllerConfig.actionName(from: text)
+                Text("\(stored == name || stored.isEmpty ? "Saved as" : "Will save as") \(stored.isEmpty ? name : stored)")
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Colors.textSecondary)
             }

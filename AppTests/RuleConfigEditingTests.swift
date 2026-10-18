@@ -84,4 +84,23 @@ final class ActionRenameTests: XCTestCase {
         XCTAssertNoThrow(try renamed.renameAction("shift", to: "SHIFT"))
         XCTAssertEqual(renamed, config)
     }
+
+    func testRenameKeepsBuiltInActionNames() {
+        var renamed = config
+        renamed.actions.append(.init(name: "red_zone"))
+        renamed.rules.append(.state(.init(action: "red_zone", signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual,
+                                          operand: .number(7000), freshness: .freshOrUnverified)))
+        let before = renamed
+        XCTAssertThrowsError(try renamed.renameAction("red_zone", to: "Shift light")) {
+            XCTAssertEqual($0 as? ControllerConfig.RenameError, .reserved)
+        }
+        XCTAssertThrowsError(try renamed.renameAction("shift", to: "RPM fill")) {
+            XCTAssertEqual($0 as? ControllerConfig.RenameError, .reserved)
+        }
+        XCTAssertEqual(renamed, before)
+    }
+
+    func testActionNamesKeepOnlyASCIILettersAndNumbers() {
+        XCTAssertEqual(ControllerConfig.actionName(from: "Café 2"), "caf_2")
+    }
 }
