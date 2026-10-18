@@ -54,6 +54,20 @@ struct RuleDraft {
         }
     }
 
+    /// Uses a discovered signal's key and matches the operand to its catalog type.
+    /// Unfamiliar types keep the current operand; the controller validates the rule.
+    mutating func select(_ signal: SignalDescriptor) {
+        signalKey = signal.key
+        switch signal.type.known {
+        case .boolean: operandKind = .boolean
+        case .number: operandKind = .number
+        case .enumeration:
+            operandKind = .choice
+            if !signal.choices.contains(where: { $0.key == choice }) { choice = signal.choices.first?.key ?? "" }
+        case nil: break
+        }
+    }
+
     var availableFreshness: [ControllerConfig.Freshness] {
         signalKey == "vehicle.brake_pressed" ? [.freshOrUnverified] : ControllerConfig.Freshness.allCases
     }
