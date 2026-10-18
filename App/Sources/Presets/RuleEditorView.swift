@@ -2,8 +2,8 @@ import SwiftUI
 import CompanionProtocol
 import DesignSystem
 
-/// An advanced editor for the selected setup's rules. Outputs keep their
-/// existing named actions; edits stay local until the user saves the sheet.
+/// An advanced editor for the selected setup's rules. Rules may name a new
+/// action; edits stay local until the user saves the sheet.
 struct RuleEditorView: View {
     @Binding var config: ControllerConfig
     /// The connected controller's catalog; empty when none has been discovered.
@@ -19,7 +19,6 @@ struct RuleEditorView: View {
                     }
                     Button("ADD RULE", systemImage: "plus") { addRule() }
                         .font(Theme.Typography.headline)
-                        .disabled(config.actions.isEmpty)
                         .accessibilityIdentifier("rules.add")
                     Text("Controller validates the full setup when you send it to the car.")
                         .font(Theme.Typography.body)
@@ -31,13 +30,15 @@ struct RuleEditorView: View {
                     Text("FULL RULE EDITING").font(Theme.Typography.headline)
                     Text("\(config.rules.count) RULES · ADVANCED").themeLabel()
                 }
+                // On the label, not the group, so rows keep their own identifiers.
+                .accessibilityIdentifier("rules.editor")
             }
             .tint(Theme.Colors.signalBlueText)
-            .accessibilityIdentifier("rules.editor")
         }
         .sheet(item: $editing) { request in
             RuleEditSheet(request: request, actions: config.actions.map(\.name), signals: signals) { rule in
-                save(rule, at: request.index)
+                config.save(rule, at: request.index)
+                editing = nil
             }
         }
     }
@@ -80,21 +81,11 @@ struct RuleEditorView: View {
     }
 
     private func addRule() {
-        guard let action = config.actions.first?.name else { return }
         let rule = ControllerConfig.Rule.state(.init(
-            action: action, signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual,
+            action: config.actions.first?.name ?? "", signalKey: "vehicle.engine_rpm", comparison: .greaterOrEqual,
             operand: .number(6000), freshness: .freshOrUnverified
         ))
         editing = RuleEditRequest(index: nil, rule: rule)
-    }
-
-    private func save(_ rule: ControllerConfig.Rule, at index: Int?) {
-        if let index, config.rules.indices.contains(index) {
-            config.rules[index] = rule
-        } else {
-            config.rules.append(rule)
-        }
-        editing = nil
     }
 }
 
@@ -145,7 +136,7 @@ private struct RuleEditSheet: View {
                     Button("Cancel") { dismiss() }.accessibilityIdentifier("rule.cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }.disabled(!actions.contains(draft.action))
+                    Button("Save") { save() }.disabled(draft.actionName.isEmpty)
                         .accessibilityIdentifier("rule.save")
                 }
             }
@@ -162,39 +153,79 @@ private struct RuleEditSheet: View {
                 ForEach(RuleDraft.Kind.allCases, id: \.self) { Text($0.title).tag($0) }
             } label: { Text("Rule type").themeLabel() }
             .accessibilityIdentifier("rule.kind")
-            Picker(selection: $draft.action) {
-                ForEach(actions, id: \.self) { Text($0).tag($0) }
-            } label: { Text("Action").themeLabel() }
-            .accessibilityIdentifier("rule.action")
+            actionField
+            signalField
+        } header: { Text("Rule").themeLabel() }
+        .listRowBackground(Theme.Colors.surface)
+    }
+
+    /// Any name the user types; the setup's existing actions are offered as shortcuts.
+    private var actionField: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text("Action").themeLabel()
+            TextField("door_open", text: $draft.action)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .font(.system(.body, design: .monospaced))
+                .accessibilityLabel("Action").accessibilityIdentifier("rule.action")
+            if !actions.isEmpty {
+                Menu("Existing actions") {
+                    ForEach(actions, id: \.self) { action in
+                        Button(action) { draft.action = action }
+                    }
+                }.accessibilityIdentifier("rule.actionSuggestions")
+            }
+            if !draft.actionName.isEmpty, !actions.contains(draft.actionName) {
+                Text("New action. It has no output yet, so the controller will not light anything for it.")
+                    .font(Theme.Typography.body).foregroundStyle(Theme.Colors.textSecondary)
+                    .accessibilityIdentifier("rule.action.new")
+            }
+        }
+    }
+
+    /// Discovered signals are chosen from the catalog; typed keys remain only before discovery.
+    @ViewBuilder private var signalField: some View {
+        if signals.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Text("Signal key").themeLabel()
                 TextField("vehicle.engine_rpm", text: $draft.signalKey)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
                     .accessibilityLabel("Signal key").accessibilityIdentifier("rule.signal")
-                signalMenu
+                Menu("Known signals") {
+                    ForEach(["vehicle.engine_rpm", "vehicle.brake_pressed", "vehicle.turn_state"], id: \.self) { signal in
+                        Button(signal) { draft.signalKey = signal }
+                    }
+                }.accessibilityIdentifier("rule.signalSuggestions")
             }
-        } header: { Text("Rule").themeLabel() }
-        .listRowBackground(Theme.Colors.surface)
+        } else {
+            Picker(selection: signalSelection) {
+                if selectedSignal == nil {
+                    Text(draft.signalKey.isEmpty ? "Choose a signal" : "\(draft.signalKey) (not discovered)")
+                        .tag(draft.signalKey)
+                }
+                ForEach(signals, id: \.handle) { signal in
+                    VStack(alignment: .leading) {
+                        Text(signal.key).font(.system(.body, design: .monospaced))
+                        Text(signal.menuDetail).font(Theme.Typography.body).foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .tag(signal.key)
+                }
+            } label: { Text("Signal").themeLabel() }
+            .pickerStyle(.navigationLink)
+            .accessibilityIdentifier("rule.signal")
+        }
     }
 
-    /// Every discovered signal; the common keys remain as a fallback before discovery.
-    @ViewBuilder private var signalMenu: some View {
-        if signals.isEmpty {
-            Menu("Known signals") {
-                ForEach(["vehicle.engine_rpm", "vehicle.brake_pressed", "vehicle.turn_state"], id: \.self) { signal in
-                    Button(signal) { draft.signalKey = signal }
-                }
-            }.accessibilityIdentifier("rule.signalSuggestions")
-        } else {
-            Menu("Discovered signals (\(signals.count))") {
-                ForEach(signals, id: \.handle) { signal in
-                    Button { draft.select(signal) } label: {
-                        Text(signal.key)
-                        Text(signal.menuDetail)
-                    }
-                }
-            }.accessibilityIdentifier("rule.signalSuggestions")
+    /// Choosing a discovered signal also matches the operand to its catalog type.
+    private var signalSelection: Binding<String> {
+        Binding {
+            draft.signalKey
+        } set: { key in
+            if let signal = signals.first(where: { $0.key.utf8.elementsEqual(key.utf8) }) {
+                draft.select(signal)
+            } else {
+                draft.signalKey = key
+            }
         }
     }
 
@@ -294,6 +325,8 @@ private struct RuleEditSheet: View {
             dismiss()
         } catch RuleDraft.InputError.number(let field) {
             inputError = "Enter a finite number for \(field.lowercased())."
+        } catch RuleDraft.InputError.missingAction {
+            inputError = "Enter an action name."
         } catch RuleDraft.InputError.wholeRPM(let field) {
             inputError = "Enter a whole-number RPM for \(field.lowercased())."
         } catch {

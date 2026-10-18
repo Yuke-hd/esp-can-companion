@@ -10,7 +10,7 @@ struct RuleDraft {
     }
 
     enum OperandKind: String, CaseIterable { case boolean, number, choice }
-    enum InputError: Error, Equatable { case number(String), wholeRPM(String) }
+    enum InputError: Error, Equatable { case number(String), wholeRPM(String), missingAction }
 
     var kind: Kind = .state
     var action: String
@@ -72,7 +72,11 @@ struct RuleDraft {
         signalKey == "vehicle.brake_pressed" ? [.freshOrUnverified] : ControllerConfig.Freshness.allCases
     }
 
+    /// The action name as it will be saved; users may type any name.
+    var actionName: String { action.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     func makeRule() throws -> ControllerConfig.Rule {
+        guard !actionName.isEmpty else { throw InputError.missingAction }
         switch kind {
         case .state: return .state(try condition())
         case .sampledState: return .sampledState(try condition(), releaseThreshold: hasRelease ? try signalNumber(release, field: "Release threshold") : nil)
@@ -86,12 +90,12 @@ struct RuleDraft {
     }
 
     private func condition() throws -> ControllerConfig.Condition {
-        .init(action: action, signalKey: signalKey, comparison: comparison, operand: try operand(), freshness: safeFreshness)
+        .init(action: actionName, signalKey: signalKey, comparison: comparison, operand: try operand(), freshness: safeFreshness)
     }
 
     private func rangeRule() throws -> ControllerConfig.RangeRule {
         .init(
-            action: action, signalKey: signalKey,
+            action: actionName, signalKey: signalKey,
             input: .init(from: try signalNumber(inputFrom, field: "Input from"), to: try signalNumber(inputTo, field: "Input to")),
             output: .init(from: try numeric(outputFrom, field: "Output from"), to: try numeric(outputTo, field: "Output to")),
             freshness: safeFreshness
@@ -127,5 +131,17 @@ struct RuleDraft {
         let value = try numeric(text, field: field)
         if signalKey == "vehicle.engine_rpm", Int(text) == nil { throw InputError.wholeRPM(field) }
         return value
+    }
+}
+
+extension ControllerConfig {
+    /// Saves an edited rule, declaring its action when the user typed a new name.
+    mutating func save(_ rule: Rule, at index: Int?) {
+        if !actions.contains(where: { $0.name == rule.action }) { actions.append(Action(name: rule.action)) }
+        if let index, rules.indices.contains(index) {
+            rules[index] = rule
+        } else {
+            rules.append(rule)
+        }
     }
 }
