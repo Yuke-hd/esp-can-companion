@@ -102,6 +102,29 @@ final class RuleEditingTests: XCTestCase {
         XCTAssertEqual(RuleDraft(try draft.makeRule()).boolean, false)
     }
 
+    func testTypedActionNameIsTrimmedAndRequired() throws {
+        var draft = RuleDraft(.state(condition))
+        draft.action = "  door_open \n"
+        XCTAssertEqual(try draft.makeRule().action, "door_open")
+        draft.action = "   "
+        XCTAssertThrowsError(try draft.makeRule()) { error in
+            XCTAssertEqual(error as? RuleDraft.InputError, .missingAction)
+        }
+    }
+
+    func testSavingRuleWithNewActionDeclaresItOnce() {
+        var config = ControllerConfig(actions: [.init(name: "shift")], rules: [.state(condition)])
+        var doorRule = condition
+        doorRule.action = "door_open"
+        config.save(.state(doorRule), at: nil)
+        config.save(.state(doorRule), at: 1)
+        XCTAssertEqual(config.actions.map(\.name), ["shift", "door_open"])
+        XCTAssertEqual(config.rules.map(\.action), ["shift", "door_open"])
+
+        config.save(.state(condition), at: 1)
+        XCTAssertEqual(config.actions.map(\.name), ["shift", "door_open"], "unused actions stay for their outputs")
+    }
+
     func testRangeValuesPersistWithoutClientSemanticValidation() throws {
         var draft = RuleDraft(.state(condition))
         draft.kind = .range
