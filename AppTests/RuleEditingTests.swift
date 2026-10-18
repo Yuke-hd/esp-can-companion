@@ -1,5 +1,6 @@
 import XCTest
 import CompanionProtocol
+import CompanionLink
 @testable import CANCompanion
 
 final class RuleEditingTests: XCTestCase {
@@ -122,5 +123,28 @@ final class RuleEditingTests: XCTestCase {
                 XCTAssertEqual(error as? RuleDraft.InputError, .number("Operand"))
             }
         }
+    }
+
+    func testSelectingDiscoveredSignalMatchesOperandToCatalogType() throws {
+        let catalog = DemoSignalCatalog.vehicle.catalog
+        func signal(_ key: String) -> SignalDescriptor { catalog.descriptors.first { $0.key == key }! }
+        var draft = RuleDraft(.state(condition))
+
+        draft.select(signal("vehicle.turn_state"))
+        XCTAssertEqual(draft.signalKey, "vehicle.turn_state")
+        XCTAssertEqual(draft.operandKind, .choice)
+        XCTAssertEqual(draft.choice, "unknown")
+        draft.choice = "left"
+        draft.select(signal("vehicle.turn_state"))
+        XCTAssertEqual(draft.choice, "left")
+
+        draft.select(signal("vehicle.liftgate_open"))
+        XCTAssertEqual(draft.operandKind, .boolean)
+        XCTAssertEqual(try draft.makeRule(), .state(.init(
+            action: "shift", signalKey: "vehicle.liftgate_open", comparison: .greater,
+            operand: .boolean(true), freshness: .freshOrUnverified)))
+
+        draft.select(signal("vehicle.speed_kph"))
+        XCTAssertEqual(draft.operandKind, .number)
     }
 }

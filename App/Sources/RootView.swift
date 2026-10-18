@@ -1,6 +1,7 @@
 import SwiftUI
 import DesignSystem
 import CompanionLink
+import CompanionProtocol
 
 /// The four sections from the drafts' bottom bar.
 enum AppTab: Int, CaseIterable, Identifiable {
@@ -142,13 +143,22 @@ struct PitTabBar: View {
 private struct SetupTab: View {
     var model: AppModel
     @State private var selection = SetupSelection()
+    @State private var catalog: SignalCatalog?
 
     var body: some View {
         if let session = model.session, let sync = model.presetSync {
             NavigationStack {
                 PresetsView(model: sync, selection: selection,
                             isConnected: session.phase == .ready,
-                            isActiveConfigCurrent: model.hasCurrentPresetRead)
+                            isActiveConfigCurrent: model.hasCurrentPresetRead,
+                            signals: catalog?.descriptors ?? [])
+            }
+            // The client downloads the catalog once per connection and shares it
+            // with live telemetry; a controller without one keeps the fallback list.
+            .task(id: session.phase == .ready) {
+                catalog = nil
+                guard session.phase == .ready else { return }
+                catalog = try? await session.client.discoverSignalCatalog()
             }
         } else {
             PlaceholderScreen(

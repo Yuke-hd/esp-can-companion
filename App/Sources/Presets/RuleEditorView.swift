@@ -6,6 +6,8 @@ import DesignSystem
 /// existing named actions; edits stay local until the user saves the sheet.
 struct RuleEditorView: View {
     @Binding var config: ControllerConfig
+    /// The connected controller's catalog; empty when none has been discovered.
+    var signals: [SignalDescriptor] = []
     @State private var editing: RuleEditRequest?
 
     var body: some View {
@@ -34,7 +36,7 @@ struct RuleEditorView: View {
             .accessibilityIdentifier("rules.editor")
         }
         .sheet(item: $editing) { request in
-            RuleEditSheet(request: request, actions: config.actions.map(\.name)) { rule in
+            RuleEditSheet(request: request, actions: config.actions.map(\.name), signals: signals) { rule in
                 save(rule, at: request.index)
             }
         }
@@ -108,11 +110,14 @@ private struct RuleEditSheet: View {
     @State private var inputError: String?
     let request: RuleEditRequest
     let actions: [String]
+    let signals: [SignalDescriptor]
     let onSave: (ControllerConfig.Rule) -> Void
 
-    init(request: RuleEditRequest, actions: [String], onSave: @escaping (ControllerConfig.Rule) -> Void) {
+    init(request: RuleEditRequest, actions: [String], signals: [SignalDescriptor],
+         onSave: @escaping (ControllerConfig.Rule) -> Void) {
         self.request = request
         self.actions = actions
+        self.signals = signals.sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
         self.onSave = onSave
         _draft = State(initialValue: RuleDraft(request.rule))
     }
@@ -167,14 +172,34 @@ private struct RuleEditSheet: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
                     .accessibilityLabel("Signal key").accessibilityIdentifier("rule.signal")
-                Menu("Known signals") {
-                    ForEach(["vehicle.engine_rpm", "vehicle.brake_pressed", "vehicle.turn_state"], id: \.self) { signal in
-                        Button(signal) { draft.signalKey = signal }
-                    }
-                }.accessibilityIdentifier("rule.signalSuggestions")
+                signalMenu
             }
         } header: { Text("Rule").themeLabel() }
         .listRowBackground(Theme.Colors.surface)
+    }
+
+    /// Every discovered signal; the common keys remain as a fallback before discovery.
+    @ViewBuilder private var signalMenu: some View {
+        if signals.isEmpty {
+            Menu("Known signals") {
+                ForEach(["vehicle.engine_rpm", "vehicle.brake_pressed", "vehicle.turn_state"], id: \.self) { signal in
+                    Button(signal) { draft.signalKey = signal }
+                }
+            }.accessibilityIdentifier("rule.signalSuggestions")
+        } else {
+            Menu("Discovered signals (\(signals.count))") {
+                ForEach(signals, id: \.handle) { signal in
+                    Button { draft.select(signal) } label: {
+                        Text(signal.key)
+                        Text(signal.menuDetail)
+                    }
+                }
+            }.accessibilityIdentifier("rule.signalSuggestions")
+        }
+    }
+
+    private var selectedSignal: SignalDescriptor? {
+        signals.first { $0.key.utf8.elementsEqual(draft.signalKey.utf8) }
     }
 
     private var conditionFields: some View {
@@ -204,6 +229,13 @@ private struct RuleEditSheet: View {
             TextField("Choice key", text: $draft.choice)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .accessibilityLabel("Choice key").accessibilityIdentifier("rule.operand.choice")
+            if let choices = selectedSignal?.choices, !choices.isEmpty {
+                Menu("Signal choices") {
+                    ForEach(choices, id: \.handle) { choice in
+                        Button(choice.key) { draft.choice = choice.key }
+                    }
+                }.accessibilityIdentifier("rule.operand.choiceSuggestions")
+            }
         }
     }
 
@@ -267,5 +299,17 @@ private struct RuleEditSheet: View {
         } catch {
             inputError = "This rule could not be saved."
         }
+    }
+}
+
+private extension SignalDescriptor {
+    var menuDetail: String {
+        let type = switch type.known {
+        case .boolean: "Boolean"
+        case .number: "Number"
+        case .enumeration: "Enum · \(choices.count) choices"
+        case nil: "Unsupported type (\(type.rawValue))"
+        }
+        return unit == "none" ? type : "\(type) · \(unit)"
     }
 }

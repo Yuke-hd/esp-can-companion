@@ -10,14 +10,16 @@ struct PresetsView: View {
     @State private var replacementPreset: Preset?
     let isConnected: Bool
     let isActiveConfigCurrent: Bool
+    let signals: [SignalDescriptor]
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(model: PresetSyncModel, selection: SetupSelection? = nil, isConnected: Bool = true,
-         isActiveConfigCurrent: Bool = true) {
+         isActiveConfigCurrent: Bool = true, signals: [SignalDescriptor] = []) {
         _model = State(initialValue: model)
         _selection = State(initialValue: selection ?? SetupSelection())
         self.isConnected = isConnected
         self.isActiveConfigCurrent = isActiveConfigCurrent
+        self.signals = signals
     }
 
     init(link: PresetSyncLink, onChange: (@MainActor () -> Void)? = nil) {
@@ -37,7 +39,7 @@ struct PresetsView: View {
                         SetupTweaksView(selection: selection)
                             .id(selection.draftRevision)
                             .disabled(model.phase != .idle)
-                        RuleEditorView(config: configBinding)
+                        RuleEditorView(config: configBinding, signals: signals)
                             .disabled(model.phase != .idle)
                         draftReset
                         DisclosureGroup("What this setup does") {
