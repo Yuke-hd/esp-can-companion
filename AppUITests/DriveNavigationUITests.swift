@@ -47,7 +47,7 @@ final class DriveNavigationUITests: XCTestCase {
     func testDriveExitsToSetupAndCanBeReentered() {
         launchConnected()
         XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 10))
-        app.buttons["Setup"].tap()
+        app.buttons["Setup"].tap(until: app.buttons["rules.add"], timeout: 10)
         XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
 
         openDrive()
@@ -160,7 +160,7 @@ final class DriveNavigationUITests: XCTestCase {
 
         let style = app.descendants(matching: .any)["drive.style"]
         XCTAssertTrue(style.waitForExistence(timeout: 5))
-        style.tap()
+        style.tap(until: cluster)
 
         XCTAssertTrue(cluster.waitForExistence(timeout: 5), "first tap should switch to the Cluster style")
         XCTAssertFalse(throttle.exists, "Cluster style should drop the throttle readout")
@@ -173,7 +173,7 @@ final class DriveNavigationUITests: XCTestCase {
         waitForLandscape()
         capture("drive-cluster-style")
 
-        style.tap()
+        style.tap(until: cluster, appearing: false)
         XCTAssertTrue(cluster.waitForNonExistence(timeout: 5), "second tap should return to Motorsport")
         XCTAssertTrue(throttle.waitForExistence(timeout: 5))
         assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
@@ -196,23 +196,20 @@ final class DriveNavigationUITests: XCTestCase {
     }
 
     private func openDrive() {
-        app.buttons["Drive"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["drive.exit"].waitForExistence(timeout: 10))
+        let exit = app.descendants(matching: .any)["drive.exit"]
+        app.buttons["Drive"].tap(until: exit, timeout: 10)
+        XCTAssertTrue(exit.waitForExistence(timeout: 10))
         // The chosen Drive style persists between launches; start each test from Motorsport.
         if app.descendants(matching: .any)["drive.cluster"].exists {
-            app.descendants(matching: .any)["drive.style"].tap()
+            let cluster = app.descendants(matching: .any)["drive.cluster"]
+            app.descendants(matching: .any)["drive.style"].tap(until: cluster, appearing: false)
         }
     }
 
     private func exitDrive() {
         let exit = app.descendants(matching: .any)["drive.exit"]
         XCTAssertTrue(exit.waitForExistence(timeout: 5))
-        // A tap during a layout transition can be dropped. Confirm navigation
-        // completed before checking that the destination rotated to portrait.
-        for _ in 0..<3 {
-            exit.tap()
-            if exit.waitForNonExistence(timeout: 3) { return }
-        }
+        exit.tap(until: exit, appearing: false, timeout: 3)
         XCTAssertFalse(exit.exists, "Exit Drive did not leave the Drive screen")
     }
 

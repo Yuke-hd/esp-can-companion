@@ -25,7 +25,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         capture("discovered-signed-number")
         closeSheet()
         XCTAssertTrue(app.buttons["signals.open"].waitForExistence(timeout: 5))
-        app.buttons["signals.open"].tap()
+        openSheet()
         assertRow("example.mode", contains: ["new_choice"])
         capture("discovered-reopened")
     }
@@ -136,10 +136,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         // A reachable button may still be moving after dashboard layout or a
         // scroll. Confirm the sheet opened before checking its contents.
         let close = app.buttons["signals.close"]
-        for _ in 0..<3 where !close.exists {
-            button.tap()
-            _ = close.waitForExistence(timeout: 5)
-        }
+        button.tap(until: close)
         XCTAssertTrue(close.exists, "Discovered signals sheet did not open")
     }
 
@@ -175,10 +172,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
 
     private func closeSheet() {
         let close = app.buttons["signals.close"]
-        for _ in 0..<3 where close.exists {
-            close.tap()
-            _ = close.waitForNonExistence(timeout: 5)
-        }
+        close.tap(until: close, appearing: false)
         XCTAssertFalse(close.exists, "Discovered signals sheet did not close")
         XCTAssertTrue(app.buttons["signals.open"].waitForExistence(timeout: 5))
     }
