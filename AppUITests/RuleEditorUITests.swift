@@ -29,7 +29,14 @@ final class RuleEditorUITests: XCTestCase {
         XCTAssertTrue(name.exists)
         scrollUntilHittable(name)
         let existing = name.value as? String ?? ""
-        name.tap()
+        // Adding the card can still move the scroll view after it is hittable.
+        // Confirm the tap opened the keyboard before sending any text.
+        let keyboard = app.keyboards.firstMatch
+        for _ in 0..<3 {
+            name.tap()
+            if keyboard.waitForExistence(timeout: 3) { break }
+        }
+        XCTAssertTrue(keyboard.exists, "Action name did not gain keyboard focus")
         name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + "Door open\n")
         XCTAssertTrue(app.staticTexts["Saved as door_open"].waitForExistence(timeout: 5))
         capture("rule-card-named")
