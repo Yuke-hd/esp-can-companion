@@ -10,7 +10,7 @@ struct OutputCatalogEditor: View {
     private var config: ControllerConfig { selection.editableConfig ?? ControllerConfig() }
     private var bindingRecords: [BindingRecord] {
         config.outputs.enumerated().compactMap { index, binding in
-            guard let value = jsonValue(binding), let object = value.object,
+            guard let value = Self.jsonValue(binding), let object = value.object,
                   let type = object["type"]?.stringValue else { return nil }
             return BindingRecord(index: index, type: type, action: object["action"]?.stringValue ?? "", value: value)
         }
@@ -182,8 +182,20 @@ struct OutputCatalogEditor: View {
     }
 
     private func bindingIsEditable(_ record: BindingRecord, for output: OutputCatalog.Output) -> Bool {
+        Self.bindingIsEditable(record.value, for: output)
+    }
+
+    static func isEditable(_ binding: ControllerConfig.OutputBinding, in catalog: OutputCatalog) -> Bool {
+        guard let value = jsonValue(binding),
+              let type = value.object?["type"]?.stringValue,
+              let output = catalog.outputs.first(where: { $0.type == type }),
+              output.isEditable else { return false }
+        return bindingIsEditable(value, for: output)
+    }
+
+    private static func bindingIsEditable(_ value: JSONValue, for output: OutputCatalog.Output) -> Bool {
         for field in output.fields {
-            guard let value = record.value.object?[field.name] else { continue }
+            guard let value = value.object?[field.name] else { continue }
             if field.kind == "enum", let item = value.stringValue,
                !(field.stringArray("values") ?? []).contains(item) { return false }
             if field.kind == "zone", let direction = value.object?["direction"]?.stringValue,
@@ -239,7 +251,7 @@ struct OutputCatalogEditor: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func jsonValue(_ binding: ControllerConfig.OutputBinding) -> JSONValue? {
+    private static func jsonValue(_ binding: ControllerConfig.OutputBinding) -> JSONValue? {
         if case .unknown(let json) = binding { return json }
         guard let data = try? JSONEncoder().encode(binding) else { return nil }
         return try? JSONDecoder().decode(JSONValue.self, from: data)

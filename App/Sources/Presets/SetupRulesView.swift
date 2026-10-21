@@ -143,7 +143,9 @@ struct SetupRulesView: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             ForEach(outputIndices, id: \.self) { outputIndex in
-                EffectEditor(selection: selection, index: outputIndex)
+                let output = config.outputs[outputIndex]
+                let isReadOnly = outputCatalog.map { !OutputCatalogEditor.isEditable(output, in: $0) } ?? false
+                EffectEditor(selection: selection, index: outputIndex, isReadOnly: isReadOnly)
             }
             if outputIndices.isEmpty {
                 Text("This rule's action shows nothing yet.")
