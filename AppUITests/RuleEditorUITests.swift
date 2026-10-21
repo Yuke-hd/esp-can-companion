@@ -125,7 +125,7 @@ final class RuleEditorUITests: XCTestCase {
     private func collapseAndExpandRule(at index: Int) {
         let toggle = app.buttons["rules.toggle.\(index)"]
         let name = app.textFields["rules.name.\(index)"]
-        let scrollView = app.scrollViews.containing(.textFields, identifier: name.identifier).firstMatch
+        let scrollView = app.scrollViews.containing(.textField, identifier: name.identifier).firstMatch
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5), "Rule editor must be inside a scroll view")
         for _ in 0..<8 where !toggle.isHittable {
             // The header is above the visible action name, so scroll back
