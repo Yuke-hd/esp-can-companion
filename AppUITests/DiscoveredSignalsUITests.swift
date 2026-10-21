@@ -133,8 +133,14 @@ final class DiscoveredSignalsUITests: XCTestCase {
             app.scrollViews.firstMatch.swipeUp()
         }
         XCTAssertTrue(button.isHittable, "Discovered signals must be reachable on the dashboard")
-        button.tap()
-        XCTAssertTrue(app.buttons["signals.close"].waitForExistence(timeout: 5))
+        // A reachable button may still be moving after dashboard layout or a
+        // scroll. Confirm the sheet opened before checking its contents.
+        let close = app.buttons["signals.close"]
+        for _ in 0..<3 where !close.exists {
+            button.tap()
+            _ = close.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(close.exists, "Discovered signals sheet did not open")
     }
 
     private func row(_ key: String) -> XCUIElement {
@@ -168,7 +174,12 @@ final class DiscoveredSignalsUITests: XCTestCase {
     }
 
     private func closeSheet() {
-        app.buttons["signals.close"].tap()
+        let close = app.buttons["signals.close"]
+        for _ in 0..<3 where close.exists {
+            close.tap()
+            _ = close.waitForNonExistence(timeout: 5)
+        }
+        XCTAssertFalse(close.exists, "Discovered signals sheet did not close")
         XCTAssertTrue(app.buttons["signals.open"].waitForExistence(timeout: 5))
     }
 
