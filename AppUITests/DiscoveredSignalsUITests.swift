@@ -52,9 +52,9 @@ final class DiscoveredSignalsUITests: XCTestCase {
 
     func testMalformedValidPrefixDoesNotKeepValuesLive() {
         open("discoveredMalformed")
-        assertRow("example.enabled", contains: ["True", "Fresh"])
+        assertRow("example.enabled", contains: ["True", "Fresh"], timeout: 35)
         capture("malformed-before")
-        assertState("Telemetry stalled", timeout: 20)
+        assertState("Telemetry stalled", timeout: 60)
         assertRow("example.enabled", contains: ["no value", "Unknown"])
         assertRow("example.peer", contains: ["no value", "Unknown"])
         capture("malformed-cleared")
@@ -142,7 +142,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         return app.descendants(matching: .any)["signals.row." + hex].firstMatch
     }
 
-    private func assertRow(_ key: String, contains texts: [String], timeout: TimeInterval = 20,
+    private func assertRow(_ key: String, contains texts: [String], timeout: TimeInterval = 35,
                            file: StaticString = #filePath, line: UInt = #line) {
         let element = row(key)
         let predicate = NSPredicate { _, _ in

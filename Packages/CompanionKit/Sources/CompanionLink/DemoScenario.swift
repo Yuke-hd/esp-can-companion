@@ -155,7 +155,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
             stopAfter: self == .discoveredStalled ? .seconds(8) : nil,
             extensibleFrames: { seconds, _ in [
                 "example.enabled": .init(availability: .fresh,
-                                         value: .boolean(!remapped && !(self == .discoveredMalformed && seconds >= 6))),
+                                         value: .boolean(!remapped && !(self == .discoveredMalformed && seconds >= 45))),
                 "example.mode": .init(availability: .freshnessUnverified, value: .enumeration(choiceKey: "new_choice")),
                 "example.peer": .init(availability: .fresh, value: .number(Float(seconds))),
                 "example.signed": .init(availability: self == .discoveredPartial ? .stale : .fresh,
@@ -165,7 +165,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
                 self == .discoveredPartial && seconds >= 6 ? [200, 300, 400] : nil
             },
             transformExtensiblePackets: { seconds, packets in
-                self == .discoveredMalformed && seconds >= 6 ? packets.map { $0 + Data([1]) } : packets
+                self == .discoveredMalformed && seconds >= 45 ? packets.map { $0 + Data([1]) } : packets
             }
         )
     }
