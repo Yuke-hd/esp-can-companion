@@ -8,7 +8,7 @@ without creating empty categories or copying firmware specifications.
 | --- | --- | --- |
 | Architecture | Module responsibilities, replaceable boundaries, and dependency direction. | [Module boundaries](architecture/module-boundaries.md) |
 | Specs | Agreed feature and preview behavior, including explicitly identified implementation gaps. | [Preview scenarios](specs/ui/preview-scenarios.md), [design reference](specs/ui/design-reference.md) |
-| Development | How contributors and agents build, preview, and verify changes. | [UI verification](development/ui-verification.md) |
+| Development | How contributors and agents build, preview, and verify changes. | [Build and development guide](development/getting-started.md), [UI verification](development/ui-verification.md) |
 | Decisions | Why a significant architectural choice was made and its alternatives. | [ADR index](decisions/README.md) |
 | Templates | Reusable document formats. | [ADR template](templates/ADR.md) |
 
@@ -27,5 +27,6 @@ without creating empty categories or copying firmware specifications.
   and [live signal](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/live-signals.md)
   contracts. Keep local codec examples tied to their source version.
 
-Build setup, personal-device signing, and project orientation remain in the
-[root README](../README.md). We do not maintain a second copy here.
+The [root README](../README.md) introduces the app for users. Build setup,
+personal-device signing, and project orientation live in the
+[build and development guide](development/getting-started.md).

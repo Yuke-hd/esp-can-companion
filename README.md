@@ -1,178 +1,137 @@
 # ESP CAN Companion
 
-Contributor and agent documentation: [UI preview and verification](docs/development/ui-verification.md)
-and the [documentation index](docs/README.md).
+An iPhone app for viewing vehicle readings and setting up accessory lighting
+over Bluetooth. Choose a lighting preset, adjust it to your liking, and send it
+to your accessory controller without editing configuration files.
 
-An iOS companion app for ESP-based CAN bus accessory controllers. It talks to any
-controller that implements the companion BLE protocol
-([spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md),
-originally proposed in [Yuke-hd/mazda-can-accessory-controller#160](https://github.com/Yuke-hd/mazda-can-accessory-controller/issues/160)),
-so it is not tied to one vehicle brand.
+> **Early development:** The app includes connection, live readings and lighting
+> setup features. The LED strip zone editor is still to come. Installation
+> currently requires a Mac and Xcode.
 
-> Status: early. The app can scan for, pair with, and reconnect to a controller. Its
-> Pit Wall shows live telemetry, signal tiles and the active config's output stack,
-> and Setup sends bundled presets. The Strip and Drive tabs are placeholders.
+## What you can do
 
-## Requirements
+- **See what the controller sees.** View readings such as engine speed (RPM),
+  road speed and gear, depending on what your controller provides.
+- **Set up your accessory lights.** Start with a preset, review how it behaves,
+  adjust settings and send it when you're ready.
+- **Check what's actually running.** Read the controller's current setup or
+  restore its factory lighting settings.
 
-- macOS with Xcode 16 or newer
-- iOS 17 or newer (simulator or device)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+The app has four tabs:
 
-## Project layout
+| Tab | Use it for |
+| --- | --- |
+| **Pit Wall** | Connect to your controller and see an overview of its readings and current setup. |
+| **Setup** | Choose and adjust lighting presets, send changes, or restore factory settings. |
+| **Drive** | View a landscape dashboard with larger vehicle readouts. |
+| **Strip** | LED strip zone editing is planned; this tab is currently a placeholder. |
 
-```
-project.yml                  XcodeGen spec; the .xcodeproj is generated, not committed
-Config/                      Shared build settings and the local signing override
-App/Sources/                 SwiftUI app target (screens and app wiring only)
-AppTests/                    App unit tests
-Packages/CompanionKit/       Local Swift package
-  Sources/BLETransport/      CoreBluetooth link: scanning, connecting, moving bytes
-  Sources/CompanionProtocol/ Protocol messages and codecs (no UI, no CoreBluetooth)
-  Sources/CompanionLink/     Protocol client over the BLE link, controller state, demo controller
-  Sources/PresetSync/        Bundled presets and the push / revert flow (no UI)
-  Sources/CompanionFakes/    In-memory controller for tests and previews
-  Sources/DesignSystem/      Dark theme tokens, shared components, preview catalog
-```
+Missing or out-of-date readings are marked as unavailable rather than shown as
+current values.
 
-The app depends on the four package modules. `CompanionProtocol` stays free of
-CoreBluetooth and SwiftUI so it can be tested against golden vectors on any host.
+## Preview / demo
 
-## Build and run in the Simulator
+Here's the **Drive** screen in its two dashboard styles. You can switch between
+them inside Drive.
 
-```sh
-xcodegen generate
-open CANCompanion.xcodeproj
-```
+### Motorsport
 
-Pick the `CANCompanion` scheme and an iPhone simulator, then Run (⌘R).
-Re-run `xcodegen generate` after pulling changes that touch `project.yml` or
-add and remove files.
+![Drive screen in Motorsport style with simulated vehicle readings](docs/images/drive-motorsport.png)
 
-From the command line:
+### Bimmer
 
-```sh
-xcodegen generate
-xcodebuild test -project CANCompanion.xcodeproj -scheme CANCompanion \
-  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO
 
-cd Packages/CompanionKit
-xcodebuild test -scheme CompanionKit-Package \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
-```
+![Drive screen in Cluster style with simulated vehicle readings](docs/images/drive-cluster.png)
 
-## Bluetooth
+These are screenshots of the app running in the iPhone Simulator with sample
+data. No car or controller was connected; the readings demonstrate the display.
 
-`BLETransport` has a `ConnectionManager` (observable from SwiftUI) that scans for
-the companion service, connects, pairs by reading an encrypted characteristic,
-remembers the controller, and reconnects on its own after the controller loses
-power or the app is relaunched in the background (state restoration plus the
-`bluetooth-central` background mode). It only writes to characteristics of the
-companion service.
+## How the app and controller work together
 
-UUIDs and pairing follow protocol version 1 of the firmware's
-[companion BLE spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/blob/main/docs/specs/companion/ble-protocol.md):
-the app reads device info and checks the protocol major version before pairing,
-and new pairings only work for 120 seconds after the controller's user key is pressed.
+Your accessory controller reads signals from the car and runs the lighting
+rules. CAN Companion connects to that controller to show its readings and change
+its setup. The controller handles the lights independently of the phone.
 
-`FakeRadio` simulates controllers in memory. The app uses it automatically in the
-Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argument
-to use it on a device. Pass `-DemoScenario <name>` to start in another state:
-`notPaired`, `connecting`, `connected`, `customConfig`, `relinking`, `incompatible`,
-`bluetoothOff` or `noAccess` (see `DemoScenario`). SwiftUI previews use the same scenarios.
-The demo controller also streams a synthetic drive on Live signals, so the Pit Wall moves.
+The [Mazda CAN accessory controller](https://github.com/Yuke-hd/mazda-can-accessory-controller)
+is the companion hardware project. See that project for the board, wiring,
+firmware and hardware validation requirements. Other controllers can work with
+the app if their firmware supports the same companion connection.
 
-## Protocol client
+## What you need
 
-`CompanionProtocol` holds all wire-format knowledge, following the firmware's
-[companion spec](https://github.com/Yuke-hd/mazda-can-accessory-controller/tree/main/docs/specs/companion):
-device info and the version check, config read-back, chunked upload with commit
-and abort, Config status diagnostics, commands, the live signals frame, and
-`ControllerConfig` (config schema version 1). `CompanionClient` runs these over a
-`CompanionTransport`, so it has no CoreBluetooth dependency and is tested against
-an in-memory controller.
+You'll need:
 
-Live signal readings keep the controller's availability code. Only code `Fresh` is
-fresh, brake is never fresh, and a stream with no frame for 2 seconds reports
-every signal as unknown.
+- **An iPhone running iOS 17 or later**, with Bluetooth enabled.
+- **A compatible accessory controller**, powered on and running firmware that
+  supports CAN Companion. Compatibility depends on the controller, not just
+  the car brand.
+- **A Mac with Xcode 16 or later** to install this version on your phone.
 
-`CompanionLink` connects the two. `ConnectionManagerTransport` implements
-`CompanionTransport` over `ConnectionManager`, keeping the controller's ATT error
-codes. `ControllerSession` owns one `CompanionClient`: on every link change it
-clears the client's device info, and on every new connection it reads device
-info, Config status and the active config again. `DemoController` answers those
-reads on `FakeRadio`.
+The app connects to the accessory controller. It cannot connect directly to a
+car's built-in Bluetooth or replace the controller hardware.
 
-Golden vectors live in
-[`Tests/CompanionProtocolTests/Fixtures/golden-vectors`](Packages/CompanionKit/Tests/CompanionProtocolTests/Fixtures/golden-vectors);
-its README says where each file comes from.
+## Get started
 
-## Presets
+### 1. Install the app
 
-`PresetSync` ships a few presets in
-[`Sources/PresetSync/Presets`](Packages/CompanionKit/Sources/PresetSync/Presets).
-Each is a complete, canonical schema version 1 config made from the factory profile
-(`factory.json`, a verbatim copy of the firmware's) with a few changes; turn
-signals, hazards and the brake light stay exactly as in the factory profile.
-`ConfigDescriber` explains each action in plain language.
+Follow the [iPhone installation guide](docs/development/getting-started.md#install-on-your-own-iphone-development-signing).
+It walks through installing with Xcode. If you haven't used Xcode before, you
+may want someone familiar with it to help with this step.
 
-`PresetSyncModel` pushes a preset or reverts to factory over a `PresetSyncLink`.
-The app does not validate presets: the controller does, and the flow shows its
-verdict, including the error code and field when it rejects one. A push or revert
-counts as done only after the controller restarts and Config status shows the new
-config running. The Setup tab shows `PresetsView`, with the
-`ControllerSession` as its link. In the Simulator the demo controller refuses
-config writes, so a push there ends in an error; the previews use the fake link.
+You can use a free Apple ID for a personal installation. With a free account,
+the app expires after seven days and needs to be installed again through Xcode.
 
-`CompanionFakes` has the in-memory `FakeController` and a `FakePresetSyncLink`
-over it, used by the tests and the Presets previews.
+### 2. Connect your controller
 
-## Theme
+1. Power on your accessory controller and keep your iPhone nearby.
+2. Open CAN Companion. On **Pit Wall**, tap **Continue** on the Bluetooth card
+   and allow Bluetooth access when your iPhone asks.
+3. Press the controller's **user key** to allow a new phone to pair. You have
+   **two minutes** to complete pairing after pressing it.
+4. Select your controller when it appears in the list. If scanning has stopped,
+   tap **Find a controller** first. Follow any pairing prompts on your iPhone.
+5. Wait for **Linked**. The app then reads the controller's current setup.
 
-The app is dark-only and follows the "Pit Wall" drafts. Tokens live in
-[`Theme.swift`](Packages/CompanionKit/Sources/DesignSystem/Theme.swift): palette,
-spacing, corner radii, and a Dynamic Type based type scale using system fonts (SF
-compressed/condensed for display text, SF Mono for labels). Unit tests check that
-text and status colors meet WCAG contrast targets on every surface.
+The app remembers your controller and attempts to reconnect when it becomes
+available again.
 
-The core components (`Card`, `StatusPill`, `PrimaryButtonStyle`, `SecondaryButtonStyle`) are shown in
-[`ComponentCatalog.swift`](Packages/CompanionKit/Sources/DesignSystem/ComponentCatalog.swift).
-Open it in Xcode to see them in the preview canvas. Debug builds also link to the
-catalog from the bottom of the Pit Wall.
+### 3. Choose your lighting setup
 
-## Install on your own iPhone (development signing)
+1. Connect to your controller, then open **Setup**.
+2. Choose a preset. Expand **What this setup does** to review it, and adjust
+   settings if needed.
+3. Tap **Send to car** and confirm the change.
+4. Wait for the controller to restart and for the app to confirm the setup is
+   **On car**.
 
-You do not need a paid Apple Developer account for a personal device build; a
-free Apple ID works, but the build expires after 7 days.
+Choosing or editing a preset does not change the controller until you send and
+confirm it. If the controller rejects a setup, the app shows an error; do not
+assume the change was applied. To restore its original lighting setup, use
+**Revert to factory** in Setup and confirm.
 
-1. Add your Apple ID in Xcode → Settings → Accounts.
-2. Copy the signing template and fill in your values. The copy is git-ignored.
-   ```sh
-   cp Config/Local.xcconfig.example Config/Local.xcconfig
-   ```
-   - `DEVELOPMENT_TEAM`: your Team ID (shown in Xcode → Settings → Accounts →
-     your team, or developer.apple.com → Membership).
-   - `APP_BUNDLE_ID`: a bundle identifier unique to you, such as
-     `com.yourname.cancompanion`.
-3. Run `xcodegen generate`, connect the iPhone, select it as the run destination,
-   and Run. Xcode manages the provisioning profile automatically.
-4. On the phone, enable Developer Mode (Settings → Privacy & Security) and, for a
-   free account, trust your developer certificate under Settings → General →
-   VPN & Device Management.
+## Having trouble?
 
-## CI
+| What you see | What to try |
+| --- | --- |
+| **Bluetooth off** | Turn on Bluetooth in your iPhone's Settings. |
+| **No access** | Tap **Open Settings** and allow Bluetooth access for CAN Companion. |
+| No controller appears | Check that the controller is powered on and nearby, then tap **Find a controller** if scanning has stopped. |
+| Pairing fails | Press the controller's user key again and retry within two minutes. |
+| **Incompatible** | The app and controller firmware do not support the same connection version. Check whether either needs an update. |
+| **Relinking** | The app is waiting for the controller to return. Check its power and stay nearby. |
 
-GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on a
-macOS runners for every pull request and push to `main`. It generates the project,
-then runs the package tests, the app unit tests and three shards of UI tests as
-parallel jobs on an iOS Simulator. No signing is involved.
+If you need help, [open an issue](https://github.com/Yuke-hd/esp-can-companion/issues)
+with what you tried and the message shown in the app. Leave out vehicle
+identifiers and personal information.
 
-## Data safety
+## Development and documentation
 
-Never commit vehicle captures, VINs, or anything that identifies a vehicle or
-person. Sample and test data must be synthetic. `.gitignore` excludes common
-capture formats as a backstop.
+Build commands, iPhone installation, project structure and technical details are
+in the [build and development guide](docs/development/getting-started.md).
+See the [documentation index](docs/README.md) for architecture and specifications,
+and [UI preview and verification](docs/development/ui-verification.md) for testing
+screens with a simulated controller.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE).
