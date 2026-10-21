@@ -44,7 +44,7 @@ struct RuleEditSheet: View {
             .background(Theme.Colors.background)
             .foregroundStyle(Theme.Colors.textPrimary)
             .tint(Theme.Colors.signalBlueText)
-            .navigationTitle(request.index == nil ? "ADD RULE" : "EDIT RULE")
+            .navigationTitle("EDIT RULE")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
