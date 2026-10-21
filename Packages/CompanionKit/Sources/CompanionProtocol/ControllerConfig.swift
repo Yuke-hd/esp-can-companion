@@ -12,12 +12,15 @@ public struct ControllerConfig: Codable, Equatable, Sendable {
     public var actions: [Action]
     public var rules: [Rule]
     public var outputs: [OutputBinding]
+    /// Sink configuration is published by the output catalog and kept opaque.
+    public var sinks: [String: JSONValue]
 
-    public init(version: Int = 1, actions: [Action] = [], rules: [Rule] = [], outputs: [OutputBinding] = []) {
+    public init(version: Int = 1, actions: [Action] = [], rules: [Rule] = [], outputs: [OutputBinding] = [], sinks: [String: JSONValue] = [:]) {
         self.version = version
         self.actions = actions
         self.rules = rules
         self.outputs = outputs
+        self.sinks = sinks
     }
 
     /// Decodes canonical (or any equivalent) config JSON.
@@ -34,7 +37,7 @@ public struct ControllerConfig: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, actions, rules, outputs
+        case version, actions, rules, outputs, sinks
     }
 
     public init(from decoder: Decoder) throws {
@@ -43,6 +46,7 @@ public struct ControllerConfig: Codable, Equatable, Sendable {
         actions = try container.decodeIfPresent([Action].self, forKey: .actions) ?? []
         rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
         outputs = try container.decodeIfPresent([OutputBinding].self, forKey: .outputs) ?? []
+        sinks = try container.decodeIfPresent([String: JSONValue].self, forKey: .sinks) ?? [:]
     }
 }
 
@@ -271,6 +275,7 @@ extension ControllerConfig {
         public var start: Int
         public var length: Int
         public var direction: FillDirection
+        public var additionalFields: [String: JSONValue]
 
         /// Last logical pixel when the zone has a positive, representable length.
         public var lastPixel: Int? {
@@ -279,10 +284,27 @@ extension ControllerConfig {
             return overflow ? nil : lastPixel
         }
 
-        public init(start: Int, length: Int, direction: FillDirection) {
+        public init(start: Int, length: Int, direction: FillDirection, additionalFields: [String: JSONValue] = [:]) {
             self.start = start
             self.length = length
             self.direction = direction
+            self.additionalFields = additionalFields
+        }
+
+        private enum CodingKeys: String, CodingKey { case start, length, direction }
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            start = try container.decode(Int.self, forKey: .start)
+            length = try container.decode(Int.self, forKey: .length)
+            direction = try container.decode(FillDirection.self, forKey: .direction)
+            additionalFields = try Self.unknownFields(from: decoder, excluding: ["start", "length", "direction"])
+        }
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(start, forKey: .start)
+            try container.encode(length, forKey: .length)
+            try container.encode(direction, forKey: .direction)
+            try Self.encode(additionalFields, to: encoder, excluding: ["start", "length", "direction"])
         }
     }
 
@@ -290,11 +312,29 @@ extension ControllerConfig {
         public var red: Int
         public var green: Int
         public var blue: Int
+        public var additionalFields: [String: JSONValue]
 
-        public init(red: Int, green: Int, blue: Int) {
+        public init(red: Int, green: Int, blue: Int, additionalFields: [String: JSONValue] = [:]) {
             self.red = red
             self.green = green
             self.blue = blue
+            self.additionalFields = additionalFields
+        }
+
+        private enum CodingKeys: String, CodingKey { case red, green, blue }
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            red = try container.decode(Int.self, forKey: .red)
+            green = try container.decode(Int.self, forKey: .green)
+            blue = try container.decode(Int.self, forKey: .blue)
+            additionalFields = try Self.unknownFields(from: decoder, excluding: ["red", "green", "blue"])
+        }
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(red, forKey: .red)
+            try container.encode(green, forKey: .green)
+            try container.encode(blue, forKey: .blue)
+            try Self.encode(additionalFields, to: encoder, excluding: ["red", "green", "blue"])
         }
     }
 
@@ -303,11 +343,13 @@ extension ControllerConfig {
         public var action: String
         public var effect: LedEffect
         public var priority: Int
+        public var additionalFields: [String: JSONValue]
 
-        public init(action: String, effect: LedEffect, priority: Int = OutputBinding.defaultPriority) {
+        public init(action: String, effect: LedEffect, priority: Int = OutputBinding.defaultPriority, additionalFields: [String: JSONValue] = [:]) {
             self.action = action
             self.effect = effect
             self.priority = priority
+            self.additionalFields = additionalFields
         }
     }
 
@@ -317,12 +359,14 @@ extension ControllerConfig {
         public var zone: Zone
         public var color: Color
         public var priority: Int
+        public var additionalFields: [String: JSONValue]
 
-        public init(action: String, zone: Zone, color: Color, priority: Int = OutputBinding.defaultPriority) {
+        public init(action: String, zone: Zone, color: Color, priority: Int = OutputBinding.defaultPriority, additionalFields: [String: JSONValue] = [:]) {
             self.action = action
             self.zone = zone
             self.color = color
             self.priority = priority
+            self.additionalFields = additionalFields
         }
     }
 
@@ -336,11 +380,14 @@ extension ControllerConfig {
         case ledTransient(ZoneBinding, durationMs: Int)
         /// Lights the whole zone while the action is on.
         case ledSolid(ZoneBinding)
+        /// An output binding containing a type or enum value this app cannot edit.
+        case unknown(JSONValue)
 
         public var action: String {
             switch self {
             case .ledEffect(let binding): binding.action
             case .ledFill(let binding), .ledTransient(let binding, _), .ledSolid(let binding): binding.action
+            case .unknown(let json): (json.object?["action"]?.stringValue) ?? ""
             }
         }
 
@@ -351,14 +398,33 @@ extension ControllerConfig {
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             let type = try container.decode(String.self, forKey: .type)
+            let json = try JSONValue(from: decoder)
+            guard ["led_effect", "led_fill", "led_transient", "led_solid"].contains(type) else {
+                self = .unknown(json)
+                return
+            }
+            if type == "led_effect", let effect = json.object?["effect"]?.stringValue,
+               ControllerConfig.LedEffect(rawValue: effect) == nil {
+                self = .unknown(json)
+                return
+            }
+            if type != "led_effect", let zone = json.object?["zone"]?.object,
+               let direction = zone["direction"]?.stringValue,
+               ControllerConfig.FillDirection(rawValue: direction) == nil {
+                self = .unknown(json)
+                return
+            }
             let action = try container.decode(String.self, forKey: .action)
             let priority = try container.decodeIfPresent(Int.self, forKey: .priority) ?? Self.defaultPriority
+            let known = ["type", "action", "effect", "priority", "zone", "color", "duration_ms"]
+            let extra = try Self.unknownFields(from: decoder, excluding: Set(known))
             func zoneBinding() throws -> ZoneBinding {
                 ZoneBinding(
                     action: action,
                     zone: try container.decode(Zone.self, forKey: .zone),
                     color: try container.decode(Color.self, forKey: .color),
-                    priority: priority
+                    priority: priority,
+                    additionalFields: extra
                 )
             }
             switch type {
@@ -366,7 +432,8 @@ extension ControllerConfig {
                 self = .ledEffect(EffectBinding(
                     action: action,
                     effect: try container.decode(LedEffect.self, forKey: .effect),
-                    priority: priority
+                    priority: priority,
+                    additionalFields: extra
                 ))
             case "led_fill":
                 self = .ledFill(try zoneBinding())
@@ -382,6 +449,7 @@ extension ControllerConfig {
         }
 
         public func encode(to encoder: Encoder) throws {
+            if case .unknown(let json) = self { try json.encode(to: encoder); return }
             var container = encoder.container(keyedBy: CodingKeys.self)
             func encode(_ binding: ZoneBinding, type: String) throws {
                 try container.encode(type, forKey: .type)
@@ -389,6 +457,7 @@ extension ControllerConfig {
                 try container.encode(binding.zone, forKey: .zone)
                 try container.encode(binding.color, forKey: .color)
                 try container.encode(binding.priority, forKey: .priority)
+                try Self.encode(binding.additionalFields, to: encoder, excluding: ["type", "action", "zone", "color", "priority", "duration_ms"])
             }
             switch self {
             case .ledEffect(let binding):
@@ -396,6 +465,7 @@ extension ControllerConfig {
                 try container.encode(binding.action, forKey: .action)
                 try container.encode(binding.effect, forKey: .effect)
                 try container.encode(binding.priority, forKey: .priority)
+                try Self.encode(binding.additionalFields, to: encoder, excluding: ["type", "action", "effect", "priority", "zone", "color", "duration_ms"])
             case .ledFill(let binding):
                 try encode(binding, type: "led_fill")
             case .ledTransient(let binding, let durationMs):
@@ -403,7 +473,42 @@ extension ControllerConfig {
                 try container.encode(durationMs, forKey: .durationMs)
             case .ledSolid(let binding):
                 try encode(binding, type: "led_solid")
+            case .unknown:
+                break
             }
         }
+    }
+}
+
+private extension ControllerConfig.Zone {
+    static func unknownFields(from decoder: Decoder, excluding names: Set<String>) throws -> [String: JSONValue] {
+        let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+        var values: [String: JSONValue] = [:]
+        for key in container.allKeys where !names.contains(key.stringValue) {
+            values[key.stringValue] = try container.decode(JSONValue.self, forKey: key)
+        }
+        return values
+    }
+    static func encode(_ values: [String: JSONValue], to encoder: Encoder, excluding names: Set<String>) throws {
+        var container = encoder.container(keyedBy: DynamicCodingKey.self)
+        for (key, value) in values where !names.contains(key) { try container.encode(value, forKey: DynamicCodingKey(key)) }
+    }
+}
+
+private extension ControllerConfig.Color {
+    static func unknownFields(from decoder: Decoder, excluding names: Set<String>) throws -> [String: JSONValue] {
+        try ControllerConfig.Zone.unknownFields(from: decoder, excluding: names)
+    }
+    static func encode(_ values: [String: JSONValue], to encoder: Encoder, excluding names: Set<String>) throws {
+        try ControllerConfig.Zone.encode(values, to: encoder, excluding: names)
+    }
+}
+
+private extension ControllerConfig.OutputBinding {
+    static func unknownFields(from decoder: Decoder, excluding names: Set<String>) throws -> [String: JSONValue] {
+        try ControllerConfig.Zone.unknownFields(from: decoder, excluding: names)
+    }
+    static func encode(_ values: [String: JSONValue], to encoder: Encoder, excluding names: Set<String>) throws {
+        try ControllerConfig.Zone.encode(values, to: encoder, excluding: names)
     }
 }

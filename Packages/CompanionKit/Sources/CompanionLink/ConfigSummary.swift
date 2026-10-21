@@ -29,7 +29,7 @@ public struct ConfigSummary: Equatable, Sendable {
     /// One output of the config, for the Pit Wall output stack.
     public struct Output: Equatable, Sendable, Identifiable {
         public enum Kind: String, Equatable, Sendable {
-            case effect, fill, flash, solid
+            case effect, fill, flash, solid, unknown
         }
 
         /// The action's persisted name.
@@ -101,6 +101,9 @@ public struct ConfigSummary: Equatable, Sendable {
                 output = Output(action: zone.action, title: humanize(zone.action), priority: zone.priority, kind: .flash, color: zone.color)
             case .ledSolid(let zone):
                 output = Output(action: zone.action, title: humanize(zone.action), priority: zone.priority, kind: .solid, color: zone.color)
+            case .unknown(let json):
+                let type = json.object?["type"]?.stringValue ?? "unknown"
+                output = Output(action: binding.action, title: "Unsupported: \(type)", priority: 0, kind: .unknown, color: nil)
             }
             if seen.insert(output.id).inserted { outputs.append(output) }
         }
@@ -172,6 +175,8 @@ public struct ConfigSummary: Equatable, Sendable {
             return "Flashes \(leds(binding.zone)) for \(durationMs) ms"
         case .ledSolid(let binding):
             return "Lights \(leds(binding.zone))"
+        case .unknown(let json):
+            return "Unsupported output type \(json.object?["type"]?.stringValue ?? "unknown")"
         }
     }
 
