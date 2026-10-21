@@ -8,6 +8,7 @@ import PresetSync
 struct EffectEditor: View {
     var selection: SetupSelection
     let index: Int
+    var isReadOnly = false
 
     var body: some View {
         if let output {
@@ -16,7 +17,11 @@ struct EffectEditor: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if case .unknown = output {
+                if isReadOnly {
+                    Text("This output is read-only because the controller catalog does not describe its type or fields.")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                } else if case .unknown = output {
                     Text("Unsupported output is read-only and will be preserved when you edit other settings.")
                         .font(Theme.Typography.body)
                         .foregroundStyle(Theme.Colors.textSecondary)
