@@ -30,14 +30,17 @@ final class ConnectionManagerTransportTests: XCTestCase {
 
     func testOptionalEndpointRolesAndPermissions() {
         XCTAssertEqual(ConnectionManagerTransport.gattUUID(for: .signalCatalog), GATTUUID("AB490006-09B6-4509-BF8E-2790253BAF98"))
+        XCTAssertEqual(ConnectionManagerTransport.gattUUID(for: .outputCatalog), GATTUUID("AB490008-09B6-4509-BF8E-2790253BAF98"))
         XCTAssertEqual(ConnectionManagerTransport.gattUUID(for: .extensibleLiveSignals), GATTUUID("AB490007-09B6-4509-BF8E-2790253BAF98"))
         for role in CompanionCharacteristic.allCases {
             XCTAssertEqual(ConnectionManagerTransport.characteristic(for: ConnectionManagerTransport.gattUUID(for: role)), role)
         }
-        XCTAssertNil(ConnectionManagerTransport.characteristic(for: "AB490008-09B6-4509-BF8E-2790253BAF98"))
+        XCTAssertEqual(ConnectionManagerTransport.characteristic(for: "AB490008-09B6-4509-BF8E-2790253BAF98"), .outputCatalog)
         let configuration = CompanionServiceConfiguration.protocolV1
         XCTAssertTrue(configuration.readableCharacteristicUUIDs.contains(CompanionGATT.signalCatalog))
         XCTAssertTrue(configuration.writableCharacteristicUUIDs.contains(CompanionGATT.signalCatalog))
+        XCTAssertTrue(configuration.readableCharacteristicUUIDs.contains(CompanionGATT.outputCatalog))
+        XCTAssertTrue(configuration.writableCharacteristicUUIDs.contains(CompanionGATT.outputCatalog))
         XCTAssertFalse(configuration.readableCharacteristicUUIDs.contains(CompanionGATT.extensibleLiveSignals))
         XCTAssertFalse(configuration.writableCharacteristicUUIDs.contains(CompanionGATT.extensibleLiveSignals))
         // Merely exposing the role must not choose a telemetry subscription.

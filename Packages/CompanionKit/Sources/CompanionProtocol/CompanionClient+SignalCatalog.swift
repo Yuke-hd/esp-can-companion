@@ -65,30 +65,38 @@ extension CompanionClient {
         return true
     }
 
-    private func checkCatalogGeneration(_ generation: UInt64) throws {
+    func checkCatalogGeneration(_ generation: UInt64) throws {
         try Task.checkCancellation()
         guard generation == catalogGeneration else { throw CompanionClientError.connectionChanged }
     }
 
-    private func readCatalogPage(generation: UInt64) async throws -> SignalCatalogPage {
+    func readCatalogPage(characteristic: CompanionCharacteristic = .signalCatalog,
+                         step: CompanionOperationStep = .readSignalCatalog,
+                         generation: UInt64) async throws -> SignalCatalogPage {
         try checkCatalogGeneration(generation)
-        let value = try await catalogTransport { try await self.transport.read(.signalCatalog) }
+        let value = try await catalogTransport(characteristic: characteristic, step: step) {
+            try await self.transport.read(characteristic)
+        }
         try checkCatalogGeneration(generation)
         return try decode { try SignalCatalogPage(decoding: value) }
     }
 
-    private func selectCatalogPage(token: UInt32, offset: UInt16, generation: UInt64) async throws {
+    func selectCatalogPage(token: UInt32, offset: UInt16,
+                           characteristic: CompanionCharacteristic = .signalCatalog,
+                           step: CompanionOperationStep = .readSignalCatalog,
+                           generation: UInt64) async throws {
         try checkCatalogGeneration(generation)
         let selector = try SignalCatalogSelector(token: token, offset: offset)
-        try await catalogTransport {
-            try await self.transport.write(selector.encoded, to: .signalCatalog)
+        try await catalogTransport(characteristic: characteristic, step: step) {
+            try await self.transport.write(selector.encoded, to: characteristic)
         }
         try checkCatalogGeneration(generation)
     }
 
     /// Retain the lane until the underlying ATT call actually finishes, even
     /// when the caller has already timed out or cancelled its bounded wait.
-    private func catalogTransport<T: Sendable>(
+    func catalogTransport<T: Sendable>(characteristic: CompanionCharacteristic = .signalCatalog,
+        step: CompanionOperationStep = .readSignalCatalog,
         _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         let request = UUID()
@@ -104,7 +112,7 @@ extension CompanionClient {
             }
         }
         do {
-            return try await perform(.readSignalCatalog, timeout: timeouts.operation) {
+            return try await perform(step, timeout: timeouts.operation) {
                 try await work.value
             }
         } catch {
