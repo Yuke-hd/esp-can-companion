@@ -60,6 +60,79 @@ final class RuleEditorUITests: XCTestCase {
         capture("rules-with-door-open")
     }
 
+    func testInspectingUntouchedActionPreservesItsNoncanonicalIdentifier() {
+        let index = addRule(named: "door__open")
+        let name = app.textFields["rules.name.\(index)"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        collapseAndExpandRule(at: index)
+        assertStoredAction("door__open", at: index)
+
+        // Focusing and leaving without typing must also preserve the identifier.
+        name.tap()
+        name.typeText("\n")
+        assertStoredAction("door__open", at: index)
+        capture("untouched-noncanonical-action")
+    }
+
+    func testCollapsingAnEditedActionSavesItsName() {
+        let index = addRule(named: "door__open")
+        let name = app.textFields["rules.name.\(index)"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        let existing = name.value as? String ?? ""
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + "Boot open")
+        collapseAndExpandRule(at: index)
+        assertStoredAction("boot_open", at: index)
+        capture("edited-action-saved-on-collapse")
+    }
+
+    private func addRule(named action: String) -> Int {
+        app.launchArguments = ["-FakeController", "YES", "-DemoScenario", "discoveredSignals"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 15))
+        app.buttons["Setup"].tap()
+        let add = app.buttons["rules.add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        scrollUntilHittable(add)
+        let toggles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'rules.toggle.'"))
+        let index = toggles.count
+        let edit = app.buttons["rules.edit.\(index)"]
+        for _ in 0..<3 where !edit.exists {
+            add.tap()
+            _ = edit.waitForExistence(timeout: 3)
+        }
+        scrollUntilHittable(edit)
+        edit.tap()
+        let field = app.textFields["rule.action"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let existing = field.value as? String ?? ""
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + action)
+        app.buttons["rule.save"].tap()
+        return index
+    }
+
+    private func assertStoredAction(_ expected: String, at index: Int) {
+        let edit = app.buttons["rules.edit.\(index)"]
+        scrollUntilHittable(edit)
+        edit.tap()
+        let action = app.textFields["rule.action"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.value as? String, expected)
+        app.buttons["rule.cancel"].tap()
+    }
+
+    private func collapseAndExpandRule(at index: Int) {
+        let toggle = app.buttons["rules.toggle.\(index)"]
+        let name = app.textFields["rules.name.\(index)"]
+        for _ in 0..<4 where !toggle.isHittable { app.swipeDown() }
+        XCTAssertTrue(toggle.isHittable)
+        toggle.tap()
+        XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+    }
+
     private func scrollUntilHittable(_ element: XCUIElement) {
         for _ in 0..<8 where !element.isHittable {
             app.swipeUp()

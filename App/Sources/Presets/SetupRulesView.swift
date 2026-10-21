@@ -259,6 +259,7 @@ private struct ActionNameField: View {
     let isReserved: Bool
     let onCommit: (String) -> String?
     @State private var text: String
+    @State private var isEdited = false
     @State private var error: String?
     @FocusState private var focused: Bool
 
@@ -288,7 +289,11 @@ private struct ActionNameField: View {
 
     private var editableName: some View {
         Group {
-            TextField("Action name", text: $text)
+            TextField("Action name", text: Binding(get: { text }, set: {
+                guard text != $0 else { return }
+                text = $0
+                isEdited = true
+            }))
                 .font(Theme.Typography.body)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
@@ -296,8 +301,13 @@ private struct ActionNameField: View {
                 .focused($focused)
                 .onSubmit { focused = false }
                 .onChange(of: focused) { _, editing in if !editing { commit() } }
-                .onChange(of: name) { _, stored in if !focused { text = ConfigDescriber.title(stored) } }
-                .onDisappear { if ControllerConfig.actionName(from: text) != name { commit() } }
+                .onChange(of: name) { _, stored in
+                    if !focused {
+                        text = ConfigDescriber.title(stored)
+                        isEdited = false
+                    }
+                }
+                .onDisappear { commit() }
                 .padding(Theme.Spacing.xs)
                 .background(Theme.Colors.surfaceRaised)
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).strokeBorder(
@@ -307,7 +317,7 @@ private struct ActionNameField: View {
             if let error {
                 RPMValidationMessage(message: error, id: "\(id).error")
             } else {
-                let stored = ControllerConfig.actionName(from: text)
+                let stored = isEdited ? ControllerConfig.actionName(from: text) : name
                 Text("\(stored == name || stored.isEmpty ? "Saved as" : "Will save as") \(stored.isEmpty ? name : stored)")
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -316,8 +326,12 @@ private struct ActionNameField: View {
     }
 
     private func commit() {
+        guard isEdited else { return }
         error = onCommit(text)
-        if error == nil { text = ConfigDescriber.title(ControllerConfig.actionName(from: text)) }
+        if error == nil {
+            text = ConfigDescriber.title(ControllerConfig.actionName(from: text))
+            isEdited = false
+        }
     }
 }
 
