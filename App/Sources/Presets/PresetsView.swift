@@ -36,10 +36,8 @@ struct PresetsView: View {
                     presetPicker
                     if let configCard { configCard }
                     if let preset = selection.preset {
-                        SetupTweaksView(selection: selection)
+                        SetupRulesView(selection: selection, signals: signals)
                             .id(selection.draftRevision)
-                            .disabled(model.phase != .idle)
-                        RuleEditorView(config: configBinding, signals: signals)
                             .disabled(model.phase != .idle)
                         draftReset
                         DisclosureGroup("What this setup does") {
@@ -230,10 +228,6 @@ struct PresetsView: View {
 
     private var pendingTitle: String {
         selection.isModified ? "\(selection.changeCount) changes" : "Preset pending"
-    }
-
-    private var configBinding: Binding<ControllerConfig> {
-        Binding(get: { selection.editableConfig ?? ControllerConfig() }, set: { selection.updateConfig($0) })
     }
 
     private var replacingPreset: Binding<Bool> {
