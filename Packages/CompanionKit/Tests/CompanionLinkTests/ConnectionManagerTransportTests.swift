@@ -76,6 +76,33 @@ final class ConnectionManagerTransportTests: XCTestCase {
         XCTAssertEqual(bench.radio.receivedWrites.map(\.data), [selector])
     }
 
+    func testOutputCatalogSelectorAndReadUseTheOutputEndpoint() async throws {
+        let bench = Bench()
+        let transport = ConnectionManagerTransport(manager: bench.manager)
+        await bench.connect()
+        let selector = Data([1, 0x78, 0x56, 0x34, 0x12, 200, 0])
+        let page = Data([1, 0x78, 0x56, 0x34, 0x12, 201, 0, 200, 0, 1, 0, 0xAA])
+        let reads = LockedEvents()
+        bench.radio.readHandler = { _, uuid in
+            reads.append(uuid.string)
+            return uuid == CompanionGATT.outputCatalog ? .success(page) : .failure(.characteristicNotFound(uuid))
+        }
+        bench.radio.writeHandler = { uuid, value in
+            uuid == CompanionGATT.outputCatalog && value == selector ? nil : .other("Unexpected endpoint")
+        }
+        let write = Task { try await transport.write(selector, to: .outputCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        try await write.value
+        let read = Task { try await transport.read(.outputCatalog) }
+        await bench.settle { bench.scheduler.nextDelay != nil }
+        bench.scheduler.runUntilIdle()
+        let value = try await read.value
+        XCTAssertEqual(value, page)
+        XCTAssertEqual(reads.values, [CompanionGATT.outputCatalog.string])
+        XCTAssertEqual(bench.radio.receivedWrites.map(\.characteristic), [CompanionGATT.outputCatalog])
+    }
+
     func testMissingCatalogKeepsConnectionAndConfigurationUsable() async throws {
         let bench = Bench()
         let transport = ConnectionManagerTransport(manager: bench.manager)

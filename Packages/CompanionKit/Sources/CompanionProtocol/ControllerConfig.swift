@@ -48,6 +48,17 @@ public struct ControllerConfig: Codable, Equatable, Sendable {
         outputs = try container.decodeIfPresent([OutputBinding].self, forKey: .outputs) ?? []
         sinks = try container.decodeIfPresent([String: JSONValue].self, forKey: .sinks) ?? [:]
     }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(actions, forKey: .actions)
+        try container.encode(rules, forKey: .rules)
+        try container.encode(outputs, forKey: .outputs)
+        if !sinks.isEmpty {
+            try container.encode(sinks, forKey: .sinks)
+        }
+    }
 }
 
 extension ControllerConfig {

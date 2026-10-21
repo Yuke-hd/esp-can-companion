@@ -10,12 +10,16 @@ struct SetupRulesView: View {
     var selection: SetupSelection
     /// The connected controller's catalog; empty when none has been discovered.
     var signals: [SignalDescriptor] = []
+    var outputCatalog: OutputCatalog? = nil
     @State private var expanded: Set<Int> = []
     @State private var editing: RuleEditRequest?
 
     var body: some View {
         if let config = selection.editableConfig {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                if let outputCatalog {
+                    OutputCatalogEditor(selection: selection, catalog: outputCatalog)
+                }
                 HStack(alignment: .firstTextBaseline) {
                     Text("RULES").font(Theme.Typography.headline).accessibilityAddTraits(.isHeader)
                     Spacer()
