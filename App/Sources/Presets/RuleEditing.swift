@@ -176,6 +176,7 @@ extension ControllerConfig.OutputBinding {
         case .ledFill: .fill
         case .ledSolid: .solid
         case .ledTransient: .flash
+        case .unknown: .solid
         }
     }
 
@@ -183,6 +184,7 @@ extension ControllerConfig.OutputBinding {
         switch self {
         case .ledEffect(let binding): binding.priority
         case .ledFill(let binding), .ledSolid(let binding), .ledTransient(let binding, _): binding.priority
+        case .unknown: 0
         }
     }
 
@@ -190,6 +192,7 @@ extension ControllerConfig.OutputBinding {
         switch self {
         case .ledEffect: nil
         case .ledFill(let binding), .ledSolid(let binding), .ledTransient(let binding, _): binding
+        case .unknown: nil
         }
     }
 
@@ -212,6 +215,7 @@ extension ControllerConfig.OutputBinding {
         case .ledFill: .ledFill(binding)
         case .ledSolid: .ledSolid(binding)
         case .ledTransient(_, let durationMs): .ledTransient(binding, durationMs: durationMs)
+        case .unknown: self
         }
     }
 
@@ -309,6 +313,10 @@ extension ControllerConfig.OutputBinding {
         case .ledEffect(var binding):
             binding.action = name
             return .ledEffect(binding)
+        case .unknown(let value):
+            guard var object = value.object, object["action"]?.stringValue == action else { return self }
+            object["action"] = .string(name)
+            return .unknown(.object(object))
         default:
             guard var binding = zoneBinding else { return self }
             binding.action = name
