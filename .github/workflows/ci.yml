@@ -14,39 +14,18 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Jobs run in parallel. The package and app tests are separate jobs because the
+# app build recompiles every package anyway, so one job running both gained
+# nothing from shared derived data. Five macOS jobs fit the free-plan limit.
 jobs:
-  build-and-test:
-    name: Build and test
+  package-tests:
+    name: Package tests
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select Xcode
-        # Newest installed Xcode 16 or later; falls back to the image default if none match.
-        run: |
-          xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null \
-            | grep -E 'Xcode_(1[6-9]|[2-9][0-9])(\.[0-9]+)*\.app$' | sort -V | tail -1 || true)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
-          xcodebuild -version
-
-      - name: Install XcodeGen
-        run: brew install xcodegen xcbeautify
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Wait for simulator
-        # CoreSimulator can still be loading when a job starts, so xcodebuild
-        # sees no iOS devices and fails the destination lookup.
-        run: |
-          for _ in $(seq 1 18); do
-            if xcrun simctl list devices available | grep -q "iPhone 16 Pro ("; then exit 0; fi
-            sleep 10
-          done
-          echo "::error::iPhone 16 Pro simulator did not become available"
-          xcrun simctl list devices available
-          exit 1
+      - uses: ./.github/actions/setup-ios
 
       - name: Test CompanionKit package
         working-directory: Packages/CompanionKit
@@ -57,6 +36,15 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
+  app-tests:
+    name: App tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-ios
 
       - name: Build and test app
         run: |
@@ -71,47 +59,32 @@ jobs:
   ui-tests:
     # Launches the app in the simulator and checks Drive's navigation,
     # rotation, on-screen layout and demo readouts through accessibility.
-    # A separate job so it runs in parallel and fails as its own check.
-    name: UI tests
+    # The tests wait on real-time demo scenarios and take about 13 minutes
+    # in a row, so they are split across shards that run in parallel.
+    name: UI tests (${{ matrix.shard }}/3)
     runs-on: macos-15
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select Xcode
-        # Newest installed Xcode 16 or later; falls back to the image default if none match.
-        run: |
-          xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null \
-            | grep -E 'Xcode_(1[6-9]|[2-9][0-9])(\.[0-9]+)*\.app$' | sort -V | tail -1 || true)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
-          xcodebuild -version
-
-      - name: Install XcodeGen
-        run: brew install xcodegen xcbeautify
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Wait for simulator
-        # CoreSimulator can still be loading when a job starts, so xcodebuild
-        # sees no iOS devices and fails the destination lookup.
-        run: |
-          for _ in $(seq 1 18); do
-            if xcrun simctl list devices available | grep -q "iPhone 16 Pro ("; then exit 0; fi
-            sleep 10
-          done
-          echo "::error::iPhone 16 Pro simulator did not become available"
-          xcrun simctl list devices available
-          exit 1
+      - uses: ./.github/actions/setup-ios
 
       - name: Run UI tests
         run: |
           set -o pipefail
+          only_testing=$(.github/scripts/ui-test-shard.sh $(( ${{ matrix.shard }} - 1 )) 3)
+          echo "Shard ${{ matrix.shard }}: $only_testing"
+          # shellcheck disable=SC2086 # one word per -only-testing argument
           xcodebuild test \
             -project CANCompanion.xcodeproj \
             -scheme "CANCompanion UI Tests" \
             -destination "$DESTINATION" \
             -resultBundlePath UITests.xcresult \
+            $only_testing \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
       - name: Upload UI test results
@@ -119,6 +92,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ui-test-results
+          name: ui-test-results-${{ matrix.shard }}
           path: UITests.xcresult
           if-no-files-found: ignore
