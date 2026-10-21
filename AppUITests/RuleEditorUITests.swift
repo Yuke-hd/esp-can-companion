@@ -125,7 +125,12 @@ final class RuleEditorUITests: XCTestCase {
     private func collapseAndExpandRule(at index: Int) {
         let toggle = app.buttons["rules.toggle.\(index)"]
         let name = app.textFields["rules.name.\(index)"]
-        for _ in 0..<4 where !toggle.isHittable { app.swipeDown() }
+        for _ in 0..<8 where !toggle.isHittable {
+            // The header is above the action name. Scroll toward whichever
+            // control is currently offscreen so simulator layout changes do
+            // not leave the toggle just outside the viewport.
+            if name.isHittable { app.swipeDown() } else { app.swipeUp() }
+        }
         XCTAssertTrue(toggle.isHittable)
         toggle.tap()
         XCTAssertTrue(name.waitForNonExistence(timeout: 5))
