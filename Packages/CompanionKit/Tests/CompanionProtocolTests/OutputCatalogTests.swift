@@ -18,6 +18,29 @@ final class OutputCatalogTests: XCTestCase {
         XCTAssertTrue(try OutputCatalog(decoding: Data(#"{"ignored":true,"outputs":[{"type":"x","sink":"s","fields":[{"name":"value","kind":"future","required":true,"ignored":1}]}]}"#.utf8)).outputs[0].isEditable == false)
     }
 
+    func testIntegerAttributeRejectsRoundedUpperBoundWithoutTrapping() throws {
+        for value in ["9223372036854775808", "1.5", "-9223372036854777856"] {
+            let json = "{\"name\":\"value\",\"kind\":\"integer\",\"required\":true,\"max\":\(value)}"
+            let field = try JSONDecoder().decode(OutputCatalog.Field.self, from: Data(json.utf8))
+            XCTAssertNil(field.integer("max"), value)
+        }
+    }
+
+    func testSharedIntegerConversionHandlesFloatingPointLimits() {
+        XCTAssertNil(JSONValue.number(Double(Int.max)).integerValue)
+        XCTAssertNil(JSONValue.number(.infinity).integerValue)
+        XCTAssertNil(JSONValue.number(.nan).integerValue)
+        XCTAssertNil(JSONValue.number(1.5).integerValue)
+        XCTAssertEqual(JSONValue.number(Double(Int.min)).integerValue, Int.min)
+        XCTAssertEqual(JSONValue.number(Double(Int.max).nextDown).integerValue, Int.max - 1023)
+    }
+
+    func testCatalogPreservesExactMaximumInteger() throws {
+        let json = "{\"name\":\"value\",\"kind\":\"integer\",\"required\":true,\"max\":\(Int.max)}"
+        let field = try JSONDecoder().decode(OutputCatalog.Field.self, from: Data(json.utf8))
+        XCTAssertEqual(field.integer("max"), Int.max)
+    }
+
     func testMissingOutputsAndDuplicateTypesAreRejected() {
         for json in [
             #"{"sinks":[]}"#,

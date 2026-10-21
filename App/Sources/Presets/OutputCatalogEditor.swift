@@ -228,9 +228,7 @@ struct OutputCatalogEditor: View {
     }
 
     private func numeric(_ value: JSONValue?) -> Int? {
-        guard case .number(let number)? = value, number.isFinite, number.rounded() == number,
-              number >= Double(Int.min), number <= Double(Int.max) else { return nil }
-        return Int(number)
+        value?.integerValue
     }
 
     private func rawJSON(_ value: JSONValue) -> some View {

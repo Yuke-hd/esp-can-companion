@@ -406,6 +406,13 @@ extension ControllerConfig {
             case type, action, effect, priority, zone, color, durationMs = "duration_ms"
         }
 
+        private static func knownFields(for type: String) -> Set<String> {
+            let common: Set<String> = ["type", "action", "priority"]
+            if type == "led_effect" { return common.union(["effect"]) }
+            let zone = common.union(["zone", "color"])
+            return type == "led_transient" ? zone.union(["duration_ms"]) : zone
+        }
+
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             let type = try container.decode(String.self, forKey: .type)
@@ -427,8 +434,7 @@ extension ControllerConfig {
             }
             let action = try container.decode(String.self, forKey: .action)
             let priority = try container.decodeIfPresent(Int.self, forKey: .priority) ?? Self.defaultPriority
-            let known = ["type", "action", "effect", "priority", "zone", "color", "duration_ms"]
-            let extra = try Self.unknownFields(from: decoder, excluding: Set(known))
+            let extra = try Self.unknownFields(from: decoder, excluding: Self.knownFields(for: type))
             func zoneBinding() throws -> ZoneBinding {
                 ZoneBinding(
                     action: action,
@@ -468,7 +474,7 @@ extension ControllerConfig {
                 try container.encode(binding.zone, forKey: .zone)
                 try container.encode(binding.color, forKey: .color)
                 try container.encode(binding.priority, forKey: .priority)
-                try Self.encode(binding.additionalFields, to: encoder, excluding: ["type", "action", "zone", "color", "priority", "duration_ms"])
+                try Self.encode(binding.additionalFields, to: encoder, excluding: Self.knownFields(for: type))
             }
             switch self {
             case .ledEffect(let binding):
@@ -476,7 +482,7 @@ extension ControllerConfig {
                 try container.encode(binding.action, forKey: .action)
                 try container.encode(binding.effect, forKey: .effect)
                 try container.encode(binding.priority, forKey: .priority)
-                try Self.encode(binding.additionalFields, to: encoder, excluding: ["type", "action", "effect", "priority", "zone", "color", "duration_ms"])
+                try Self.encode(binding.additionalFields, to: encoder, excluding: Self.knownFields(for: "led_effect"))
             case .ledFill(let binding):
                 try encode(binding, type: "led_fill")
             case .ledTransient(let binding, let durationMs):
