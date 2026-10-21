@@ -145,6 +145,12 @@ final class DriveNavigationUITests: XCTestCase {
 
     func testDriveStyleButtonSwitchesToClusterAndBack() {
         launch(scenario: "driveLaps")
+        // The tab bar appears before session loading and paged catalog discovery
+        // finish. Establish live telemetry before testing its presentation.
+        let frameRate = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "frames per second")
+        ).firstMatch
+        XCTAssertTrue(frameRate.waitForExistence(timeout: 60), "demo telemetry did not become live")
         openDrive()
         waitForLandscape()
         let cluster = app.descendants(matching: .any)["drive.cluster"]
@@ -170,6 +176,7 @@ final class DriveNavigationUITests: XCTestCase {
         style.tap()
         XCTAssertTrue(cluster.waitForNonExistence(timeout: 5), "second tap should return to Motorsport")
         XCTAssertTrue(throttle.waitForExistence(timeout: 5))
+        assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
     }
 
     private func launchConnected() {
