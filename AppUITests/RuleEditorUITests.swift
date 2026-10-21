@@ -126,10 +126,9 @@ final class RuleEditorUITests: XCTestCase {
         let toggle = app.buttons["rules.toggle.\(index)"]
         let name = app.textFields["rules.name.\(index)"]
         for _ in 0..<8 where !toggle.isHittable {
-            // The header is above the action name. Scroll toward whichever
-            // control is currently offscreen so simulator layout changes do
-            // not leave the toggle just outside the viewport.
-            if name.isHittable { app.swipeDown() } else { app.swipeUp() }
+            // The header is above the visible action name, so scroll back
+            // toward the top until the header enters the viewport.
+            app.swipeDown()
         }
         XCTAssertTrue(toggle.isHittable)
         toggle.tap()
