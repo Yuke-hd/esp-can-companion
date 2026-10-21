@@ -99,6 +99,7 @@ extension ConfigSummary.Output {
     /// as RGB 0·16·32 still reads as blue. Built-in effects use the turn
     /// signal yellow.
     var swatch: ColorToken {
+        guard kind != .unknown else { return Theme.Palette.textSecondary }
         guard let color else { return Theme.Palette.signalYellow }
         let top = Double(max(color.red, color.green, color.blue))
         guard top > 0 else { return Theme.Palette.textSecondary }
@@ -111,6 +112,7 @@ extension ConfigSummary.Output {
         case .fill: "Fill"
         case .flash: "Flash"
         case .solid: "Solid"
+        case .unknown: "Unsupported"
         }
     }
 

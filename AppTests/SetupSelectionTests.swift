@@ -162,6 +162,33 @@ final class SetupSelectionTests: XCTestCase {
         XCTAssertEqual(selection.preset, base)
     }
 
+    func testCatalogOutputAndSinkEditsPreserveUnlistedBindings() throws {
+        let selection = SetupSelection()
+        var base = try XCTUnwrap(PresetCatalog.bundled().first)
+        base.config.outputs.append(.unknown(.object(["type": .string("future_output"), "action": .string("future")])))
+        let fillIndex = try XCTUnwrap(base.config.outputs.firstIndex(where: { $0.action == "rpm_fill" }))
+        selection.select(base)
+        selection.setCatalogField("zone", value: .object(["start": .number(4), "length": .number(20),
+                                                           "direction": .string("start_to_end")]),
+                                  outputType: "led_fill", outputIndex: fillIndex)
+        selection.setCatalogField("effect", value: .string("brake"), outputType: "led_effect", outputIndex: 3)
+        selection.setCatalogSinkSetting("pixel_count", value: .number(175), sink: "local_argb")
+        let edited = try XCTUnwrap(selection.editableConfig)
+        XCTAssertEqual(edited.sinks["local_argb"]?.object?["pixel_count"], .number(175))
+        XCTAssertEqual(edited.outputs.last, base.config.outputs.last)
+        XCTAssertEqual(edited.outputs.first(where: { $0.action == "rpm_fill" })?.action, "rpm_fill")
+        guard case .ledFill = try XCTUnwrap(edited.outputs.first(where: { $0.action == "rpm_fill" })) else {
+            return XCTFail("Known catalog output types remain represented as known bindings")
+        }
+        guard case .ledEffect(let firstHazard) = edited.outputs[2],
+              case .ledEffect(let secondHazard) = edited.outputs[3] else {
+            return XCTFail("Duplicate actions remain represented as their distinct output bindings")
+        }
+        XCTAssertEqual(firstHazard.effect, .leftTurn)
+        XCTAssertEqual(secondHazard.effect, .brake)
+        XCTAssertTrue(selection.isModified)
+    }
+
     func testReselectingBaseKeepsTweaksAndSelectingAnotherBaseResetsThem() throws {
         let presets = try PresetCatalog.bundled()
         let selection = SetupSelection()
