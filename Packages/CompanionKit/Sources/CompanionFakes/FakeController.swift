@@ -56,6 +56,9 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
     public var catalogPageOffset = 0
     public var catalogPageLength = 200
     public var catalogReadOverride: Data?
+    public var outputCatalogDocument = Data(#"{"outputs":[]}"#.utf8)
+    public var outputCatalogPageOffset = 0
+    public var outputCatalogReadOverride: Data?
     public var readDelay: Duration?
     public var hangingReads: Set<CompanionCharacteristic> = []
 
@@ -128,6 +131,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             buffer = Data()
             readPageOffset = 0
             catalogPageOffset = 0
+            outputCatalogPageOffset = 0
             isConnected = true
         }
     }
@@ -151,6 +155,7 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
             case .configStatus: return statusValue()
             case .config: return readPage()
             case .signalCatalog: return try catalogPage()
+            case .outputCatalog: return try outputCatalogPage()
             case .liveSignals, .extensibleLiveSignals, .command: throw CompanionTransportError.att(.unknown(0x02))
             }
         }
@@ -185,6 +190,9 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
                 case .signalCatalog:
                     guard deviceInfo.supportsExtensibleLiveSignals else { throw CompanionTransportError.att(.unknown(0x03)) }
                     try handleCatalogSelector(value)
+                case .outputCatalog:
+                    guard deviceInfo.supportsOutputCatalog else { throw CompanionTransportError.att(.unknown(0x03)) }
+                    try handleOutputCatalogSelector(value)
                 default: throw CompanionTransportError.att(.unknown(0x03))
                 }
                 if before != (state, result) { notifications.append(statusValue()) }
@@ -386,6 +394,30 @@ public final class FakeController: CompanionTransport, @unchecked Sendable {
         let end = min(catalogDocument.count, catalogPageOffset + catalogPageLength)
         value.appendLE(UInt16(end - catalogPageOffset))
         value.append(catalogDocument[catalogPageOffset..<end])
+        return value
+    }
+
+    private func handleOutputCatalogSelector(_ value: Data) throws {
+        guard value.count == 7 else { throw CompanionTransportError.att(.unknown(0x0D)) }
+        guard value.first == 1 else { throw CompanionTransportError.att(.known(.unsupportedOperation)) }
+        let selector = try SignalCatalogSelector(decoding: value)
+        guard selector.token == catalogToken else { throw CompanionTransportError.att(.known(.invalidState)) }
+        guard Int(selector.offset) <= outputCatalogDocument.count else { throw CompanionTransportError.att(.known(.invalidPDU)) }
+        outputCatalogPageOffset = Int(selector.offset)
+    }
+
+    private func outputCatalogPage() throws -> Data {
+        guard deviceInfo.supportsOutputCatalog else {
+            throw CompanionTransportError.other("Output catalog characteristic is unavailable.")
+        }
+        if let outputCatalogReadOverride { return outputCatalogReadOverride }
+        var value = Data([1])
+        value.appendLE(catalogToken)
+        value.appendLE(UInt16(outputCatalogDocument.count))
+        value.appendLE(UInt16(outputCatalogPageOffset))
+        let end = min(outputCatalogDocument.count, outputCatalogPageOffset + catalogPageLength)
+        value.appendLE(UInt16(end - outputCatalogPageOffset))
+        value.append(outputCatalogDocument[outputCatalogPageOffset..<end])
         return value
     }
 }

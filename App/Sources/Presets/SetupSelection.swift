@@ -1,4 +1,5 @@
 import Observation
+import Foundation
 import PresetSync
 import CompanionProtocol
 
@@ -124,6 +125,55 @@ final class SetupSelection {
     func setOutput(_ settings: ActionOutputSettings, for action: SetupAction) {
         guard let updated = tweaks?.settingOutput(settings, for: action) else { return }
         updateConfig(updated.config)
+    }
+
+    func setCatalogField(_ field: String, value: JSONValue, outputType: String, outputIndex: Int) {
+        guard var config = editableConfig, config.outputs.indices.contains(outputIndex),
+              outputValue(config.outputs[outputIndex])?.object?["type"]?.stringValue == outputType,
+              var object = outputValue(config.outputs[outputIndex])?.object else { return }
+        object[field] = value
+        config.outputs[outputIndex] = decodeOutput(object) ?? .unknown(.object(object))
+        updateConfig(config)
+    }
+
+    func addCatalogOutput(_ output: OutputCatalog.Output) {
+        guard output.isEditable, var config = editableConfig else { return }
+        var object: [String: JSONValue] = ["type": .string(output.type)]
+        for field in output.fields {
+            switch field.kind {
+            case "action": object[field.name] = .string("")
+            case "integer": object[field.name] = .number(Double(field.integer("default") ?? field.integer("min") ?? 0))
+            case "enum": object[field.name] = .string(field.stringArray("values")?.first ?? "")
+            case "rgb":
+                let channel = Double(field.integer("min") ?? 0)
+                object[field.name] = .object(["red": .number(channel), "green": .number(channel), "blue": .number(channel)])
+            case "zone":
+                object[field.name] = .object(["start": .number(0), "length": .number(1),
+                                              "direction": .string(field.stringArray("directions")?.first ?? "")])
+            default: break
+            }
+        }
+        config.outputs.append(decodeOutput(object) ?? .unknown(.object(object)))
+        updateConfig(config)
+    }
+
+    func setCatalogSinkSetting(_ field: String, value: JSONValue, sink: String) {
+        guard var config = editableConfig else { return }
+        var settings = config.sinks[sink]?.object ?? [:]
+        settings[field] = value
+        config.sinks[sink] = .object(settings)
+        updateConfig(config)
+    }
+
+    private func outputValue(_ output: ControllerConfig.OutputBinding) -> JSONValue? {
+        if case .unknown(let json) = output { return json }
+        guard let data = try? JSONEncoder().encode(output) else { return nil }
+        return try? JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    private func decodeOutput(_ object: [String: JSONValue]) -> ControllerConfig.OutputBinding? {
+        guard let data = try? JSONEncoder().encode(JSONValue.object(object)) else { return nil }
+        return try? JSONDecoder().decode(ControllerConfig.OutputBinding.self, from: data)
     }
 
     /// Accepts a complete editor draft; local RPM checks also apply to advanced edits.

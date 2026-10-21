@@ -29,7 +29,7 @@ public struct FakeController: Sendable {
     public var protocolMajor: UInt8
     /// When set, connection attempts fail with this error instead of connecting.
     public var connectError: RadioError?
-    public var availableCharacteristics: Set<GATTUUID> = [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus, CompanionGATT.liveSignals, CompanionGATT.command, CompanionGATT.signalCatalog, CompanionGATT.extensibleLiveSignals]
+    public var availableCharacteristics: Set<GATTUUID> = [CompanionGATT.deviceInfo, CompanionGATT.config, CompanionGATT.configStatus, CompanionGATT.liveSignals, CompanionGATT.command, CompanionGATT.signalCatalog, CompanionGATT.outputCatalog, CompanionGATT.extensibleLiveSignals]
     public var maximumWriteLength: Int
 
     public init(

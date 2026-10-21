@@ -144,6 +144,7 @@ private struct SetupTab: View {
     var model: AppModel
     @State private var selection = SetupSelection()
     @State private var catalog: SignalCatalog?
+    @State private var outputCatalog: OutputCatalog?
 
     var body: some View {
         if let session = model.session, let sync = model.presetSync {
@@ -151,14 +152,16 @@ private struct SetupTab: View {
                 PresetsView(model: sync, selection: selection,
                             isConnected: session.phase == .ready,
                             isActiveConfigCurrent: model.hasCurrentPresetRead,
-                            signals: catalog?.descriptors ?? [])
+                            signals: catalog?.descriptors ?? [], outputCatalog: outputCatalog)
             }
             // The client downloads the catalog once per connection and shares it
             // with live telemetry; a controller without one keeps the fallback list.
             .task(id: session.phase == .ready) {
                 catalog = nil
+                outputCatalog = nil
                 guard session.phase == .ready else { return }
                 catalog = try? await session.client.discoverSignalCatalog()
+                outputCatalog = try? await session.client.discoverOutputCatalog()
             }
         } else {
             PlaceholderScreen(

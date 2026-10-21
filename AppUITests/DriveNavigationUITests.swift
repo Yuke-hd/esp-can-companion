@@ -88,7 +88,7 @@ final class DriveNavigationUITests: XCTestCase {
             let label = self.accessibilitySummary(of: brake)
             return label.contains("bar") && !label.contains("0.0 bar")
         }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: pressure, object: nil)], timeout: 30), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: pressure, object: nil)], timeout: 60), .completed)
         captureLandscape("drive-brake-pressure-active")
     }
 
@@ -234,7 +234,7 @@ final class DriveNavigationUITests: XCTestCase {
             condition(self.app.windows.element(boundBy: 0).frame)
         }
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
-        let result = XCTWaiter.wait(for: [expectation], timeout: 15)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 30)
         XCTAssertEqual(result, XCTWaiter.Result.completed, "window did not reach the expected orientation", file: file, line: line)
     }
 

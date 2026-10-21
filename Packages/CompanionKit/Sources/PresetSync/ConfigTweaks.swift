@@ -123,7 +123,7 @@ public struct ConfigTweaks: Equatable, Sendable {
     private static func zoneBinding(_ output: ControllerConfig.OutputBinding) -> ControllerConfig.ZoneBinding? {
         switch output {
         case .ledFill(let binding), .ledSolid(let binding), .ledTransient(let binding, _): binding
-        case .ledEffect: nil
+        case .ledEffect, .unknown: nil
         }
     }
 
@@ -132,7 +132,7 @@ public struct ConfigTweaks: Equatable, Sendable {
         case .ledFill: .ledFill(binding)
         case .ledSolid: .ledSolid(binding)
         case .ledTransient(_, let duration): .ledTransient(binding, durationMs: duration)
-        case .ledEffect: output
+        case .ledEffect, .unknown: output
         }
     }
 

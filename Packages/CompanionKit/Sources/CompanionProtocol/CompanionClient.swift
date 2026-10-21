@@ -4,6 +4,7 @@ import Foundation
 public enum CompanionOperationStep: Equatable, Sendable {
     case readDeviceInfo
     case readSignalCatalog
+    case readOutputCatalog
     case readConfigStatus
     case readConfig
     case abort
@@ -19,6 +20,8 @@ public enum CompanionClientError: Error, Equatable, Sendable {
     case deviceInfoNotRead
     case signalCatalogUnavailable
     case signalCatalogInconsistent
+    case outputCatalogUnavailable
+    case outputCatalogInconsistent
     case connectionChanged
     /// The controller speaks a protocol major version this app does not
     /// support. The app or the firmware needs an update.
@@ -121,11 +124,13 @@ public actor CompanionClient {
     private var legacyActivationInProgress = false
     /// Complete mapping for this connection; nil after reset or token invalidation.
     public internal(set) var signalCatalog: SignalCatalog?
+    public internal(set) var outputCatalog: OutputCatalog?
     var extensibleTelemetrySession: ExtensibleTelemetrySession?
     var catalogGeneration: UInt64 = 0
     var catalogOperationInProgress = false
     var catalogTransportRequest: UUID?
     var catalogDiscoveryToken: UInt32?
+    var outputCatalogDiscoveryToken: UInt32?
 
     public init(transport: CompanionTransport, timeouts: Timeouts = Timeouts()) {
         self.transport = transport
@@ -153,7 +158,9 @@ public actor CompanionClient {
         legacyStreamFinish = nil
         deviceInfo = nil
         signalCatalog = nil
+        outputCatalog = nil
         catalogDiscoveryToken = nil
+        outputCatalogDiscoveryToken = nil
         catalogGeneration &+= 1
     }
 

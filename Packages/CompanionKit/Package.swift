@@ -23,7 +23,11 @@ let package = Package(
     targets: [
         .target(name: "BLETransport"),
         .target(name: "CompanionProtocol"),
-        .target(name: "CompanionLink", dependencies: ["BLETransport", "CompanionProtocol", "PresetSync", "CompanionFakes"]),
+        .target(
+            name: "CompanionLink",
+            dependencies: ["BLETransport", "CompanionProtocol", "PresetSync", "CompanionFakes"],
+            resources: [.copy("Resources")]
+        ),
         .target(
             name: "PresetSync",
             dependencies: ["CompanionProtocol"],

@@ -221,7 +221,7 @@ public final class CoreBluetoothRadio: NSObject, BLERadio {
         let discovered = Set(characteristics.map(gattUUID))
         let usable = Set(characteristics.filter { target in
             let uuid = gattUUID(target)
-            if uuid == CompanionGATT.signalCatalog {
+            if uuid == CompanionGATT.signalCatalog || uuid == CompanionGATT.outputCatalog {
                 return target.properties.contains(.read) && target.properties.contains(.write)
             }
             if live.contains(uuid) { return target.properties.contains(.notify) }

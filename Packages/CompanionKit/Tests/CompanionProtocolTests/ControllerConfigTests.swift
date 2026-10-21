@@ -65,10 +65,52 @@ final class ControllerConfigTests: XCTestCase {
     func testUnknownNamesAreRejected() {
         for json in [
             #"{"version":1,"rules":[{"type":"toggle","action":"a","signal_key":"k"}]}"#,
-            #"{"version":1,"outputs":[{"type":"wled","action":"a"}]}"#,
             #"{"version":1,"rules":[{"type":"state","action":"a","signal_key":"k","comparison":"about","operand":{"number":1}}]}"#,
         ] {
             XCTAssertThrowsError(try ControllerConfig(canonicalJSON: Data(json.utf8)), json)
+        }
+    }
+
+    func testUnknownOutputContentAndSinkSettingsRoundTrip() throws {
+        let json = #"{"version":1,"actions":[],"rules":[],"outputs":[{"type":"future_output","action":"future","vendor":{"mode":"fast"}},{"type":"led_effect","action":"brake","effect":"future_effect","priority":100,"extra":7},{"type":"led_fill","action":"rpm_fill","zone":{"start":0,"length":20,"direction":"future_direction"},"color":{"red":1,"green":2,"blue":3},"priority":4},{"type":"led_fill","action":"known","zone":{"start":0,"length":5,"direction":"start_to_end","vendor_zone":true},"color":{"red":1,"green":2,"blue":3,"vendor_color":"keep"},"priority":5,"vendor_key":{"enabled":true}}],"sinks":{"local_argb":{"pixel_count":175,"vendor":"keep"}}}"#
+        let config = try ControllerConfig(canonicalJSON: Data(json.utf8))
+        let encoded = try config.encodedJSON()
+        let encodedJSON = String(decoding: encoded, as: UTF8.self)
+        for preserved in [
+            #""type":"future_output""#, #""effect":"future_effect""#,
+            #""direction":"future_direction""#, #""vendor":{"mode":"fast"}"#,
+            #""vendor_key":{"enabled":true}"#, #""pixel_count":175"#,
+            #""vendor":"keep""#, #""vendor_zone":true"#,
+            #""vendor_color":"keep""#,
+        ] {
+            XCTAssertTrue(encodedJSON.contains(preserved), "Missing \(preserved) in \(encodedJSON)")
+        }
+        XCTAssertEqual(try ControllerConfig(canonicalJSON: encoded), config)
+    }
+
+    func testFieldsRecognizedByOtherOutputKindsArePreserved() throws {
+        let zone = #""zone":{"start":0,"length":1,"direction":"start_to_end"},"color":{"red":1,"green":2,"blue":3}"#
+        let inputs = [
+            #"{"type":"led_effect","action":"a","priority":100,"effect":"brake","zone":{"future":true},"color":"future","duration_ms":17}"#,
+            "{\"type\":\"led_fill\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+            "{\"type\":\"led_solid\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+            "{\"type\":\"led_transient\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+        ]
+        for input in inputs {
+            let source = Data(input.utf8)
+            let binding = try JSONDecoder().decode(ControllerConfig.OutputBinding.self, from: source)
+            let encoded = try JSONEncoder().encode(binding)
+            XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: source),
+                           try JSONDecoder().decode(JSONValue.self, from: encoded), input)
+        }
+    }
+
+    func testOpaqueIntegerValuesMatchSourceAfterEncoding() throws {
+        for integer in ["9007199254740993", "9223372036854775807", "9223372036854775808", "18446744073709551615", "-9007199254740993"] {
+            let source = "{\"version\":1,\"outputs\":[{\"type\":\"future\",\"counter\":\(integer)}],\"sinks\":{\"future\":{\"counter\":\(integer)}}}"
+            let config = try ControllerConfig(canonicalJSON: Data(source.utf8))
+            let encoded = String(decoding: try config.encodedJSON(), as: UTF8.self)
+            XCTAssertEqual(encoded.components(separatedBy: "\"counter\":\(integer)").count - 1, 2, encoded)
         }
     }
 

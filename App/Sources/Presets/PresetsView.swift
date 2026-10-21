@@ -11,15 +11,17 @@ struct PresetsView: View {
     let isConnected: Bool
     let isActiveConfigCurrent: Bool
     let signals: [SignalDescriptor]
+    let outputCatalog: OutputCatalog?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(model: PresetSyncModel, selection: SetupSelection? = nil, isConnected: Bool = true,
-         isActiveConfigCurrent: Bool = true, signals: [SignalDescriptor] = []) {
+         isActiveConfigCurrent: Bool = true, signals: [SignalDescriptor] = [], outputCatalog: OutputCatalog? = nil) {
         _model = State(initialValue: model)
         _selection = State(initialValue: selection ?? SetupSelection())
         self.isConnected = isConnected
         self.isActiveConfigCurrent = isActiveConfigCurrent
         self.signals = signals
+        self.outputCatalog = outputCatalog
     }
 
     init(link: PresetSyncLink, onChange: (@MainActor () -> Void)? = nil) {
@@ -36,7 +38,7 @@ struct PresetsView: View {
                     presetPicker
                     if let configCard { configCard }
                     if let preset = selection.preset {
-                        SetupRulesView(selection: selection, signals: signals)
+                        SetupRulesView(selection: selection, signals: signals, outputCatalog: outputCatalog)
                             .id(selection.draftRevision)
                             .disabled(model.phase != .idle)
                         draftReset
