@@ -207,7 +207,13 @@ final class DriveNavigationUITests: XCTestCase {
     private func exitDrive() {
         let exit = app.descendants(matching: .any)["drive.exit"]
         XCTAssertTrue(exit.waitForExistence(timeout: 5))
-        exit.tap()
+        // A tap during a layout transition can be dropped. Confirm navigation
+        // completed before checking that the destination rotated to portrait.
+        for _ in 0..<3 {
+            exit.tap()
+            if exit.waitForNonExistence(timeout: 3) { return }
+        }
+        XCTAssertFalse(exit.exists, "Exit Drive did not leave the Drive screen")
     }
 
     private func waitForLandscape() {
