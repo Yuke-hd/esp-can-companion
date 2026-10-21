@@ -37,12 +37,14 @@ final class ConfigTweaksTests: XCTestCase {
     }
 
     func testBrakeOutputEditsPreserveTheFactoryBrakeRuleAndOtherBindings() throws {
-        let original = try PresetCatalog.bundled()[0].config
+        var original = try PresetCatalog.bundled()[0].config
+        original.outputs.append(.unknown(.object(["type": .string("future_output"), "action": .string("future")])))
         let settings = ActionOutputSettings(color: .init(red: 16, green: 0, blue: 4),
                                             zone: .init(start: 20, length: 40, direction: .centerOut), priority: 220)
         let tweaks = ConfigTweaks(config: original).settingOutput(settings, for: .brake)
         XCTAssertEqual(tweaks.output(for: .brake), settings)
         XCTAssertEqual(tweaks.config.rules, original.rules)
+        XCTAssertEqual(tweaks.config.outputs.last, original.outputs.last)
         XCTAssertEqual(tweaks.config.outputs.filter { $0.action != "brake" }, original.outputs.filter { $0.action != "brake" })
         guard case .ledSolid = try XCTUnwrap(tweaks.config.outputs.first { $0.action == "brake" }) else {
             return XCTFail("Brake output remains solid")
