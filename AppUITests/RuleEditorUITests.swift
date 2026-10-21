@@ -124,12 +124,13 @@ final class RuleEditorUITests: XCTestCase {
     private func collapseAndExpandRule(at index: Int) {
         let toggle = app.buttons["rules.toggle.\(index)"]
         let name = app.textFields["rules.name.\(index)"]
+        let scrollView = app.scrollViews.firstMatch
         for _ in 0..<8 where !toggle.isHittable {
             // The header is above the visible action name, so scroll back
             // toward the top until the header enters the viewport.
-            app.swipeDown()
+            scrollView.swipeDown()
         }
-        XCTAssertTrue(toggle.isHittable)
+        XCTAssertTrue(toggle.isHittable, "Rule header must be reachable after scrolling up")
         toggle.tap(until: name, appearing: false)
         XCTAssertTrue(name.waitForNonExistence(timeout: 5))
         toggle.tap(until: name)

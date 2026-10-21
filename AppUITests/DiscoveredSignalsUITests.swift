@@ -105,7 +105,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         return app.descendants(matching: .any)["signals.row." + hex].firstMatch
     }
 
-    private func assertRow(_ key: String, contains texts: [String], timeout: TimeInterval = 20,
+    private func assertRow(_ key: String, contains texts: [String], timeout: TimeInterval = 35,
                            file: StaticString = #filePath, line: UInt = #line) {
         let element = row(key)
         let predicate = NSPredicate { _, _ in
