@@ -57,9 +57,9 @@ manual workflow while tooling is incomplete; do not call missing tooling a pass.
 
 ## Preview on a phone
 
-Follow [development signing](../../README.md#install-on-your-own-iphone-development-signing)
-in the root README. In Xcode, edit the `CANCompanion` scheme's Run action,
-under Arguments Passed On Launch. Add these four separate enabled entries:
+Follow [development signing](getting-started.md#install-on-your-own-iphone-development-signing)
+in the build and development guide. In Xcode, edit the `CANCompanion` scheme's
+Run action, under Arguments Passed On Launch. Add these four separate enabled entries:
 
 ```text
 -FakeController
