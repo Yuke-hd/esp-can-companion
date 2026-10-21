@@ -88,6 +88,32 @@ final class ControllerConfigTests: XCTestCase {
         XCTAssertEqual(try ControllerConfig(canonicalJSON: encoded), config)
     }
 
+    func testFieldsRecognizedByOtherOutputKindsArePreserved() throws {
+        let zone = #""zone":{"start":0,"length":1,"direction":"start_to_end"},"color":{"red":1,"green":2,"blue":3}"#
+        let inputs = [
+            #"{"type":"led_effect","action":"a","priority":100,"effect":"brake","zone":{"future":true},"color":"future","duration_ms":17}"#,
+            "{\"type\":\"led_fill\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+            "{\"type\":\"led_solid\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+            "{\"type\":\"led_transient\",\"action\":\"a\",\"priority\":100,\(zone),\"effect\":\"future\",\"duration_ms\":17}",
+        ]
+        for input in inputs {
+            let source = Data(input.utf8)
+            let binding = try JSONDecoder().decode(ControllerConfig.OutputBinding.self, from: source)
+            let encoded = try JSONEncoder().encode(binding)
+            XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: source),
+                           try JSONDecoder().decode(JSONValue.self, from: encoded), input)
+        }
+    }
+
+    func testOpaqueIntegerValuesMatchSourceAfterEncoding() throws {
+        for integer in ["9007199254740993", "9223372036854775807", "9223372036854775808", "18446744073709551615", "-9007199254740993"] {
+            let source = "{\"version\":1,\"outputs\":[{\"type\":\"future\",\"counter\":\(integer)}],\"sinks\":{\"future\":{\"counter\":\(integer)}}}"
+            let config = try ControllerConfig(canonicalJSON: Data(source.utf8))
+            let encoded = String(decoding: try config.encodedJSON(), as: UTF8.self)
+            XCTAssertEqual(encoded.components(separatedBy: "\"counter\":\(integer)").count - 1, 2, encoded)
+        }
+    }
+
     func testPersistedNamesMatchTheSpec() {
         XCTAssertEqual(ControllerConfig.Comparison.allCases.map(\.rawValue),
                        ["equal", "not_equal", "less", "less_or_equal", "greater", "greater_or_equal"])

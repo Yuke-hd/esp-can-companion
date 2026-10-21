@@ -85,9 +85,7 @@ public struct OutputCatalog: Equatable, Sendable {
         }
 
         public func integer(_ key: String) -> Int? {
-            guard case .number(let value)? = attributes[key], value.isFinite,
-                  value.rounded() == value, value >= Double(Int.min), value <= Double(Int.max) else { return nil }
-            return Int(value)
+            attributes[key]?.integerValue
         }
 
         public func string(_ key: String) -> String? { attributes[key]?.stringValue }

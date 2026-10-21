@@ -104,7 +104,7 @@ final class HomeViewTests: XCTestCase {
         connection.connect(to: connection.discoveredDevices[0].id)
         try await waitUntil { session.phase == .ready }
 
-        XCTAssertEqual(session.deviceInfo?.protocolText, "v1.1")
+        XCTAssertEqual(session.deviceInfo?.protocolText, "v1.2")
         XCTAssertEqual(session.configStatus?.activeSource.title, "Factory default")
         guard case .summary(let summary)? = session.activeConfig else { return XCTFail("expected a summary") }
         XCTAssertEqual(summary.actions.count, 6)
