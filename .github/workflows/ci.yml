@@ -74,15 +74,9 @@ jobs:
 
       - uses: ./.github/actions/fetch-enginesim
 
-      - name: Install libc++
-        # Package.swift links c++, which the stock Linux toolchain lacks.
-        run: apt-get update && apt-get install -y libc++-dev libc++abi-dev
-
       - name: Test EngineSim package
         working-directory: Packages/EngineSim
-        # Upstream calls fpclassify unqualified, which libstdc++ only declares
-        # in std:: unless math.h is included.
-        run: swift test -c release -Xcxx -include -Xcxx math.h
+        run: swift test -c release
 
   package-tests:
     name: Package tests
