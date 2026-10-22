@@ -12,6 +12,7 @@
 #include "synthesizer.h"
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -51,7 +52,7 @@ EngineSimCore *engine_sim_create_ls_v8(int simulationFrequency) {
     audio.dF_F_mix = static_cast<float>(engine->getInitialHighFrequencyGain());
     // Headroom: the leveler smooths its gain, so peaks overshoot the target and
     // clip at the stock 30000.
-    audio.levelerTarget = 20000.0f;
+    audio.levelerTarget = 16000.0f;
     sim->synthesizer().setAudioParameters(audio);
 
     std::vector<int16_t> samples;
@@ -84,6 +85,21 @@ void engine_sim_hold_rpm(EngineSimCore *core, double rpm) {
     core->simulator->m_dyno.m_rotationSpeed = units::rpm(rpm);
 }
 
+// The leveler adapts its gain slowly (and boosts quiet passages up to 1.9x), so a
+// sudden loud firing pulse can overshoot into hard clipping, which is audible as
+// a crack. This stateless soft knee bends such peaks smoothly below full scale.
+static void softLimit(int16_t *samples, int count) {
+    constexpr float knee = 20000.0f;
+    constexpr float headroom = 12000.0f;
+    for (int i = 0; i < count; ++i) {
+        const float x = samples[i];
+        const float magnitude = std::fabs(x);
+        if (magnitude <= knee) continue;
+        const float limited = knee + headroom * std::tanh((magnitude - knee) / headroom);
+        samples[i] = (int16_t)std::copysign(limited, x);
+    }
+}
+
 static int renderLoop(EngineSimCore *core, int16_t *out, int sampleCount, bool synchronous) {
     PistonEngineSimulator *sim = core->simulator;
     int written = 0;
@@ -96,6 +112,7 @@ static int renderLoop(EngineSimCore *core, int16_t *out, int sampleCount, bool s
         if (synchronous) waitForRender(sim->synthesizer());
 
         const int got = sim->readAudioOutput(sampleCount - written, out + written);
+        softLimit(out + written, got);
         written += got;
         if (got == 0) std::this_thread::sleep_for(std::chrono::microseconds(500));
     }
