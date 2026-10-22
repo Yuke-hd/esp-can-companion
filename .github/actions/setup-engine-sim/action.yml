@@ -1,0 +1,10 @@
+name: Set up EngineSim
+description: Initialize only the EngineSim fork and its required solver
+runs:
+  using: composite
+  steps:
+    - name: Fetch EngineSim and solver
+      shell: bash
+      run: |
+        git submodule update --init Packages/EngineSim
+        git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver

@@ -46,18 +46,13 @@ jobs:
           files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
           echo "$files"
           # EngineSim tests run when its package or this workflow changes.
-          if echo "$files" | grep -qE '^(Packages/EngineSim/|\.github/)'; then
+          if echo "$files" | grep -qE '^(Packages/EngineSim(/|$)|\.github/)'; then
             echo "engine=true" >> "$GITHUB_OUTPUT"
           else
             echo "engine=false" >> "$GITHUB_OUTPUT"
           fi
-          # CompanionKit, app and UI tests are skipped when every changed file is
-          # inside EngineSim. Remove this once the app links EngineSim.
-          if echo "$files" | grep -qvE '^Packages/EngineSim/'; then
-            echo "companion=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "companion=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The app now links EngineSim, so package pins also need app/UI checks.
+          echo "companion=true" >> "$GITHUB_OUTPUT"
 
   engine-tests:
     name: EngineSim tests
@@ -68,11 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The fork has heavy unrelated submodules; fetch only the solver.
-      - name: Fetch EngineSim submodules
-        run: |
-          git submodule update --init Packages/EngineSim
-          git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
+      - uses: ./.github/actions/setup-engine-sim
 
       - uses: ./.github/actions/setup-ios
 
@@ -116,6 +107,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-engine-sim
+
       - uses: ./.github/actions/setup-ios
 
       - name: Build and test app
@@ -144,6 +137,8 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-engine-sim
 
       - uses: ./.github/actions/setup-ios
 
