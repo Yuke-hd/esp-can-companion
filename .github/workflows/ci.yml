@@ -68,6 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The fork has heavy unrelated submodules; fetch only the solver.
+      - name: Fetch EngineSim submodules
+        run: |
+          git submodule update --init Packages/EngineSim
+          git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
+
       - uses: ./.github/actions/setup-ios
 
       - name: Test EngineSim package
