@@ -106,10 +106,20 @@ static int renderLoop(EngineSimCore *core, int16_t *out, int sampleCount, bool s
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30 + sampleCount / ENGINE_SIM_SAMPLE_RATE * 10);
 
     while (written < sampleCount && std::chrono::steady_clock::now() < deadline) {
-        sim->startFrame(kFrameSeconds);
-        while (sim->simulateStep()) { /* void */ }
-        sim->endFrame();
-        if (synchronous) waitForRender(sim->synthesizer());
+        // Unlike a live player, this loop is not paced by playback. Without a limit,
+        // physics outruns the synthesizer and overflows its input ring buffer, which
+        // overwrites unread input and is heard as periodic cracks. Hold physics back
+        // while enough input is queued.
+        if (sim->getSynthesizerInputLatency() < sim->getTargetSynthesizerLatency()) {
+            sim->startFrame(kFrameSeconds);
+            while (sim->simulateStep()) { /* void */ }
+            sim->endFrame();
+            if (synchronous) waitForRender(sim->synthesizer());
+        }
+        else {
+            // The render thread only wakes after an input block ends.
+            sim->endFrame();
+        }
 
         const int got = sim->readAudioOutput(sampleCount - written, out + written);
         softLimit(out + written, got);
