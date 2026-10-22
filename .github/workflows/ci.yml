@@ -68,11 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The fork has heavy unrelated submodules; fetch only the solver.
-      - name: Fetch EngineSim submodules
-        run: |
-          git submodule update --init Packages/EngineSim
-          git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
+      - uses: ./.github/actions/fetch-enginesim
 
       - uses: ./.github/actions/setup-ios
 
@@ -82,6 +78,7 @@ jobs:
           set -o pipefail
           xcodebuild test \
             -scheme EngineSim-Package \
+            -configuration Release \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
@@ -116,6 +113,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/fetch-enginesim
+
       - uses: ./.github/actions/setup-ios
 
       - name: Build and test app
@@ -144,6 +143,8 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/fetch-enginesim
 
       - uses: ./.github/actions/setup-ios
 
