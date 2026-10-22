@@ -31,24 +31,30 @@ final class LsV8RenderTests: XCTestCase {
     }
 
     /// Reports the real-time factor (rendered audio seconds per wall-clock second)
-    /// at the default and a reduced simulation frequency. Run it on a device with
-    /// `xcodebuild test -destination 'generic/platform=iOS'`-style destinations to
-    /// get on-device numbers; the factor must exceed 1 to keep up with playback.
+    /// at the default and a reduced simulation frequency, with physics and audio
+    /// overlapped (`engine_sim_render`) and serialized (`engine_sim_render_synchronous`).
+    /// A factor above 1 keeps up with playback.
     func testReportsRealTimeFactor() throws {
-        for frequency in [Int(ENGINE_SIM_DEFAULT_FREQUENCY), 5000] {
-            let core = try XCTUnwrap(engine_sim_create_ls_v8(Int32(frequency)))
-            defer { engine_sim_destroy(core) }
-            engine_sim_hold_rpm(core, 3000)
+        let renderers: [(String, (OpaquePointer, UnsafeMutablePointer<Int16>, Int32) -> Int32)] = [
+            ("overlapped", engine_sim_render),
+            ("synchronous", engine_sim_render_synchronous),
+        ]
+        for (label, render) in renderers {
+            for frequency in [Int(ENGINE_SIM_DEFAULT_FREQUENCY), 5000] {
+                let core = try XCTUnwrap(engine_sim_create_ls_v8(Int32(frequency)))
+                defer { engine_sim_destroy(core) }
+                engine_sim_hold_rpm(core, 3000)
 
-            let seconds = 3
-            var samples = [Int16](repeating: 0, count: seconds * sampleRate)
-            let start = DispatchTime.now().uptimeNanoseconds
-            let written = engine_sim_render(core, &samples, Int32(samples.count))
-            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9
+                let seconds = 10
+                var samples = [Int16](repeating: 0, count: seconds * sampleRate)
+                let start = DispatchTime.now().uptimeNanoseconds
+                let written = render(core, &samples, Int32(samples.count))
+                let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9
 
-            XCTAssertEqual(Int(written), samples.count)
-            XCTAssertEqual(Int(engine_sim_simulation_frequency(core)), frequency)
-            print("BENCHMARK LS V8 \(frequency) Hz: \(String(format: "%.2f", Double(seconds) / elapsed))x real time")
+                XCTAssertEqual(Int(written), samples.count)
+                XCTAssertEqual(Int(engine_sim_simulation_frequency(core)), frequency)
+                print("BENCHMARK LS V8 \(frequency) Hz \(label): \(String(format: "%.2f", Double(seconds) / elapsed))x real time")
+            }
         }
     }
 }

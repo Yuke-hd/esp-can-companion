@@ -14,6 +14,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 
 struct EngineSimCore {
     LsV8 ls;
@@ -83,23 +84,31 @@ void engine_sim_hold_rpm(EngineSimCore *core, double rpm) {
     core->simulator->m_dyno.m_rotationSpeed = units::rpm(rpm);
 }
 
-int engine_sim_render(EngineSimCore *core, int16_t *out, int sampleCount) {
+static int renderLoop(EngineSimCore *core, int16_t *out, int sampleCount, bool synchronous) {
     PistonEngineSimulator *sim = core->simulator;
     int written = 0;
-    int idleFrames = 0;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30 + sampleCount / ENGINE_SIM_SAMPLE_RATE * 10);
 
-    while (written < sampleCount && idleFrames < 600) {
+    while (written < sampleCount && std::chrono::steady_clock::now() < deadline) {
         sim->startFrame(kFrameSeconds);
         while (sim->simulateStep()) { /* void */ }
         sim->endFrame();
-        waitForRender(sim->synthesizer());
+        if (synchronous) waitForRender(sim->synthesizer());
 
         const int got = sim->readAudioOutput(sampleCount - written, out + written);
         written += got;
-        idleFrames = (got == 0) ? idleFrames + 1 : 0;
+        if (got == 0) std::this_thread::sleep_for(std::chrono::microseconds(500));
     }
 
     return written;
+}
+
+int engine_sim_render(EngineSimCore *core, int16_t *out, int sampleCount) {
+    return renderLoop(core, out, sampleCount, false);
+}
+
+int engine_sim_render_synchronous(EngineSimCore *core, int16_t *out, int sampleCount) {
+    return renderLoop(core, out, sampleCount, true);
 }
 
 double engine_sim_rpm(const EngineSimCore *core) {
