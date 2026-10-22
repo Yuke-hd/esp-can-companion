@@ -45,15 +45,13 @@ jobs:
           files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
           echo "$files"
           # EngineSim tests run when its package or this workflow changes.
-          if echo "$files" | grep -qE '^(Packages/EngineSim/|\.github/)'; then
+          if echo "$files" | grep -qE '^(Packages/EngineSim(/|$)|\.github/)'; then
             echo "engine=true" >> "$GITHUB_OUTPUT"
           else
             echo "engine=false" >> "$GITHUB_OUTPUT"
           fi
-          # CompanionKit, app and UI tests run only for files they build from or
-          # that configure the build. The app declares the EngineSim package but
-          # does not link it, so EngineSim-only changes do not need iOS jobs.
-          if echo "$files" | grep -qE '^(App/|AppTests/|AppUITests/|Packages/CompanionKit/|Config/|project\.yml$|\.github/)'; then
+          # The app links EngineSim, so exact package pin changes need iOS checks.
+          if echo "$files" | grep -qE '^(App/|AppTests/|AppUITests/|Packages/CompanionKit/|Packages/EngineSim(/|$)|Config/|project\.yml$|\.github/)'; then
             echo "companion=true" >> "$GITHUB_OUTPUT"
           else
             echo "companion=false" >> "$GITHUB_OUTPUT"
