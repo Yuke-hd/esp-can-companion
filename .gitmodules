@@ -1,0 +1,3 @@
+[submodule "Packages/EngineSim"]
+	path = Packages/EngineSim
+	url = https://github.com/Yuke-hd/engine-sim-C.git

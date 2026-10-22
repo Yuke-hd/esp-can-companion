@@ -13,6 +13,8 @@ configFiles:
 packages:
   CompanionKit:
     path: Packages/CompanionKit
+  EngineSim:
+    path: Packages/EngineSim
 
 targets:
   CANCompanion:

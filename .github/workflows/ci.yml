@@ -16,10 +16,80 @@ concurrency:
 
 # Jobs run in parallel. The package and app tests are separate jobs because the
 # app build recompiles every package anyway, so one job running both gained
-# nothing from shared derived data. Five macOS jobs fit the free-plan limit.
+# nothing from shared derived data. Five macOS jobs fit the free-plan limit; the
+# EngineSim job is a sixth and queues behind them.
 jobs:
+  changes:
+    # Decides which jobs a change needs. Anything that is not a pull request
+    # runs everything.
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      companion: ${{ steps.filter.outputs.companion }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "engine=true" >> "$GITHUB_OUTPUT"
+            echo "companion=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          echo "$files"
+          # EngineSim tests run when its package or this workflow changes.
+          if echo "$files" | grep -qE '^(Packages/EngineSim/|\.github/)'; then
+            echo "engine=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "engine=false" >> "$GITHUB_OUTPUT"
+          fi
+          # CompanionKit, app and UI tests are skipped when every changed file is
+          # inside EngineSim. Remove this once the app links EngineSim.
+          if echo "$files" | grep -qvE '^Packages/EngineSim/'; then
+            echo "companion=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "companion=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  engine-tests:
+    name: EngineSim tests
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # The fork has heavy unrelated submodules; fetch only the solver.
+      - name: Fetch EngineSim submodules
+        run: |
+          git submodule update --init Packages/EngineSim
+          git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
+
+      - uses: ./.github/actions/setup-ios
+
+      - name: Test EngineSim package
+        working-directory: Packages/EngineSim
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme EngineSim-Package \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -destination "$DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
   package-tests:
     name: Package tests
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -39,6 +109,8 @@ jobs:
 
   app-tests:
     name: App tests
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -62,6 +134,8 @@ jobs:
     # The tests wait on real-time demo scenarios and take about 13 minutes
     # in a row, so they are split across shards that run in parallel.
     name: UI tests (${{ matrix.shard }}/3)
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     strategy:
