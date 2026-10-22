@@ -17,7 +17,7 @@ concurrency:
 # Jobs run in parallel. The package and app tests are separate jobs because the
 # app build recompiles every package anyway, so one job running both gained
 # nothing from shared derived data. Five macOS jobs fit the free-plan limit; the
-# EngineSim job is a sixth and queues behind them.
+# EngineSim job runs on Linux and does not use that limit.
 jobs:
   changes:
     # Decides which jobs a change needs. Anything that is not a pull request
@@ -51,37 +51,32 @@ jobs:
           else
             echo "engine=false" >> "$GITHUB_OUTPUT"
           fi
-          # CompanionKit, app and UI tests are skipped when every changed file is
-          # inside EngineSim. Remove this once the app links EngineSim.
-          if echo "$files" | grep -qvE '^Packages/EngineSim/'; then
+          # CompanionKit, app and UI tests run only for files they build from or
+          # that configure the build. The app declares the EngineSim package but
+          # does not link it, so EngineSim-only changes do not need iOS jobs.
+          if echo "$files" | grep -qE '^(App/|AppTests/|AppUITests/|Packages/CompanionKit/|Config/|project\.yml$|\.github/)'; then
             echo "companion=true" >> "$GITHUB_OUTPUT"
           else
             echo "companion=false" >> "$GITHUB_OUTPUT"
           fi
 
   engine-tests:
+    # EngineSim is plain C++ with no Apple frameworks, so it tests on a cheaper,
+    # more available Linux runner instead of macOS.
     name: EngineSim tests
     needs: changes
     if: needs.changes.outputs.engine == 'true'
-    runs-on: macos-15
+    runs-on: ubuntu-latest
+    container: swift:6.0-jammy
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
       - uses: ./.github/actions/fetch-enginesim
 
-      - uses: ./.github/actions/setup-ios
-
       - name: Test EngineSim package
         working-directory: Packages/EngineSim
-        run: |
-          set -o pipefail
-          xcodebuild test \
-            -scheme EngineSim-Package \
-            -configuration Release \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            -destination "$DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+        run: swift test -c release
 
   package-tests:
     name: Package tests
