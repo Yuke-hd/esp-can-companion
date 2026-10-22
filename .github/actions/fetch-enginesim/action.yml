@@ -1,0 +1,12 @@
+name: Fetch EngineSim
+description: Checks out the EngineSim submodule and the one nested submodule it builds against.
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch EngineSim submodules
+      # The fork has heavy unrelated submodules; fetch only the solver.
+      shell: bash
+      run: |
+        git submodule update --init Packages/EngineSim
+        git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
