@@ -8,5 +8,7 @@ runs:
       # The fork has heavy unrelated submodules; fetch only the solver.
       shell: bash
       run: |
+        # Container jobs run as a different user than the checkout's owner.
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
         git submodule update --init Packages/EngineSim
         git -C Packages/EngineSim submodule update --init dependencies/submodules/simple-2d-constraint-solver
