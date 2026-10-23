@@ -159,6 +159,31 @@ final class DriveEngineSoundControllerTests: XCTestCase {
         XCTAssertNil(released)
     }
 
+    #if os(iOS) && targetEnvironment(simulator)
+    func testSimulatorPlaybackConsumesFramesAndDriveStopReleasesItsSource() async throws {
+        let player = EngineSoundPlayer()
+        weak var released: RecordingTone?
+        let controller = DriveEngineSoundController(enabled: true, makeSource: {
+            let tone = RecordingTone()
+            released = tone
+            return tone
+        }, makePlayer: { player })
+        try controller.start()
+        defer { controller.stop() }
+        controller.receive(readout(rpm: 3000), receivedAt: .now)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while player.consumedFrameCount == 0 && player.lastPlaybackFailure == nil && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(player.lastPlaybackFailure)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertGreaterThan(player.consumedFrameCount, 0, "The Simulator audio callback must consume producer frames")
+        controller.stop()
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertNil(released, "Stopping Drive must join playback and release its source")
+    }
+    #endif
+
     private func readout(rpm: Double, availability: SignalAvailability = .freshnessUnverified,
                          connected: Bool = true) -> DriveReadout {
         var frame = LiveSignalFrame.unknown
