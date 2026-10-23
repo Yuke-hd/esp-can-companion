@@ -14,9 +14,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Jobs run in parallel. Five macOS jobs fit the free-plan concurrency limit:
-# unit tests, the UI test build and three UI test shards. The EngineSim job runs
-# on Linux and does not use that limit.
+# Jobs run in parallel. Package and app tests share one job, along with the UI
+# test build and three UI test shards. Five macOS jobs fit the free-plan limit;
+# the EngineSim job is a sixth and queues behind them.
 jobs:
   changes:
     # Decides which jobs a change needs. Anything that is not a pull request
@@ -58,13 +58,11 @@ jobs:
           fi
 
   engine-tests:
-    # EngineSim is plain C++ with no Apple frameworks, so it tests on a cheaper,
-    # more available Linux runner instead of macOS.
+    # EngineSound playback uses AVFoundation, so run the package on macOS.
     name: EngineSim tests
     needs: changes
     if: needs.changes.outputs.engine == 'true'
-    runs-on: ubuntu-latest
-    container: swift:6.0-jammy
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
