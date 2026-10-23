@@ -252,3 +252,49 @@ jobs:
             UITests.xcresult
             UITests-retry.xcresult
           if-no-files-found: ignore
+
+  sound-settings-preview:
+    # GH-94: exact requested phones, only the settings accessibility journey.
+    name: Sound settings preview (${{ matrix.device }})
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iPhone 16, iPhone SE (3rd generation)]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/fetch-enginesim
+
+      - uses: ./.github/actions/setup-ios
+
+      - name: Confirm preview destination
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          xcrun simctl list devices available
+          xcrun simctl list devices available | grep -F "$PREVIEW_DEVICE ("
+
+      - name: Capture largest-text settings in both styles
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project CANCompanion.xcodeproj \
+            -scheme "CANCompanion UI Tests" \
+            -destination "platform=iOS Simulator,name=$PREVIEW_DEVICE" \
+            -only-testing:CANCompanionUITests/EngineSoundUITests/testSettingsInBothStylesAtLargestText \
+            -resultBundlePath SoundSettings.xcresult \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
+      - name: Upload settings screenshots and accessibility results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sound-settings-${{ matrix.device }}
+          path: SoundSettings.xcresult
+          if-no-files-found: ignore

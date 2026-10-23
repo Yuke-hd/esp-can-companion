@@ -129,30 +129,38 @@ installation: uninstalling the app removes its saved data. Never erase a whole
 personal Simulator as a routine reset. The planned helper will make reset versus
 retain explicit; no dedicated reset command exists today.
 
-## Experimental Drive engine sound
+## Drive engine sound settings
 
-Audio is opt-in for the first Drive integration. Add `-EngineSound YES` to
-launch arguments alongside `-DemoScenario driveLaps`. The normal launch creates
-no audio player or simulator source. Enter Drive to start playback; Exit Drive
-stops playback and releases its source. Reenter Drive to check a fresh start.
-The same route lifecycle applies to both Drive styles.
+Sound is off by default. In either Drive style, open the speaker control to
+show Engine sound settings. Toggle sound on, then dismiss the sheet and use
+`driveLaps` to check that playback follows RPM. Exit Drive to stop playback;
+reenter to check a fresh start. Sound and “Lower other audio while playing”
+preferences persist across launches with `@AppStorage`. The latter defaults on;
+GH-94 exposes it to the controller, while live audio-session policy application
+belongs to GH-95. The engine display remains LS V8 until GH-96 adds selection.
+The earlier `-EngineSound YES` gate is removed; use the settings control.
 
-Use `stalled` with the flag to check unknown RPM and fading to silence. The
-reusable follower also expires RPM after 0.5 seconds without a new typed RPM
-record, even while unrelated packets keep arriving. Verified and unverified
-RPM are mapped separately; unavailable, stale, disconnected, or untimestamped
-RPM cannot keep audio live. Unsupported legacy telemetry remains silent.
-Accelerator input uses the readout's normalized fraction, with the reusable
-follower deriving throttle when that input is unavailable.
+Use `stalled` to check unknown RPM and fading to silence. The reusable follower
+also expires RPM after 0.5 seconds without a new typed RPM record, even while
+unrelated packets keep arriving. Verified and unverified RPM are mapped
+separately; unavailable, stale, disconnected, or untimestamped RPM cannot keep
+audio live. Unsupported legacy telemetry remains silent. Accelerator input
+uses the readout's normalized fraction, with the reusable follower deriving
+throttle when that input is unavailable.
 
-The controller uses the package's default LS profile and playback with other
-audio allowed. App tests inject `ToneSource` and a monotonic clock to check
-neutral targets, PCM silence, expiry, and source release without timing a native
-simulation. UI tests launch the real source in `driveLaps` and `stalled`; inspect
-rendered screenshots and playback startup logs as well as those test results.
-UI movement assertions alone do not establish audible output. A startup failure
-is logged under the `DriveSound` category. Keep Simulator listening evidence
-separate from physical-device or vehicle validation.
+App tests inject `ToneSource` and a monotonic clock to check neutral targets,
+PCM silence, expiry, preferences, and source release. A Simulator test uses the
+real player to require callback frame consumption and release after stop.
+`EngineSoundUITests` checks preference persistence without launch-argument
+preference overrides and captures both styles' settings at accessibility XXXL.
+The CI settings preview matrix runs that screenshot journey on iPhone 16 and
+SE (3rd generation); inspect the top and scrolled screenshots for readable
+labels and reachable controls.
+
+Inspect playback startup logs as well as test results. UI movement assertions
+alone do not establish audible output. Startup failure is logged under the
+`DriveSound` category. Keep Simulator recording/listening evidence separate from
+physical-device or vehicle validation.
 
 ## Tests and evidence
 
