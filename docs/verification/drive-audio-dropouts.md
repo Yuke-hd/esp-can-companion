@@ -56,6 +56,52 @@ personal apps were preserved.
 The baseline package commit was `2517ebf`; the fixed package commit was
 `56647ca`, published in [engine-sim-C PR #19](https://github.com/Yuke-hd/engine-sim-C/pull/19).
 
+## Follow-up: the actual Drive preview still starved with coverage
+
+The constant-source comparison above did not include the app scheme's coverage
+instrumentation or changing Drive telemetry. The owner reported continuing
+crackles after installing the optimization. A second comparison therefore used
+the complete app, its actual Drive view, fake `driveLaps` telemetry, controller,
+follower, and player on the same iPhone speaker. Instrumentation lived in a
+throwaway app copy; production Swift sources were not changed.
+
+The app's regular test-enabled scheme added `-fprofile-instr-generate` and
+`-fcoverage-mapping` to the native `-O2` build, even for a build-only invocation.
+The comparison removed only scheme coverage instrumentation. Each run retained
+the full Drive UI and captured native/post-follower PCM, per-block target RPM,
+throttle, gain, freshness, native render time, and player consumption counters.
+The built-in speaker was selected at output volume 0.55 in the coverage-free
+run. Thermal state remained fair during both runs.
+
+| Full Drive Debug build | Player interval | Consumed frames | Missing samples | Active native render speed |
+| --- | --- | --- | --- | --- |
+| Test scheme, coverage enabled | 60.826 s | 2,013,357 | 668,864 | 0.660× |
+| Coverage-free preview | 60.814 s | 2,682,221 | 0 | 1.758× |
+
+The coverage-free run included 43.7 seconds with follower gain at one and
+changing RPM from 800 to 6,476; its clean result is not just the initial silent
+period. Native rendering averaged 3.30 ms per 256-frame block during that active
+phase, versus 8.80 ms with coverage. No player failure occurred in either run.
+The coverage-enabled run replaced 24.9% of samples across the entire interval
+with silence, including its initial silent/stale period.
+
+The initial approximately 17 seconds were stale/unknown telemetry with zero
+follower gain. They are not evidence of active audio keeping up. Once live
+telemetry enabled ignition, coverage-instrumented native rendering required
+about 8.4–9.4 ms per 256 frames, exceeding the 5.805 ms playback budget. Follower
+control/fade overhead was about 0.05 ms per block. Native and post-follower PCM
+were identical; a detector comparing first-difference energy in 2 ms windows
+against the surrounding 50 ms median found no bursts above 10× the local
+median. This isolated callback starvation from source/follower discontinuities.
+
+`CANCompanion Audio Preview` is now a separate Debug Run scheme without
+coverage instrumentation. Its Run arguments select the fake `driveLaps`
+scenario. The existing `CANCompanion` and `CANCompanion Demo` test coverage
+settings remain enabled. Generated scheme XML and the clean Audio Preview
+native compiler response were checked: `-O2` remains, and the profiling/coverage
+flags are absent. No simulation-frequency, timbre, buffer, or player changes
+were needed for this follow-up.
+
 ## Regression coverage
 
 The package adds an opt-in performance assertion for its live-sized native
@@ -72,11 +118,11 @@ insufficient evidence of continuous playback.
 ## Limits and follow-up
 
 These are synthetic engine signals and measured hardware callback counters.
-The probe isolates rendering/playback from the complete Drive UI, live BLE
-traffic, and changing RPM. It does not establish audible sound quality by
+The first probe isolates constant rendering/playback; the follow-up exercises
+the full Drive UI and changing fake RPM. Neither uses live BLE traffic. It does not establish audible sound quality by
 listening, or cover every audio route, interruption, and thermal condition.
-Repeat the original Drive demo with a Debug build on the phone and listen to
-continuous engine sound while RPM changes. Existing lifecycle checks remain in
+Repeat the original Drive demo with the Audio Preview Debug scheme on the phone
+and listen to continuous engine sound while RPM changes. Existing lifecycle checks remain in
 [GH-95 verification](gh-95-drive-audio-lifecycle.md).
 
 The personal screen recording and generated audio were not committed. No
