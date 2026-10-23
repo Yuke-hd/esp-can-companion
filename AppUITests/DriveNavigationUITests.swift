@@ -216,7 +216,10 @@ final class DriveNavigationUITests: XCTestCase {
         let toggle = app.switches["engineSound.enabled"]
         app.buttons["drive.sound"].tap(until: toggle, timeout: 10)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        if (toggle.value as? String == "1") != enabled { toggle.tap() }
+        if (toggle.value as? String == "1") != enabled {
+            // SwiftUI exposes the whole Form row as the switch; tap its trailing thumb.
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
         let expected = enabled ? "1" : "0"
         let updated = NSPredicate { _, _ in toggle.value as? String == expected }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: updated, object: nil)], timeout: 10), .completed,

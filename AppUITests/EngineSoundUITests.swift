@@ -101,7 +101,10 @@ final class EngineSoundUITests: XCTestCase {
     private func setSwitch(_ identifier: String, to enabled: Bool) {
         let control = app.switches[identifier]
         reveal(control)
-        if (control.value as? String == "1") != enabled { control.tap() }
+        if (control.value as? String == "1") != enabled {
+            // SwiftUI exposes the whole Form row as the switch; tap its trailing thumb.
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
         assertSwitchValue(control, isEnabled: enabled)
     }
 
@@ -117,15 +120,19 @@ final class EngineSoundUITests: XCTestCase {
         func fullyVisible() -> Bool {
             element.isHittable && app.windows.element(boundBy: 0).frame.contains(element.frame)
         }
+        let form = app.descendants(matching: .any)["engineSound.form"].firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
         for _ in 0..<4 {
             if fullyVisible() { return }
-            app.swipeUp()
+            form.swipeUp()
         }
         for _ in 0..<4 {
             if fullyVisible() { return }
-            app.swipeDown()
+            form.swipeDown()
         }
-        XCTAssertTrue(fullyVisible(), "Settings control must be fully visible and reachable by scrolling")
+        if !fullyVisible() { capture("engine-sound-settings-reveal-failure") }
+        XCTAssertTrue(fullyVisible(),
+                      "Settings control must be fully visible and reachable by scrolling; control=\(element.frame), form=\(form.frame), window=\(app.windows.element(boundBy: 0).frame)")
     }
 
     private func capture(_ name: String) {

@@ -20,6 +20,7 @@ struct EngineSoundSettings: View {
                 }
                 .accessibilityIdentifier("engineSound.lowersOtherAudio")
             }
+            .accessibilityIdentifier("engineSound.form")
             .navigationTitle("Engine sound")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
