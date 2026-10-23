@@ -71,17 +71,19 @@ final class DriveEngineSoundControllerTests: XCTestCase {
         let controller = DriveEngineSoundController(makeSource: {
             XCTFail("Disabled sound must not create the native source")
             return ToneSource()
-        }, makePlayer: {
+        }, makePlayer: { _ in
             XCTFail("Disabled sound must not create playback")
             return RecordingPlayer()
         })
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
         try controller.start()
         controller.stop()
     }
 
     func testPersistedPreferencesStartStopAndExposeDuckingWithoutRestart() async throws {
         let player = RecordingPlayer()
-        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: { player })
+        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: { _ in player })
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
         try controller.configure(.init(isEnabled: false, lowersOtherAudio: true))
         XCTAssertEqual(player.starts, 0)
         try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
@@ -98,12 +100,86 @@ final class DriveEngineSoundControllerTests: XCTestCase {
         controller.stop()
     }
 
+    func testLifecycleRequiresVisibleActiveDriveAndStopsOnExitOrBackground() async throws {
+        let player = RecordingPlayer()
+        let controller = DriveEngineSoundController(enabled: true, makeSource: { ToneSource() }, makePlayer: { _ in player })
+        try controller.start()
+        try controller.setLifecycle(isDriveVisible: false, isAppActive: true)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: false)
+        XCTAssertEqual(player.starts, 0)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        XCTAssertEqual(player.starts, 1)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: false)
+        XCTAssertEqual(player.stops, 1)
+        XCTAssertNil(player.source)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        XCTAssertEqual(player.starts, 2)
+        try controller.setLifecycle(isDriveVisible: false, isAppActive: true)
+        XCTAssertEqual(player.stops, 2)
+        try controller.setLifecycle(isDriveVisible: false, isAppActive: false)
+        try controller.setLifecycle(isDriveVisible: false, isAppActive: true)
+        XCTAssertEqual(player.starts, 2)
+    }
+
+    func testFailedLivePolicyChangeKeepsPreviousSessionAndCanStillStop() async throws {
+        let session = RecordingSession()
+        let player = SessionPlayer()
+        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: {
+            player.session = $0
+            return player
+        }, makeSession: { session })
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        session.failAcquire = true
+        XCTAssertThrowsError(try controller.configure(.init(isEnabled: true, lowersOtherAudio: false)))
+        XCTAssertTrue(controller.preferences.lowersOtherAudio)
+        XCTAssertEqual(player.starts, 1)
+        XCTAssertEqual(session.calls, ["acquire:duck", "acquire:mix"])
+        // Turning sound off must work even while session acquisition fails.
+        try controller.configure(.init(isEnabled: false, lowersOtherAudio: false))
+        XCTAssertEqual(session.calls.last, "release:duck")
+        XCTAssertEqual(player.stops, 1)
+    }
+
+    func testLiveSessionPolicyChangesPreservePlayerAndForwardPackageEvents() async throws {
+        let session = RecordingSession()
+        let player = SessionPlayer()
+        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: {
+            player.session = $0
+            return player
+        }, makeSession: { session })
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        XCTAssertEqual(session.calls, ["acquire:duck"])
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: false))
+        XCTAssertEqual(session.calls, ["acquire:duck", "acquire:mix", "release:duck"])
+        XCTAssertEqual(player.starts, 1)
+        XCTAssertEqual(player.stops, 0)
+        let events: [EngineSoundSessionEvent] = [.interruptionBegan, .interruptionEnded(shouldResume: false),
+            .outputRouteChanged(reason: .oldDeviceUnavailable, isAvailable: true),
+            .thermalStateChanged(.critical), .thermalStateChanged(.nominal)]
+        events.forEach { session.onEvent?($0) }
+        XCTAssertEqual(player.events, events)
+        // A preference update while the package is paused must not request start.
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        XCTAssertEqual(player.starts, 1)
+        try controller.configure(.init(isEnabled: false, lowersOtherAudio: true))
+        XCTAssertEqual(player.stops, 1)
+        session.onEvent?(.interruptionEnded(shouldResume: true))
+        session.onEvent?(.thermalStateChanged(.nominal))
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: false)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        XCTAssertEqual(player.starts, 1, "Explicit off survives recovery events and foregrounding")
+        XCTAssertEqual(session.calls.last, "release:duck")
+    }
+
     func testScriptedToneTracksRPMAndExpiresWithoutNewObservations() async throws {
         var time = 10.0
         let tone = RecordingTone()
         let player = RecordingPlayer()
         let controller = DriveEngineSoundController(enabled: true, rpmRange: 1000...7000,
-            makeSource: { tone }, makePlayer: { player }, clock: { time })
+            makeSource: { tone }, makePlayer: { _ in player }, clock: { time })
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
         try controller.start()
         XCTAssertTrue(player.render().allSatisfy { $0 == 0 })
         controller.receive(readout(rpm: 3000), receivedAt: start, now: start)
@@ -138,7 +214,8 @@ final class DriveEngineSoundControllerTests: XCTestCase {
                 let tone = RecordingTone()
                 released = tone
                 return tone
-            }, makePlayer: { player }, clock: { time })
+            }, makePlayer: { _ in player }, clock: { time })
+            try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
             try controller.start()
             controller.receive(readout(rpm: 3000), receivedAt: start, now: start)
             _ = player.render()
@@ -165,11 +242,12 @@ final class DriveEngineSoundControllerTests: XCTestCase {
             let tone = RecordingTone()
             released = tone
             return tone
-        }, makePlayer: { player })
-        XCTAssertThrowsError(try controller.start())
+        }, makePlayer: { _ in player })
+        XCTAssertThrowsError(try controller.setLifecycle(isDriveVisible: true, isAppActive: true))
         XCTAssertNil(released)
         XCTAssertEqual(player.stops, 1)
         player.fail = false
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
         try controller.start()
         XCTAssertNotNil(released)
         controller.stop()
@@ -177,6 +255,43 @@ final class DriveEngineSoundControllerTests: XCTestCase {
     }
 
     #if os(iOS) && targetEnvironment(simulator)
+    func testReusablePlayerSessionPauseRecoveryAndOffIntent() async throws {
+        let session = RecordingSession()
+        var player: EngineSoundPlayer!
+        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: {
+            player = EngineSoundPlayer(session: $0)
+            return player
+        }, makeSession: { session })
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        defer { controller.stop() }
+        XCTAssertTrue(player.isPlaying)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: false))
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(session.calls, ["acquire:duck", "acquire:mix", "release:duck"])
+        session.onEvent?(.interruptionBegan)
+        XCTAssertFalse(player.isPlaying)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        XCTAssertFalse(player.isPlaying, "Changing policy must respect package interruption pause")
+        session.onEvent?(.interruptionEnded(shouldResume: true))
+        XCTAssertTrue(player.isPlaying)
+        session.onEvent?(.thermalStateChanged(.critical))
+        XCTAssertFalse(player.isPlaying)
+        session.onEvent?(.thermalStateChanged(.nominal))
+        XCTAssertTrue(player.isPlaying)
+        session.onEvent?(.outputRouteChanged(reason: .oldDeviceUnavailable, isAvailable: true))
+        XCTAssertFalse(player.isPlaying)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: false))
+        XCTAssertFalse(player.isPlaying, "Settings must not override route-removal pause")
+        try controller.configure(.init(isEnabled: false, lowersOtherAudio: false))
+        session.onEvent?(.interruptionEnded(shouldResume: true))
+        session.onEvent?(.thermalStateChanged(.nominal))
+        XCTAssertFalse(player.isPlaying)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: false)
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
+        XCTAssertFalse(player.isPlaying, "Explicit off must survive foregrounding")
+    }
+
     func testSimulatorPlaybackConsumesFramesAndDriveStopReleasesItsSource() async throws {
         let player = EngineSoundPlayer()
         weak var released: RecordingTone?
@@ -184,7 +299,8 @@ final class DriveEngineSoundControllerTests: XCTestCase {
             let tone = RecordingTone()
             released = tone
             return tone
-        }, makePlayer: { player })
+        }, makePlayer: { _ in player })
+        try controller.setLifecycle(isDriveVisible: true, isAppActive: true)
         try controller.start()
         defer { controller.stop() }
         controller.receive(readout(rpm: 3000), receivedAt: .now)
@@ -245,4 +361,35 @@ private final class RecordingTone: EngineSoundSource {
     func setThrottle(_ throttle: Double) { self.throttle = throttle; tone.setThrottle(throttle) }
     func setIgnition(_ enabled: Bool) { tone.setIgnition(enabled) }
     func render(into buffer: UnsafeMutableBufferPointer<Int16>) -> Int { tone.render(into: buffer) }
+}
+
+private final class RecordingSession: EngineSoundSession {
+    var isOutputAvailable = true
+    var thermalState: EngineSoundThermalState = .nominal
+    var onEvent: ((EngineSoundSessionEvent) -> Void)?
+    var calls: [String] = []
+    var failAcquire = false
+    func acquire(policy: AudioSessionMixPolicy) throws {
+        calls.append("acquire:\(policy == .duckOthers ? "duck" : "mix")")
+        if failAcquire { throw NSError(domain: "test.session", code: 1) }
+    }
+    func release(policy: AudioSessionMixPolicy) { calls.append("release:\(policy == .duckOthers ? "duck" : "mix")") }
+}
+
+@MainActor
+private final class SessionPlayer: DriveSoundPlaying {
+    var session: (any EngineSoundSession)?
+    var starts = 0
+    var stops = 0
+    var events: [EngineSoundSessionEvent] = []
+    func play(_ source: any EngineSoundSource) throws {
+        starts += 1
+        session?.onEvent = { [weak self] in self?.events.append($0) }
+        try session?.acquire(policy: .mixWithOthers)
+    }
+    func stop() {
+        stops += 1
+        session?.release(policy: .mixWithOthers)
+        session?.onEvent = nil
+    }
 }

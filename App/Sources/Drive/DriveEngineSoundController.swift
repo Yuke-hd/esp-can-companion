@@ -10,7 +10,11 @@ import EngineSimCore
 final class DriveEngineSoundController {
     private(set) var preferences: EngineSoundPreferences
     private let makeSource: () throws -> any EngineSoundSource
-    private let makePlayer: () -> any DriveSoundPlaying
+    private let makePlayer: (any EngineSoundSession) -> any DriveSoundPlaying
+    private let makeSession: () -> any EngineSoundSession
+    private var audioSession: DriveSoundSession?
+    private var isDriveVisible = false
+    private var isAppActive = false
     private let clock: () -> TimeInterval
     private let rpmRange: ClosedRange<Double>
     private var player: (any DriveSoundPlaying)?
@@ -21,19 +25,33 @@ final class DriveEngineSoundController {
         enabled: Bool = false,
         rpmRange: ClosedRange<Double> = engine_sim_profile_min_rpm(ENGINE_SIM_PROFILE_LS_V8)...engine_sim_profile_max_rpm(ENGINE_SIM_PROFILE_LS_V8),
         makeSource: @escaping () throws -> any EngineSoundSource = { try EngineSimSource() },
-        makePlayer: @escaping () -> any DriveSoundPlaying = { EngineSoundPlayer() },
+        makePlayer: @escaping (any EngineSoundSession) -> any DriveSoundPlaying = { EngineSoundPlayer(session: $0) },
+        makeSession: @escaping () -> any EngineSoundSession = { IOSAudioSession() },
         clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         preferences = EngineSoundPreferences(isEnabled: enabled)
         self.rpmRange = rpmRange
         self.makeSource = makeSource
         self.makePlayer = makePlayer
+        self.makeSession = makeSession
         self.clock = clock
     }
 
     func configure(_ preferences: EngineSoundPreferences) throws {
+        guard preferences.isEnabled else {
+            self.preferences = preferences
+            stop()
+            return
+        }
+        try audioSession?.configure(policy: preferences.lowersOtherAudio ? .duckOthers : .mixWithOthers)
         self.preferences = preferences
-        if preferences.isEnabled {
+        try start()
+    }
+
+    func setLifecycle(isDriveVisible: Bool, isAppActive: Bool) throws {
+        self.isDriveVisible = isDriveVisible
+        self.isAppActive = isAppActive
+        if isDriveVisible && isAppActive {
             try start()
         } else {
             stop()
@@ -41,9 +59,11 @@ final class DriveEngineSoundController {
     }
 
     func start() throws {
-        guard preferences.isEnabled, player == nil else { return }
+        guard preferences.isEnabled, isDriveVisible, isAppActive, player == nil else { return }
         let following = DriveFollowingSource(source: try makeSource(), rpmRange: rpmRange, clock: clock)
-        let playback = makePlayer()
+        let session = DriveSoundSession(base: makeSession(),
+                                       policy: preferences.lowersOtherAudio ? .duckOthers : .mixWithOthers)
+        let playback = makePlayer(session)
         do {
             try playback.play(following)
         } catch {
@@ -51,6 +71,7 @@ final class DriveEngineSoundController {
             throw error
         }
         source = following
+        audioSession = session
         player = playback
     }
 
@@ -69,6 +90,7 @@ final class DriveEngineSoundController {
         // source alive until that quiescence boundary has completed.
         player?.stop()
         player = nil
+        audioSession = nil
         source = nil
         observation = nil
     }
