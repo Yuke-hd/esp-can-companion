@@ -115,8 +115,30 @@ final class DriveNavigationUITests: XCTestCase {
         capture("drive-pedal-signals-large-text")
     }
 
+    func testEngineSoundLaunchTracksDemoLapsAndCanExitAndReenterDrive() {
+        launch(scenario: "driveLaps", engineSound: true)
+        let frameRate = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "frames per second")
+        ).firstMatch
+        XCTAssertTrue(frameRate.waitForExistence(timeout: 60))
+        openDrive()
+        waitForLandscape()
+        let rpm = app.descendants(matching: .any)["drive.rpm"]
+        assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6"])
+        let initial = accessibilitySummary(of: rpm)
+        let changed = NSPredicate { _, _ in self.accessibilitySummary(of: rpm) != initial }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: changed, object: nil)], timeout: 15), .completed)
+        captureLandscape("drive-engine-sound-laps")
+        exitDrive()
+        waitForPortrait()
+        openDrive()
+        waitForLandscape()
+        assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6"])
+        exitDrive()
+    }
+
     func testDriveShowsUnknownValuesAfterStalledScenario() {
-        launch(scenario: "stalled")
+        launch(scenario: "stalled", engineSound: true)
         openDrive()
         waitForLandscape()
 
@@ -188,11 +210,12 @@ final class DriveNavigationUITests: XCTestCase {
         launch(scenario: "connected")
     }
 
-    private func launch(scenario: String, largeText: Bool = false) {
+    private func launch(scenario: String, largeText: Bool = false, engineSound: Bool = false) {
         app.launchArguments = [
             "-FakeController", "YES",
             "-DemoScenario", scenario
         ]
+        if engineSound { app.launchArguments += ["-EngineSound", "YES"] }
         if largeText {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
