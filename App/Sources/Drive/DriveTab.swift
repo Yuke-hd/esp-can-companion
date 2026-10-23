@@ -10,6 +10,9 @@ struct DriveTab: View {
     let onExit: () -> Void
     @State private var telemetry: LiveTelemetry?
     @State private var engineSound = DriveEngineSoundController()
+    @AppStorage(EngineSoundPreferences.enabledKey) private var soundEnabled = false
+    @AppStorage(EngineSoundPreferences.lowersOtherAudioKey) private var lowersOtherAudio = true
+    @State private var showingSoundSettings = false
     @AppStorage("drive.style") private var style: DriveStyle = .motorsport
 
     init(model: AppModel, onExit: @escaping () -> Void) {
@@ -43,7 +46,9 @@ struct DriveTab: View {
                     signals: signals,
                     telemetryFailure: telemetry?.failure,
                     onExit: onExit,
-                    onSwitchStyle: switchStyle
+                    onSwitchStyle: switchStyle,
+                    isSoundEnabled: soundEnabled,
+                    onSoundSettings: { showingSoundSettings = true }
                 )
             case .cluster:
                 ClusterDriveView(
@@ -51,19 +56,18 @@ struct DriveTab: View {
                     signals: signals,
                     rpmBand: AppConfig.default.rpmBand,
                     onExit: onExit,
-                    onSwitchStyle: switchStyle
+                    onSwitchStyle: switchStyle,
+                    isSoundEnabled: soundEnabled,
+                    onSoundSettings: { showingSoundSettings = true }
                 )
             }
         }
-            .onAppear {
-                do {
-                    try engineSound.start()
-                    engineSound.receive(readout, receivedAt: rpmReceivedAt)
-                } catch {
-                    Logger(subsystem: "CANCompanion", category: "DriveSound")
-                        .error("Engine sound could not start: \(error.localizedDescription, privacy: .public)")
-                }
+            .sheet(isPresented: $showingSoundSettings) {
+                EngineSoundSettings(isEnabled: $soundEnabled, lowersOtherAudio: $lowersOtherAudio)
             }
+            .onAppear { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
+            .onChange(of: soundEnabled) { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
+            .onChange(of: lowersOtherAudio) { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
             .onChange(of: telemetry?.snapshot) {
                 engineSound.receive(readout, receivedAt: rpmReceivedAt)
             }
@@ -83,6 +87,16 @@ struct DriveTab: View {
                 }
                 await liveTelemetry.run()
             }
+    }
+
+    private func configureSound(readout: DriveReadout, receivedAt: ContinuousClock.Instant?) {
+        do {
+            try engineSound.configure(.init(isEnabled: soundEnabled, lowersOtherAudio: lowersOtherAudio))
+            engineSound.receive(readout, receivedAt: receivedAt)
+        } catch {
+            Logger(subsystem: "CANCompanion", category: "DriveSound")
+                .error("Engine sound could not start: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func switchStyle() {

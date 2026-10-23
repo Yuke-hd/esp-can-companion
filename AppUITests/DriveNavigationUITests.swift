@@ -115,14 +115,15 @@ final class DriveNavigationUITests: XCTestCase {
         capture("drive-pedal-signals-large-text")
     }
 
-    func testEngineSoundLaunchTracksDemoLapsAndCanExitAndReenterDrive() {
-        launch(scenario: "driveLaps", engineSound: true)
+    func testEngineSoundSettingsTracksDemoLapsAndCanExitAndReenterDrive() {
+        launch(scenario: "driveLaps")
         let frameRate = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "frames per second")
         ).firstMatch
         XCTAssertTrue(frameRate.waitForExistence(timeout: 60))
         openDrive()
         waitForLandscape()
+        setEngineSoundEnabled(true)
         let rpm = app.descendants(matching: .any)["drive.rpm"]
         assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6"])
         let initial = accessibilitySummary(of: rpm)
@@ -134,13 +135,15 @@ final class DriveNavigationUITests: XCTestCase {
         openDrive()
         waitForLandscape()
         assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6"])
+        setEngineSoundEnabled(false)
         exitDrive()
     }
 
     func testDriveShowsUnknownValuesAfterStalledScenario() {
-        launch(scenario: "stalled", engineSound: true)
+        launch(scenario: "stalled")
         openDrive()
         waitForLandscape()
+        setEngineSoundEnabled(true)
 
         assertText(for: "drive.rpm", containing: "Unknown")
         assertText(for: "drive.speed", containing: "Unknown")
@@ -149,6 +152,7 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.throttle", containing: "Unknown")
         assertText(for: "drive.brake", containing: "Unknown")
         captureLandscape("drive-stalled-unknown")
+        setEngineSoundEnabled(false)
     }
 
     func testDriveGMeterShowsNoDataForLayout1Controller() {
@@ -206,16 +210,24 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.gear", matchingAny: ["1", "2", "3", "4", "5", "6"])
     }
 
+    private func setEngineSoundEnabled(_ enabled: Bool) {
+        let toggle = app.switches["engineSound.enabled"]
+        app.buttons["drive.sound"].tap(until: toggle, timeout: 10)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        if (toggle.value as? String == "1") != enabled { toggle.tap() }
+        XCTAssertEqual(toggle.value as? String, enabled ? "1" : "0")
+        app.buttons["engineSound.done"].tap()
+    }
+
     private func launchConnected() {
         launch(scenario: "connected")
     }
 
-    private func launch(scenario: String, largeText: Bool = false, engineSound: Bool = false) {
+    private func launch(scenario: String, largeText: Bool = false) {
         app.launchArguments = [
             "-FakeController", "YES",
             "-DemoScenario", scenario
         ]
-        if engineSound { app.launchArguments += ["-EngineSound", "YES"] }
         if largeText {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
