@@ -65,19 +65,36 @@ final class DriveEngineSoundControllerTests: XCTestCase {
         XCTAssertEqual(DriveEngineSoundController.rpmReceiptTime(in: snapshot([state(.number, "rpm")])), start)
     }
 
-    func testLaunchFlagIsExplicitAndDisabledControllerDoesNotAllocateAudio() async throws {
-        XCTAssertFalse(DriveEngineSoundController.launchEnabled(arguments: []))
-        XCTAssertFalse(DriveEngineSoundController.launchEnabled(arguments: ["-EngineSound", "NO"]))
-        XCTAssertFalse(DriveEngineSoundController.launchEnabled(arguments: ["-EngineSound"]))
-        XCTAssertTrue(DriveEngineSoundController.launchEnabled(arguments: ["-EngineSound", "YES"]))
-        let controller = DriveEngineSoundController(enabled: false, makeSource: {
-            XCTFail("Disabled launch must not create the native source")
+    func testSoundDefaultsOffAndDisabledControllerDoesNotAllocateAudio() async throws {
+        XCTAssertFalse(EngineSoundPreferences().isEnabled)
+        XCTAssertTrue(EngineSoundPreferences().lowersOtherAudio)
+        let controller = DriveEngineSoundController(makeSource: {
+            XCTFail("Disabled sound must not create the native source")
             return ToneSource()
         }, makePlayer: {
-            XCTFail("Disabled launch must not create playback")
+            XCTFail("Disabled sound must not create playback")
             return RecordingPlayer()
         })
         try controller.start()
+        controller.stop()
+    }
+
+    func testPersistedPreferencesStartStopAndExposeDuckingWithoutRestart() async throws {
+        let player = RecordingPlayer()
+        let controller = DriveEngineSoundController(makeSource: { ToneSource() }, makePlayer: { player })
+        try controller.configure(.init(isEnabled: false, lowersOtherAudio: true))
+        XCTAssertEqual(player.starts, 0)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: true))
+        XCTAssertEqual(player.starts, 1)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: false))
+        XCTAssertEqual(player.starts, 1, "Preference changes must not restart playback")
+        XCTAssertFalse(controller.preferences.lowersOtherAudio)
+        XCTAssertEqual(player.stops, 0)
+        try controller.configure(.init(isEnabled: false, lowersOtherAudio: false))
+        XCTAssertEqual(player.stops, 1)
+        XCTAssertNil(player.source)
+        try controller.configure(.init(isEnabled: true, lowersOtherAudio: false))
+        XCTAssertEqual(player.starts, 2)
         controller.stop()
     }
 
@@ -203,10 +220,12 @@ final class DriveEngineSoundControllerTests: XCTestCase {
 @MainActor
 private final class RecordingPlayer: DriveSoundPlaying {
     var source: (any EngineSoundSource)?
+    var starts = 0
     var stops = 0
     var fail = false
     func play(_ source: any EngineSoundSource) throws {
         self.source = source
+        starts += 1
         if fail { throw NSError(domain: "test.playback", code: 1) }
     }
     func stop() { stops += 1; source = nil }

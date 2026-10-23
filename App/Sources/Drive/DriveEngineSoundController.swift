@@ -8,7 +8,7 @@ import EngineSimCore
 /// age expiry and fading. The controller never calls native controls directly.
 @MainActor
 final class DriveEngineSoundController {
-    private let enabled: Bool
+    private(set) var preferences: EngineSoundPreferences
     private let makeSource: () throws -> any EngineSoundSource
     private let makePlayer: () -> any DriveSoundPlaying
     private let clock: () -> TimeInterval
@@ -18,26 +18,30 @@ final class DriveEngineSoundController {
     private var observation: Observation?
 
     init(
-        enabled: Bool = launchEnabled(),
+        enabled: Bool = false,
         rpmRange: ClosedRange<Double> = engine_sim_profile_min_rpm(ENGINE_SIM_PROFILE_LS_V8)...engine_sim_profile_max_rpm(ENGINE_SIM_PROFILE_LS_V8),
         makeSource: @escaping () throws -> any EngineSoundSource = { try EngineSimSource() },
         makePlayer: @escaping () -> any DriveSoundPlaying = { EngineSoundPlayer() },
         clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
-        self.enabled = enabled
+        preferences = EngineSoundPreferences(isEnabled: enabled)
         self.rpmRange = rpmRange
         self.makeSource = makeSource
         self.makePlayer = makePlayer
         self.clock = clock
     }
 
-    nonisolated static func launchEnabled(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
-        guard let flag = arguments.lastIndex(of: "-EngineSound"), arguments.indices.contains(flag + 1) else { return false }
-        return arguments[flag + 1] == "YES"
+    func configure(_ preferences: EngineSoundPreferences) throws {
+        self.preferences = preferences
+        if preferences.isEnabled {
+            try start()
+        } else {
+            stop()
+        }
     }
 
     func start() throws {
-        guard enabled, player == nil else { return }
+        guard preferences.isEnabled, player == nil else { return }
         let following = DriveFollowingSource(source: try makeSource(), rpmRange: rpmRange, clock: clock)
         let playback = makePlayer()
         do {
