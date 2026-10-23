@@ -26,9 +26,9 @@ final class EngineSoundUITests: XCTestCase {
         launch()
         openDrive()
         openSettings()
-        XCTAssertEqual(app.switches["engineSound.enabled"].value as? String, "1")
+        assertSwitchValue(app.switches["engineSound.enabled"], isEnabled: true)
         reveal(app.switches["engineSound.lowersOtherAudio"])
-        XCTAssertEqual(app.switches["engineSound.lowersOtherAudio"].value as? String, "0")
+        assertSwitchValue(app.switches["engineSound.lowersOtherAudio"], isEnabled: false)
         capture("engine-sound-persisted-after-relaunch")
         setSwitch("engineSound.enabled", to: false)
         setSwitch("engineSound.lowersOtherAudio", to: true)
@@ -62,7 +62,8 @@ final class EngineSoundUITests: XCTestCase {
         let ducking = app.switches["engineSound.lowersOtherAudio"]
         reveal(ducking)
         XCTAssertEqual(ducking.label, "Lower other audio while playing")
-        XCTAssertTrue(app.windows.element(boundBy: 0).frame.contains(ducking.frame))
+        let windowFrame = app.windows.element(boundBy: 0).frame
+        XCTAssertTrue(windowFrame.contains(ducking.frame), "Ducking control \(ducking.frame) is outside window \(windowFrame)")
         XCTAssertTrue(app.buttons["engineSound.done"].isHittable)
         capture("engine-sound-\(style)-settings-scrolled-largest-text")
         app.buttons["engineSound.done"].tap()
@@ -82,6 +83,9 @@ final class EngineSoundUITests: XCTestCase {
         let exit = app.buttons["drive.exit"]
         app.buttons["Drive"].tap(until: exit, timeout: 15)
         XCTAssertTrue(exit.waitForExistence(timeout: 10))
+        // Match the existing Drive capture workflow: a requested window
+        // geometry alone does not rotate the Simulator's screen capture.
+        XCUIDevice.shared.orientation = .landscapeLeft
         let landscape = NSPredicate { _, _ in
             let frame = self.app.windows.element(boundBy: 0).frame
             return frame.width > frame.height
@@ -98,23 +102,34 @@ final class EngineSoundUITests: XCTestCase {
         let control = app.switches[identifier]
         reveal(control)
         if (control.value as? String == "1") != enabled { control.tap() }
-        XCTAssertEqual(control.value as? String, enabled ? "1" : "0")
+        assertSwitchValue(control, isEnabled: enabled)
+    }
+
+    private func assertSwitchValue(_ control: XCUIElement, isEnabled enabled: Bool) {
+        let expected = enabled ? "1" : "0"
+        let updated = NSPredicate { _, _ in control.value as? String == expected }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: updated, object: nil)], timeout: 10), .completed,
+                       "Switch did not reach \(expected); actual value: \(control.value ?? "nil")")
+        XCTAssertEqual(control.value as? String, expected)
     }
 
     private func reveal(_ element: XCUIElement) {
+        func fullyVisible() -> Bool {
+            element.isHittable && app.windows.element(boundBy: 0).frame.contains(element.frame)
+        }
         for _ in 0..<4 {
-            if element.isHittable { return }
+            if fullyVisible() { return }
             app.swipeUp()
         }
         for _ in 0..<4 {
-            if element.isHittable { return }
+            if fullyVisible() { return }
             app.swipeDown()
         }
-        XCTAssertTrue(element.isHittable, "Settings control must be reachable by scrolling")
+        XCTAssertTrue(fullyVisible(), "Settings control must be fully visible and reachable by scrolling")
     }
 
     private func capture(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)

@@ -211,11 +211,17 @@ final class DriveNavigationUITests: XCTestCase {
     }
 
     private func setEngineSoundEnabled(_ enabled: Bool) {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForLandscape()
         let toggle = app.switches["engineSound.enabled"]
         app.buttons["drive.sound"].tap(until: toggle, timeout: 10)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         if (toggle.value as? String == "1") != enabled { toggle.tap() }
-        XCTAssertEqual(toggle.value as? String, enabled ? "1" : "0")
+        let expected = enabled ? "1" : "0"
+        let updated = NSPredicate { _, _ in toggle.value as? String == expected }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: updated, object: nil)], timeout: 10), .completed,
+                       "Engine sound did not reach \(expected); actual value: \(toggle.value ?? "nil")")
+        XCTAssertEqual(toggle.value as? String, expected)
         app.buttons["engineSound.done"].tap()
     }
 
