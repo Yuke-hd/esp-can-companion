@@ -102,8 +102,16 @@ final class EngineSoundUITests: XCTestCase {
         let control = app.switches[identifier]
         reveal(control)
         if (control.value as? String == "1") != enabled {
-            // SwiftUI exposes the whole Form row as the switch; tap its trailing thumb.
-            control.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            // Prefer the native thumb when SwiftUI exposes a nested switch.
+            let thumb = control.switches.firstMatch
+            if thumb.exists {
+                thumb.tap()
+            } else {
+                // The combined Form row ends after the track. CI captures place
+                // its center about 44 pt from that edge; avoid a track-edge tap.
+                let x = max(0.5, 1 - 44 / control.frame.width)
+                control.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.5)).tap()
+            }
         }
         assertSwitchValue(control, isEnabled: enabled)
     }
@@ -124,11 +132,13 @@ final class EngineSoundUITests: XCTestCase {
         XCTAssertTrue(form.waitForExistence(timeout: 5))
         for _ in 0..<4 {
             if fullyVisible() { return }
-            form.swipeUp()
+            form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.1, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
         }
         for _ in 0..<4 {
             if fullyVisible() { return }
-            form.swipeDown()
+            form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.1, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
         }
         if !fullyVisible() { capture("engine-sound-settings-reveal-failure") }
         XCTAssertTrue(fullyVisible(),

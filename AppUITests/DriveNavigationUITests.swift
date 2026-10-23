@@ -217,8 +217,16 @@ final class DriveNavigationUITests: XCTestCase {
         app.buttons["drive.sound"].tap(until: toggle, timeout: 10)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         if (toggle.value as? String == "1") != enabled {
-            // SwiftUI exposes the whole Form row as the switch; tap its trailing thumb.
-            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            // Prefer the native thumb when SwiftUI exposes a nested switch.
+            let thumb = toggle.switches.firstMatch
+            if thumb.exists {
+                thumb.tap()
+            } else {
+                // The combined Form row ends after the track. CI captures place
+                // its center about 44 pt from that edge; avoid a track-edge tap.
+                let x = max(0.5, 1 - 44 / toggle.frame.width)
+                toggle.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.5)).tap()
+            }
         }
         let expected = enabled ? "1" : "0"
         let updated = NSPredicate { _, _ in toggle.value as? String == expected }
