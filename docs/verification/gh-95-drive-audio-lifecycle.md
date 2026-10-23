@@ -24,14 +24,23 @@ interruption recovery, critical thermal pause/recovery, route-removal pause, and
 explicit off surviving recovery and foregrounding.
 
 Local commands use iPhone 16 / iOS 18.4, UDID
-`5F64FF0E-1A6A-471D-B2A0-E83A70920CAC`, Xcode 26.5:
+`5F64FF0E-1A6A-471D-B2A0-E83A70920CAC`, Xcode 26.6 (17F113):
 
 - `xcodegen generate`: passed.
 - `git diff --check`: passed.
 - Swift frontend parsing of changed sources/tests: passed.
-- App tests and CompanionKit tests: started; final results recorded on the PR.
-- UI journey and rendered evidence: final result recorded on the PR. No layout
-  changes are introduced by this issue.
+- CompanionKit `swift test`: 377 tests passed, zero failures.
+- App tests: the first build found a test syntax error, corrected before the
+  published head. The corrected run stalled in `CreateBuildDescription` at
+  `clang -v -E -dM` toolchain discovery for over three minutes and was stopped.
+  It did not reach compilation or execute tests. Log:
+  `/private/tmp/esp-can-gh95-app-tests-v2.log`.
+- Engine Sound UI journey: attempted with the same iPhone 16 destination and a
+  120-second bound. It stalled at the same toolchain probe before building or
+  executing UI tests. Log: `/private/tmp/esp-can-gh95-ui-tests.log`.
+- Rendered inspection and screenshots remain unverified locally. No layout
+  changes are introduced by this issue. Exact-head CI results are recorded on
+  the PR.
 
 ## Hardware follow-up
 
