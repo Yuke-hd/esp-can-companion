@@ -80,6 +80,11 @@ final class DriveNavigationUITests: XCTestCase {
 
     func testDriveBrakePressureRisesDuringDemoLap() {
         launch(scenario: "driveLaps")
+        // Wait for session loading and catalog discovery before measuring a lap.
+        let frameRate = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "frames per second")
+        ).firstMatch
+        XCTAssertTrue(frameRate.waitForExistence(timeout: 60), "demo telemetry did not become live")
         openDrive()
         waitForLandscape()
         let brake = app.descendants(matching: .any)["drive.brake"]
