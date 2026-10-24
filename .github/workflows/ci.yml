@@ -99,6 +99,13 @@ jobs:
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
+      - name: Reset simulator before app tests
+        # Package tests and app tests share this job, but the app suite also
+        # exercises Simulator audio. Start it from a clean CoreSimulator
+        # process so package-test state cannot strand the audio callback.
+        if: success() || failure()
+        run: xcrun simctl shutdown all || true
+
       - name: Build and test app
         # Runs even when the package tests fail, so one run reports both.
         if: success() || failure()
