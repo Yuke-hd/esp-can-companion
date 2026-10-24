@@ -252,3 +252,129 @@ jobs:
             UITests.xcresult
             UITests-retry.xcresult
           if-no-files-found: ignore
+
+  sound-settings-preview:
+    # GH-94: exact requested phones, only the settings accessibility journey.
+    name: Sound settings preview (${{ matrix.device }})
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iPhone 16, iPhone SE (3rd generation)]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/fetch-enginesim
+
+      - uses: ./.github/actions/setup-ios
+
+      - name: Confirm preview destination
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          xcrun simctl list devices available
+          xcrun simctl list devices available | grep -F "$PREVIEW_DEVICE ("
+
+      - name: Boot preview simulator
+        # A cold simulator can make the first app launch time out. Resolve the
+        # matrix device on the newest iOS runtime, then test by its stable id.
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          udid=$(xcrun simctl list devices available -j | jq -r --arg device "$PREVIEW_DEVICE" '
+            .devices | to_entries
+            | map(select(.key | test("\\.iOS-[0-9]")))
+            | sort_by(.key | capture("iOS-(?<v>[0-9-]+)$").v | split("-") | map(tonumber))
+            | map(.value[] | select(.name == $device) | .udid)
+            | last // empty')
+          if [ -z "$udid" ]; then
+            echo "::error::no $PREVIEW_DEVICE simulator to boot"
+            exit 1
+          fi
+          xcrun simctl boot "$udid" || true # already booted is fine
+          xcrun simctl bootstatus "$udid" -b
+          echo "DESTINATION=id=$udid" >> "$GITHUB_ENV"
+
+      - name: Capture largest-text settings in both styles
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          set -o pipefail
+          run_preview() { # <result bundle> <-only-testing arguments>
+            # shellcheck disable=SC2086 # one word per -only-testing argument
+            xcodebuild test \
+              -project CANCompanion.xcodeproj \
+              -scheme "CANCompanion UI Tests" \
+              -derivedDataPath "$RUNNER_TEMP/SoundSettingsBuild" \
+              -destination "$DESTINATION" \
+              -resultBundlePath "$1" \
+              ${2:-} \
+              CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+          }
+          only_testing="-only-testing:CANCompanionUITests/EngineSoundUITests/testSettingsInBothStylesAtLargestText"
+          if run_preview SoundSettings.xcresult "$only_testing"; then exit 0; fi
+
+          # Retry only an app launch failure. Any assertion or other test
+          # failure remains a failure even if the launch-only retry passes.
+          status=0
+          retry=$(.github/scripts/ui-test-launch-failures.sh SoundSettings.xcresult) || status=$?
+          if [ -z "$retry" ]; then exit 1; fi
+          echo "::warning::Retrying settings preview after app launch failure: $retry"
+          run_preview SoundSettings-retry.xcresult "$retry"
+          exit "$status"
+
+      - name: Upload settings screenshots and accessibility results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sound-settings-${{ matrix.device }}
+          path: |
+            SoundSettings.xcresult
+            SoundSettings-retry.xcresult
+          if-no-files-found: ignore
+
+      - name: Package exact Simulator app for local verification
+        if: always() && matrix.device == 'iPhone 16'
+        env:
+          SIMULATOR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SIMULATOR_HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          SIMULATOR_DEVICE: ${{ matrix.device }}
+        run: |
+          preview_app="$RUNNER_TEMP/SoundSettingsBuild/Build/Products/Debug-iphonesimulator/CANCompanion.app"
+          if [ ! -d "$preview_app" ]; then
+            echo "::notice::No Simulator app was built"
+            exit 0
+          fi
+          mkdir -p SimulatorApp
+          cp -R "$preview_app" SimulatorApp/CANCompanion.app
+          python3 - <<'PYTHON'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path("SimulatorApp")
+          binary = root / "CANCompanion.app/CANCompanion"
+          manifest = {
+              "headSHA": os.environ["SIMULATOR_HEAD_SHA"],
+              "branch": os.environ["SIMULATOR_HEAD_BRANCH"],
+              "checkoutSHA": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "device": os.environ["SIMULATOR_DEVICE"],
+              "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True).strip(),
+              "binarySHA256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+              "signingAllowed": False,
+              "content": "Clean CI Simulator build. No credentials, signing files, or runtime user data are packaged."
+          }
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PYTHON
+          # Tar preserves the Simulator executable permissions for installation.
+          tar -czf SimulatorApp/CANCompanion-simulator.tar.gz -C SimulatorApp CANCompanion.app manifest.json
+          rm -rf SimulatorApp/CANCompanion.app
+
+      - name: Upload short-lived Simulator app
+        if: always() && matrix.device == 'iPhone 16'
+        uses: actions/upload-artifact@v6
+        with:
+          name: drive-sound-simulator-app
+          path: SimulatorApp/
+          retention-days: 3
+          if-no-files-found: ignore
