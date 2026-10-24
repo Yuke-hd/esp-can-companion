@@ -32,6 +32,9 @@ struct EngineSoundSettings: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .presentationCompactAdaptation(.sheet)
+        // In landscape the compact-height sheet is too narrow for the largest
+        // accessibility size. Use the full landscape surface so native Form
+        // rows remain readable and reachable without changing their controls.
+        .presentationCompactAdaptation(horizontal: .sheet, vertical: .fullScreenCover)
     }
 }
