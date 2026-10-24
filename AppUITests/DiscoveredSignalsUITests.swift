@@ -54,7 +54,7 @@ final class DiscoveredSignalsUITests: XCTestCase {
         open("discoveredMalformed")
         assertRow("example.enabled", contains: ["True", "Fresh"])
         capture("malformed-before")
-        assertState("Telemetry stalled", timeout: 20)
+        assertState("Telemetry stalled", timeout: 60)
         assertRow("example.enabled", contains: ["no value", "Unknown"])
         assertRow("example.peer", contains: ["no value", "Unknown"])
         capture("malformed-cleared")

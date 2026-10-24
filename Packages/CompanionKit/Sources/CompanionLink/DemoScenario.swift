@@ -150,12 +150,15 @@ public enum DemoScenario: String, CaseIterable, Sendable {
     @MainActor
     private func startJourney(demo: DemoController, radio: FakeRadio, peripheral: PeripheralID,
                               remapped: Bool = false) {
+        // The UI must navigate the paged catalog and open its sheet before
+        // malformed packets begin. Six seconds expires during CI setup.
+        let malformedStartsAt: TimeInterval = 45
         demo.streamLiveSignals(
             on: radio, from: peripheral,
             stopAfter: self == .discoveredStalled ? .seconds(8) : nil,
             extensibleFrames: { seconds, _ in [
                 "example.enabled": .init(availability: .fresh,
-                                         value: .boolean(!remapped && !(self == .discoveredMalformed && seconds >= 6))),
+                                         value: .boolean(!remapped && !(self == .discoveredMalformed && seconds >= malformedStartsAt))),
                 "example.mode": .init(availability: .freshnessUnverified, value: .enumeration(choiceKey: "new_choice")),
                 "example.peer": .init(availability: .fresh, value: .number(Float(seconds))),
                 "example.signed": .init(availability: self == .discoveredPartial ? .stale : .fresh,
@@ -165,7 +168,7 @@ public enum DemoScenario: String, CaseIterable, Sendable {
                 self == .discoveredPartial && seconds >= 6 ? [200, 300, 400] : nil
             },
             transformExtensiblePackets: { seconds, packets in
-                self == .discoveredMalformed && seconds >= 6 ? packets.map { $0 + Data([1]) } : packets
+                self == .discoveredMalformed && seconds >= malformedStartsAt ? packets.map { $0 + Data([1]) } : packets
             }
         )
     }
