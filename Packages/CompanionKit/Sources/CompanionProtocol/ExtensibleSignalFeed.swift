@@ -17,6 +17,19 @@ public struct ExtensibleSignalSnapshot: Equatable, Sendable {
 public struct ExtensibleSignalState: Equatable, Sendable {
     public let descriptor: SignalDescriptor
     public let reading: SignalReading<ExtensibleSignalValue>
+    /// Monotonic receipt time of this typed value, retained across unrelated
+    /// packets. Nil when the value is missing, invalid, expired, or stalled.
+    public let receivedAt: ContinuousClock.Instant?
+
+    public init(
+        descriptor: SignalDescriptor,
+        reading: SignalReading<ExtensibleSignalValue>,
+        receivedAt: ContinuousClock.Instant? = nil
+    ) {
+        self.descriptor = descriptor
+        self.reading = reading
+        self.receivedAt = receivedAt
+    }
 }
 
 /// Latest state only, at most 64 entries. The caller supplies its monotonic
@@ -87,8 +100,10 @@ public struct ExtensibleSignalFeed: Sendable {
         let stalled = packetTime.map { now - $0 >= Self.stallTimeout } ?? true
         let states: [ExtensibleSignalState] = catalog?.descriptors.map { descriptor in
             let expired = recordTimes[descriptor.handle].map { now - $0 >= Self.signalTimeout } ?? true
-            return ExtensibleSignalState(descriptor: descriptor,
-                reading: stalled || expired ? .unknown : readings[descriptor.handle] ?? .unknown)
+            let reading: SignalReading<ExtensibleSignalValue> = stalled || expired
+                ? .unknown : readings[descriptor.handle] ?? .unknown
+            return ExtensibleSignalState(descriptor: descriptor, reading: reading,
+                receivedAt: reading.value == nil ? nil : recordTimes[descriptor.handle])
         } ?? []
         return ExtensibleSignalSnapshot(catalog: catalog, sequence: sequence,
             isTelemetryStarted: !stalled && telemetryStarted, isStalled: stalled, signals: states)

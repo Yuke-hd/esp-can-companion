@@ -156,9 +156,8 @@ final class DiscoveredSignalsUITests: XCTestCase {
     }
 
     private func assertState(_ text: String, timeout: TimeInterval = 20) {
-        let state = app.descendants(matching: .any)["signals.state"].firstMatch
-        let predicate = NSPredicate { _, _ in state.exists && state.label.contains(text) }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: timeout), .completed)
+        let title = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: timeout), "Discovered signals did not show state: \(text)")
     }
 
     private func reveal(_ key: String) {

@@ -99,6 +99,13 @@ jobs:
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
+      - name: Reset simulator before app tests
+        # Package tests and app tests share this job, but the app suite also
+        # exercises Simulator audio. Start it from a clean CoreSimulator
+        # process so package-test state cannot strand the audio callback.
+        if: success() || failure()
+        run: xcrun simctl shutdown all || true
+
       - name: Build and test app
         # Runs even when the package tests fail, so one run reports both.
         if: success() || failure()
@@ -109,7 +116,20 @@ jobs:
             -scheme CANCompanion \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination "$DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+            -resultBundlePath "$RUNNER_TEMP/AppTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 \
+            | tee "$RUNNER_TEMP/AppTests.xcodebuild.log" \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload app test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-app-test-diagnostics
+          path: |
+            ${{ runner.temp }}/AppTests.xcresult
+            ${{ runner.temp }}/AppTests.xcodebuild.log
+          if-no-files-found: warn
 
   ui-build:
     # Builds the app and UI test bundle once. The shards run this build with
