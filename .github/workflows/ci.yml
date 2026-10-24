@@ -278,26 +278,62 @@ jobs:
           xcrun simctl list devices available
           xcrun simctl list devices available | grep -F "$PREVIEW_DEVICE ("
 
+      - name: Boot preview simulator
+        # A cold simulator can make the first app launch time out. Resolve the
+        # matrix device on the newest iOS runtime, then test by its stable id.
+        env:
+          PREVIEW_DEVICE: ${{ matrix.device }}
+        run: |
+          udid=$(xcrun simctl list devices available -j | jq -r --arg device "$PREVIEW_DEVICE" '
+            .devices | to_entries
+            | map(select(.key | test("\\.iOS-[0-9]")))
+            | sort_by(.key | capture("iOS-(?<v>[0-9-]+)$").v | split("-") | map(tonumber))
+            | map(.value[] | select(.name == $device) | .udid)
+            | last // empty')
+          if [ -z "$udid" ]; then
+            echo "::error::no $PREVIEW_DEVICE simulator to boot"
+            exit 1
+          fi
+          xcrun simctl boot "$udid" || true # already booted is fine
+          xcrun simctl bootstatus "$udid" -b
+          echo "DESTINATION=id=$udid" >> "$GITHUB_ENV"
+
       - name: Capture largest-text settings in both styles
         env:
           PREVIEW_DEVICE: ${{ matrix.device }}
         run: |
           set -o pipefail
-          xcodebuild test \
-            -project CANCompanion.xcodeproj \
-            -scheme "CANCompanion UI Tests" \
-            -derivedDataPath "$RUNNER_TEMP/SoundSettingsBuild" \
-            -destination "platform=iOS Simulator,name=$PREVIEW_DEVICE" \
-            -only-testing:CANCompanionUITests/EngineSoundUITests/testSettingsInBothStylesAtLargestText \
-            -resultBundlePath SoundSettings.xcresult \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+          run_preview() { # <result bundle> <-only-testing arguments>
+            # shellcheck disable=SC2086 # one word per -only-testing argument
+            xcodebuild test \
+              -project CANCompanion.xcodeproj \
+              -scheme "CANCompanion UI Tests" \
+              -derivedDataPath "$RUNNER_TEMP/SoundSettingsBuild" \
+              -destination "$DESTINATION" \
+              -resultBundlePath "$1" \
+              ${2:-} \
+              CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+          }
+          only_testing="-only-testing:CANCompanionUITests/EngineSoundUITests/testSettingsInBothStylesAtLargestText"
+          if run_preview SoundSettings.xcresult "$only_testing"; then exit 0; fi
+
+          # Retry only an app launch failure. Any assertion or other test
+          # failure remains a failure even if the launch-only retry passes.
+          status=0
+          retry=$(.github/scripts/ui-test-launch-failures.sh SoundSettings.xcresult) || status=$?
+          if [ -z "$retry" ]; then exit 1; fi
+          echo "::warning::Retrying settings preview after app launch failure: $retry"
+          run_preview SoundSettings-retry.xcresult "$retry"
+          exit "$status"
 
       - name: Upload settings screenshots and accessibility results
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: sound-settings-${{ matrix.device }}
-          path: SoundSettings.xcresult
+          path: |
+            SoundSettings.xcresult
+            SoundSettings-retry.xcresult
           if-no-files-found: ignore
 
       - name: Package exact Simulator app for local verification
