@@ -48,11 +48,24 @@ final class DriveEngineSoundController {
         try start()
     }
 
+    func configure(_ preferences: EngineSoundPreferences, isDriveVisible: Bool, isAppActive: Bool) throws {
+        // Clear explicit off before a lifecycle transition can attempt startup.
+        if !preferences.isEnabled { try configure(preferences) }
+        updateLifecycle(isDriveVisible: isDriveVisible, isAppActive: isAppActive)
+        if preferences.isEnabled { try configure(preferences) }
+    }
+
     func setLifecycle(isDriveVisible: Bool, isAppActive: Bool) throws {
+        updateLifecycle(isDriveVisible: isDriveVisible, isAppActive: isAppActive)
+        try start()
+    }
+
+    private func updateLifecycle(isDriveVisible: Bool, isAppActive: Bool) {
         self.isDriveVisible = isDriveVisible
         self.isAppActive = isAppActive
-        if isDriveVisible && isAppActive {
-            try start()
+        if isDriveVisible {
+            // Keep the package's interruption and route-removal recovery state.
+            audioSession?.setAppActive(isAppActive)
         } else {
             stop()
         }

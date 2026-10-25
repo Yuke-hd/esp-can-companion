@@ -93,8 +93,8 @@ struct DriveTab: View {
 
     private func configureSound(readout: DriveReadout, receivedAt: ContinuousClock.Instant?) {
         do {
-            try engineSound.setLifecycle(isDriveVisible: true, isAppActive: scenePhase == .active)
-            try engineSound.configure(.init(isEnabled: soundEnabled, lowersOtherAudio: lowersOtherAudio))
+            try engineSound.configure(.init(isEnabled: soundEnabled, lowersOtherAudio: lowersOtherAudio),
+                                      isDriveVisible: true, isAppActive: scenePhase == .active)
             engineSound.receive(readout, receivedAt: receivedAt)
         } catch {
             Logger(subsystem: "CANCompanion", category: "DriveSound")

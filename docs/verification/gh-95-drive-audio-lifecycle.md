@@ -3,8 +3,12 @@
 ## Scope
 
 Drive visibility and scene activity gate playback requests. Inactive scenes,
-including screen lock/background transitions, and leaving Drive call the reusable
-player's fade/stop path. No audio background mode is added.
+including screen lock/background transitions, make output unavailable through
+the reusable session boundary, stopping its audio worker and releasing session
+activation. The player and source remain retained while Drive is visible so
+foregrounding preserves the package's interruption and route-removal recovery
+state. Leaving Drive or explicitly disabling sound releases the playback request.
+No audio background mode is added.
 
 The app session adapter applies persisted duck/mix preferences through
 `EngineSoundSession.acquire/release`. It acquires the new reference before
@@ -21,7 +25,12 @@ background/foreground, live policy changes without player restart, failed policy
 acquisition retaining the previous policy, explicit off while paused, and event
 forwarding. The Simulator-only real-player test uses a fake session to exercise
 interruption recovery, critical thermal pause/recovery, route-removal pause, and
-explicit off surviving recovery and foregrounding.
+explicit off surviving recovery and foregrounding. Regression coverage also
+checks ordinary scene stop/recovery, route-removal and declined-interruption
+pauses surviving inactive/active transitions, recovery events remaining silent
+while inactive, and disabling sound after startup failure without another retry.
+The view passes preferences and lifecycle together so off is applied before any
+throwing startup attempt.
 
 Local commands use iPhone 16 / iOS 18.4, UDID
 `5F64FF0E-1A6A-471D-B2A0-E83A70920CAC`, Xcode 26.6 (17F113):
