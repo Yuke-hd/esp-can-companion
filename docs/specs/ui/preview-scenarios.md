@@ -197,12 +197,8 @@ metadata `reference` token makes no vehicle-validation claim.
 Permanent interactions are in `AppUITests/DiscoveredSignalsUITests.swift`.
 Outcome-based waits cover values, expiry/stall, sheet close/reopen, and recovery;
 screenshots are full-screen XCTest attachments. The normal phone and SE checks
-also exercise scrolling. The larger-text test launches with the largest
-accessibility content-size category and verifies reachable rows/Done plus
-combined accessibility key/value/status/unit/evidence/choice labels. This checks
-Simulator accessibility metadata and reading order, not physical-phone VoiceOver
-audio or gestures. Report visual inspection and actual executed test results with
-the PR; a generated attachment alone is not a pass.
+also exercise scrolling. Report visual inspection and actual executed test
+results with the PR; a generated attachment alone is not a pass.
 
 ### Shared synthetic vector provenance
 
