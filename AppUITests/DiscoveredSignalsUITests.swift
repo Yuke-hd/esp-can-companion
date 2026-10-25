@@ -100,19 +100,21 @@ final class DiscoveredSignalsUITests: XCTestCase {
         XCTAssertTrue(close.exists, "Discovered signals sheet did not open")
     }
 
-    private func row(_ key: String) -> XCUIElement {
+    private func row(_ key: String, matching predicate: NSPredicate? = nil) -> XCUIElement {
         let hex = key.utf8.map { String(format: "%02x", $0) }.joined()
-        return app.descendants(matching: .any)["signals.row." + hex].firstMatch
+        let candidates = app.descendants(matching: .any).matching(identifier: "signals.row." + hex)
+        return (predicate.map { candidates.matching($0) } ?? candidates).firstMatch
     }
 
     private func assertRow(_ key: String, contains texts: [String], timeout: TimeInterval = 20,
                            file: StaticString = #filePath, line: UInt = #line) {
         let element = row(key)
-        let predicate = NSPredicate { _, _ in
-            element.exists && texts.allSatisfy { element.label.contains($0) }
-        }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: timeout),
-                       .completed, "\(key) did not show \(texts): \(element.exists ? element.label : "missing")", file: file, line: line)
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: texts.map {
+            NSPredicate(format: "label CONTAINS %@", $0)
+        })
+        let matchingRow = row(key, matching: predicate)
+        XCTAssertTrue(matchingRow.waitForExistence(timeout: timeout),
+                      "\(key) did not show \(texts): \(element.exists ? element.label : "missing")", file: file, line: line)
     }
 
     private func assertState(_ text: String, timeout: TimeInterval = 20) {

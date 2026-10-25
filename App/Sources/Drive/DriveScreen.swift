@@ -110,11 +110,15 @@ struct DriveScreen: View {
     let onExit: () -> Void
     /// Switches to the next Drive style, or nil to hide the control.
     var onSwitchStyle: (() -> Void)?
+    var isSoundEnabled = false
+    var onSoundSettings: (() -> Void)?
 
-    init(slots: DriveScreenSlots = .placeholder, onExit: @escaping () -> Void = {}, onSwitchStyle: (() -> Void)? = nil) {
+    init(slots: DriveScreenSlots = .placeholder, onExit: @escaping () -> Void = {}, onSwitchStyle: (() -> Void)? = nil, isSoundEnabled: Bool = false, onSoundSettings: (() -> Void)? = nil) {
         self.layout = .slots(slots)
         self.onExit = onExit
         self.onSwitchStyle = onSwitchStyle
+        self.isSoundEnabled = isSoundEnabled
+        self.onSoundSettings = onSoundSettings
     }
 
     /// A style that draws its whole layout itself, across the screen's full
@@ -122,12 +126,16 @@ struct DriveScreen: View {
     init<Backdrop: View, Content: View>(
         onExit: @escaping () -> Void,
         onSwitchStyle: (() -> Void)? = nil,
+        isSoundEnabled: Bool = false,
+        onSoundSettings: (() -> Void)? = nil,
         @ViewBuilder backdrop: () -> Backdrop = { Color.clear },
         @ViewBuilder content: () -> Content
     ) {
         self.layout = .fill(backdrop: AnyView(backdrop()), content: AnyView(content()))
         self.onExit = onExit
         self.onSwitchStyle = onSwitchStyle
+        self.isSoundEnabled = isSoundEnabled
+        self.onSoundSettings = onSoundSettings
     }
 
     private var backdrop: AnyView {
@@ -194,7 +202,7 @@ struct DriveScreen: View {
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
                 slots.shiftLights
-                    .frame(width: min(600, contentWidth * 0.72), height: 26)
+                    .frame(width: min(600, contentWidth * 0.72, max(0, contentWidth - controlsWidth * 2)), height: 26)
                     .frame(maxWidth: .infinity)
 
                 controls
@@ -239,11 +247,21 @@ struct DriveScreen: View {
 
     private var controls: some View {
         HStack(spacing: Theme.Spacing.sm) {
+            if let onSoundSettings {
+                controlButton("Engine sound settings", systemImage: isSoundEnabled ? "speaker.wave.2.fill" : "speaker.slash",
+                              identifier: "drive.sound", action: onSoundSettings)
+                    .accessibilityValue(isSoundEnabled ? "On" : "Off")
+            }
             if let onSwitchStyle {
                 controlButton("Change Drive style", systemImage: "gauge.with.dots.needle.67percent", identifier: "drive.style", action: onSwitchStyle)
             }
             controlButton("Exit Drive", systemImage: "xmark", identifier: "drive.exit", action: onExit)
         }
+    }
+
+    private var controlsWidth: CGFloat {
+        let count = 1 + (onSwitchStyle == nil ? 0 : 1) + (onSoundSettings == nil ? 0 : 1)
+        return CGFloat(count) * 30 + CGFloat(count - 1) * Theme.Spacing.sm
     }
 
     private func controlButton(_ title: String, systemImage: String, identifier: String, action: @escaping () -> Void) -> some View {

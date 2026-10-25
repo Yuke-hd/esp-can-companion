@@ -14,9 +14,11 @@ struct ClusterDriveView: View {
     let rpmBand: RPMBand
     let onExit: () -> Void
     var onSwitchStyle: (() -> Void)?
+    var isSoundEnabled = false
+    var onSoundSettings: (() -> Void)?
 
     var body: some View {
-        DriveScreen(onExit: onExit, onSwitchStyle: onSwitchStyle) {
+        DriveScreen(onExit: onExit, onSwitchStyle: onSwitchStyle, isSoundEnabled: isSoundEnabled, onSoundSettings: onSoundSettings) {
             Color.black
         } content: {
             ClusterDashboard(readout: readout, signals: signals, rpmBand: rpmBand)

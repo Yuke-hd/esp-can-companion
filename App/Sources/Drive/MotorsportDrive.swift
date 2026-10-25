@@ -13,6 +13,8 @@ struct MotorsportDriveView: View {
     var telemetryFailure: String?
     let onExit: () -> Void
     var onSwitchStyle: (() -> Void)?
+    var isSoundEnabled = false
+    var onSoundSettings: (() -> Void)?
     /// Whether the G-meter has the centre and the gear the corner slot.
     @State private var gMeterCentred = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -77,7 +79,9 @@ struct MotorsportDriveView: View {
                 link: { MotorsportLink(readout: readout, telemetryFailure: telemetryFailure) }
             ),
             onExit: onExit,
-            onSwitchStyle: onSwitchStyle
+            onSwitchStyle: onSwitchStyle,
+            isSoundEnabled: isSoundEnabled,
+            onSoundSettings: onSoundSettings
         )
         .onAppear { Theme.DriveTypography.registerFonts() }
     }

@@ -192,6 +192,45 @@ jobs:
           path: ${{ runner.temp }}/ui-test-build.tgz
           retention-days: 1
 
+      - name: Package exact Simulator app for local verification
+        env:
+          SIMULATOR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SIMULATOR_HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          preview_app="$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/CANCompanion.app"
+          if [ ! -d "$preview_app" ]; then
+            echo "::notice::No Simulator app was built"
+            exit 0
+          fi
+          mkdir -p SimulatorApp
+          cp -R "$preview_app" SimulatorApp/CANCompanion.app
+          python3 - <<'PYTHON'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path("SimulatorApp")
+          binary = root / "CANCompanion.app/CANCompanion"
+          manifest = {
+              "headSHA": os.environ["SIMULATOR_HEAD_SHA"],
+              "branch": os.environ["SIMULATOR_HEAD_BRANCH"],
+              "checkoutSHA": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True).strip(),
+              "binarySHA256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+              "signingAllowed": False,
+              "content": "Clean CI Simulator build. No credentials, signing files, or runtime user data are packaged."
+          }
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PYTHON
+          # Tar preserves the Simulator executable permissions for installation.
+          tar -czf SimulatorApp/CANCompanion-simulator.tar.gz -C SimulatorApp CANCompanion.app manifest.json
+          rm -rf SimulatorApp/CANCompanion.app
+
+      - name: Upload short-lived Simulator app
+        uses: actions/upload-artifact@v6
+        with:
+          name: drive-sound-simulator-app
+          path: SimulatorApp/
+          retention-days: 3
+          if-no-files-found: ignore
+
   ui-tests:
     # Launches the app in the simulator and checks Drive's navigation,
     # rotation, on-screen layout and demo readouts through accessibility.
