@@ -1,0 +1,35 @@
+name: Start simulator
+description: Starts booting the iPhone 16 Pro simulator in the background and tests on it by id.
+
+# Booting takes one to two minutes, so jobs start it right after checkout and it
+# overlaps the setup and build steps. Before the first test, a job blocks with
+# `xcrun simctl bootstatus "$SIM_UDID" -b`, which also boots the simulator if
+# this boot was lost.
+runs:
+  using: composite
+  steps:
+    - name: Start simulator boot
+      # Picks the iPhone 16 Pro on the newest iOS runtime, as the name-only
+      # destination did. CoreSimulator can still be loading when a job starts,
+      # so it waits for the device to be listed first.
+      shell: bash
+      run: |
+        for _ in $(seq 1 18); do
+          udid=$(xcrun simctl list devices available -j | jq -r '
+            .devices | to_entries
+            | map(select(.key | test("\\.iOS-[0-9]")))
+            | sort_by(.key | capture("iOS-(?<v>[0-9-]+)$").v | split("-") | map(tonumber))
+            | map(.value[] | select(.name == "iPhone 16 Pro") | .udid)
+            | last // empty')
+          if [ -n "$udid" ]; then break; fi
+          sleep 10
+        done
+        if [ -z "$udid" ]; then
+          echo "::error::no iPhone 16 Pro simulator to boot"
+          xcrun simctl list devices available
+          exit 1
+        fi
+        # Output goes to a file so the step does not wait on the boot.
+        nohup xcrun simctl boot "$udid" > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+        echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+        echo "DESTINATION=id=$udid" >> "$GITHUB_ENV"
