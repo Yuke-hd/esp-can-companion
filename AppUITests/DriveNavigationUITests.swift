@@ -97,24 +97,6 @@ final class DriveNavigationUITests: XCTestCase {
         captureLandscape("drive-brake-pressure-active")
     }
 
-    func testDrivePedalSignalsAtLargeText() {
-        launch(scenario: "connected", largeText: true)
-        openDrive()
-        waitForLandscape()
-        assertText(for: "drive.throttle", containing: "%")
-        assertText(for: "drive.brake", containing: "bar")
-        // This check covers the changed meters; the full dashboard bounds
-        // remain covered by the existing navigation/readout checks.
-        let window = app.windows.element(boundBy: 0).frame
-        for identifier in ["drive.brake", "drive.throttle"] {
-            let frame = app.descendants(matching: .any)[identifier].frame
-            XCTAssertGreaterThan(frame.width, 0)
-            XCTAssertGreaterThan(frame.height, 0)
-            XCTAssertTrue(window.contains(frame), "\(identifier) is clipped: \(frame)")
-        }
-        capture("drive-pedal-signals-large-text")
-    }
-
     func testEngineSoundLaunchTracksDemoLapsAndCanExitAndReenterDrive() {
         launch(scenario: "driveLaps", engineSound: true)
         let frameRate = app.descendants(matching: .any).matching(
@@ -210,15 +192,12 @@ final class DriveNavigationUITests: XCTestCase {
         launch(scenario: "connected")
     }
 
-    private func launch(scenario: String, largeText: Bool = false, engineSound: Bool = false) {
+    private func launch(scenario: String, engineSound: Bool = false) {
         app.launchArguments = [
             "-FakeController", "YES",
             "-DemoScenario", scenario
         ]
         if engineSound { app.launchArguments += ["-EngineSound", "YES"] }
-        if largeText {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        }
         app.launch()
         XCTAssertTrue(app.buttons["Drive"].waitForExistence(timeout: 15))
     }

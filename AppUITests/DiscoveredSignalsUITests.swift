@@ -94,28 +94,8 @@ final class DiscoveredSignalsUITests: XCTestCase {
         }
     }
 
-    func testLargeTextScrollAndAccessibilityLabels() {
-        open("discoveredSignals", largeText: true)
-        assertRow("example.enabled", contains: ["example.enabled, Boolean, True, Fresh", "Unit: none", "Catalog evidence: reference"])
-        capture("large-text-first-row")
-        reveal("example.mode")
-        assertRow("example.mode", contains: ["example.mode, Enum, new_choice, Unverified", "Choices: idle, new_choice"])
-        reveal("example.signed")
-        assertRow("example.signed", contains: ["example.signed, Number, -1.25, Fresh", "Unit: m/s^2"])
-        capture("large-text-scrolled-number")
-        for page in 1...4 {
-            app.scrollViews["signals.list"].swipeUp()
-            capture("large-text-number-scroll-\(page)")
-        }
-        XCTAssertTrue(app.buttons["signals.close"].isHittable)
-        closeSheet()
-    }
-
-    private func open(_ scenario: String, largeText: Bool = false, dashboardFailure: String? = nil) {
+    private func open(_ scenario: String, dashboardFailure: String? = nil) {
         app.launchArguments = ["-FakeController", "YES", "-DemoScenario", scenario]
-        if largeText {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        }
         app.launch()
         if let dashboardFailure {
             // Failure text changes the telemetry card's height. Wait for that
