@@ -48,6 +48,9 @@ struct CANCompanionApp: App {
             RootView(model: model, appDelegate: appDelegate)
                 .preferredColorScheme(.dark)
                 .tint(Theme.Colors.accent)
+                // Text stops growing at the default size, whatever the
+                // system text size; layouts are not designed beyond it.
+                .dynamicTypeSize(...DynamicTypeSize.large)
         }
     }
 }

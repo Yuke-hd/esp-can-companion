@@ -38,8 +38,9 @@ moving dashboard and saved drafts across app relaunches need further work.
    recovery path when the change affects one. Previews alone are insufficient for
    a multi-screen journey.
 4. Inspect the rendered screen against the design. For layout changes, check one
-   small supported phone and larger text as well as the usual phone size. Check
-   important text remains readable, actions reachable, and content scrollable.
+   small supported phone as well as the usual phone size. Check important text
+   remains readable, actions reachable, and content scrollable. The app caps text
+   at the default size, so larger system text sizes need no separate check.
    Check screen-reader labels and reading order when affected.
 5. Run relevant existing tests; add behavior coverage for meaningful new logic.
    A layout-only adjustment does not need a test that merely repeats its code.
@@ -161,7 +162,7 @@ A report can be this small:
 ```text
 Change: Preset send-error presentation
 Revision: <commit>; working-tree changes: <brief description, if any>
-Environment: <Xcode version>, <iOS runtime>, <phone model>, <text size>
+Environment: <Xcode version>, <iOS runtime>, <phone model>
 Scenarios/state: connected; clean start
 Actions/results: opened Presets, selected a preset, confirmed Push to controller;
 checked the unsupported-operation error and unchanged active configuration
