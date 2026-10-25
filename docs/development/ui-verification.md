@@ -132,6 +132,26 @@ retain explicit; no dedicated reset command exists today.
 
 ## Drive engine sound settings
 
+For listening, generate the project and select the **CANCompanion Audio Preview**
+scheme before building or running. Its Debug Run action selects the fake
+`driveLaps` scenario. This scheme builds the app without code coverage; the
+existing app test schemes retain coverage. The native simulation must meet an
+audio deadline, and coverage instrumentation can make even its optimized Debug
+build slower than playback. Use the test schemes for automated coverage, then
+use Audio Preview for listening and audio timing checks.
+
+For a command-line phone build, use your normal local signing configuration:
+
+```sh
+xcodebuild build -project CANCompanion.xcodeproj \
+  -scheme "CANCompanion Audio Preview" -configuration Debug \
+  -destination 'generic/platform=iOS' -derivedDataPath /tmp/can-audio-preview
+```
+
+Launching through Xcode applies the scheme's fake-controller arguments. A
+separate device launch must pass `-FakeController YES -DemoScenario driveLaps`
+explicitly; tapping the installed icon does not restore launch arguments.
+
 Sound is off by default. In either Drive style, open the speaker control to
 show Engine sound settings. Toggle sound on, then dismiss the sheet and use
 `driveLaps` to check that playback follows RPM. Exit Drive to stop playback;

@@ -88,6 +88,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).ui-tests
 
 schemes:
+  # Listening needs an uninstrumented native render loop. Keep coverage in the
+  # test schemes below; a TestAction with coverage also instruments build-only
+  # xcodebuild invocations of that scheme.
+  CANCompanion Audio Preview:
+    build:
+      targets:
+        CANCompanion: all
+    run:
+      config: Debug
+      commandLineArguments:
+        # DemoScenario creates its fake directly. Two arguments keep XcodeGen's
+        # sorted dictionary from separating two option/value pairs.
+        "-DemoScenario": true
+        driveLaps: true
   CANCompanion:
     build:
       targets:

@@ -77,6 +77,7 @@ struct TelemetryCard: View {
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(framesPerSecond > 0 ? "\(framesPerSecond) frames per second" : "No live signals")
+                    .accessibilityIdentifier("pitwall.frame-rate")
                 }
 
                 ShiftLights(lit: readout.litShiftLights, firstRed: readout.firstRedShiftLight)

@@ -44,12 +44,21 @@ final class DriveNavigationUITests: XCTestCase {
 
     func testDriveReceivesTelemetryAfterLeavingLivePitWall() {
         launchConnected()
-        for _ in 0..<3 {
-            // Wait for an active Pit Wall subscription before handing it off.
-            let frameRate = app.descendants(matching: .any).matching(
-                NSPredicate(format: "label CONTAINS %@", "frames per second")
-            ).firstMatch
-            XCTAssertTrue(frameRate.waitForExistence(timeout: 30))
+        for handoff in 1...3 {
+            // Resolve a stable element, then poll its changing value. Matching an
+            // element by its future label can retain the initial 0 Hz AX snapshot.
+            let frameRate = app.descendants(matching: .any)["pitwall.frame-rate"]
+            let isLive = NSPredicate { _, _ in
+                frameRate.exists && frameRate.label.contains("frames per second")
+            }
+            let result = XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: isLive, object: nil)], timeout: 30
+            )
+            if result != .completed {
+                capture("pitwall-before-handoff-\(handoff)-not-live")
+            }
+            XCTAssertEqual(result, .completed,
+                           "Pit Wall did not start live telemetry before handoff \(handoff); frame-rate label: \(frameRate.exists ? frameRate.label : "missing")")
             openDrive()
             waitForLandscape()
             assertText(for: "drive.rpm", matchingAny: ["1", "2", "3", "4", "5", "6", "7", "8", "9"])
