@@ -158,7 +158,7 @@ free Apple ID works, but the build expires after 7 days.
 
 GitHub Actions ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) runs on a
 macOS runner for every pull request and push to `main`. It generates the project,
-then runs the package tests, the app unit tests and three shards of UI tests as
+then runs the package tests, the app unit tests and two shards of UI tests as
 parallel jobs on an iOS Simulator. No signing is involved.
 
 ## Data safety

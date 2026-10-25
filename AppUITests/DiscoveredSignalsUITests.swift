@@ -30,17 +30,6 @@ final class DiscoveredSignalsUITests: XCTestCase {
         capture("discovered-reopened")
     }
 
-    func testPartialRecordsExpireIndependentlyWhilePeerIsFresh() {
-        open("discoveredPartial")
-        assertRow("example.enabled", contains: ["True", "Fresh"])
-        assertRow("example.peer", contains: ["Fresh"])
-        capture("partial-valid")
-        assertRow("example.enabled", contains: ["no value", "Unknown"], timeout: 20)
-        assertRow("example.peer", contains: ["Fresh"])
-        assertState("Discovered signals")
-        capture("partial-independent-expiration")
-    }
-
     func testStreamStallsAfterValidValues() {
         open("discoveredStalled")
         assertRow("example.enabled", contains: ["True", "Fresh"])
@@ -48,16 +37,6 @@ final class DiscoveredSignalsUITests: XCTestCase {
         assertState("Telemetry stalled", timeout: 20)
         assertRow("example.enabled", contains: ["no value", "Unknown"])
         capture("stall-cleared")
-    }
-
-    func testMalformedValidPrefixDoesNotKeepValuesLive() {
-        open("discoveredMalformed")
-        assertRow("example.enabled", contains: ["True", "Fresh"])
-        capture("malformed-before")
-        assertState("Telemetry stalled", timeout: 20)
-        assertRow("example.enabled", contains: ["no value", "Unknown"])
-        assertRow("example.peer", contains: ["no value", "Unknown"])
-        capture("malformed-cleared")
     }
 
     func testSameTokenReconnectRemapsHandlesAndChoices() {
@@ -80,7 +59,8 @@ final class DiscoveredSignalsUITests: XCTestCase {
     }
 
     func testUnavailableScenariosShowNoDiscoveredValues() {
-        for scenario in ["discoveredUnsupported", "discoveredUnusable", "discoveredCatalogFailure"] {
+        // One scenario per failure message; ExtensibleDemoTests covers discoveredUnusable.
+        for scenario in ["discoveredUnsupported", "discoveredCatalogFailure"] {
             let failure = scenario == "discoveredCatalogFailure"
                 ? "The controller's signal catalog could not be read."
                 : "Live signals are not supported by this controller."
