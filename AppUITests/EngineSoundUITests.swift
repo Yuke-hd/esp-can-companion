@@ -36,45 +36,8 @@ final class EngineSoundUITests: XCTestCase {
         XCTAssertEqual(app.buttons["drive.sound"].value as? String, "Off")
     }
 
-    func testSettingsInBothStylesAtLargestText() {
-        launch(largeText: true)
-        openDrive()
-        let cluster = app.descendants(matching: .any)["drive.cluster"]
-        if cluster.exists { app.buttons["drive.style"].tap(until: cluster, appearing: false) }
-        inspectSettings(style: "motorsport")
-        app.buttons["drive.style"].tap(until: cluster)
-        XCTAssertTrue(cluster.waitForExistence(timeout: 5))
-        inspectSettings(style: "cluster")
-    }
-
-    private func inspectSettings(style: String) {
-        let sound = app.buttons["drive.sound"]
-        XCTAssertEqual(sound.label, "Engine sound settings")
-        XCTAssertTrue(["On", "Off"].contains(sound.value as? String ?? ""))
-        capture("engine-sound-\(style)-control-largest-text")
-        openSettings()
-        XCTAssertTrue(app.switches["engineSound.enabled"].exists)
-        XCTAssertEqual(app.switches["engineSound.enabled"].label, "Engine sound")
-        capture("engine-sound-\(style)-settings-top-largest-text")
-        let engine = app.descendants(matching: .any)["engineSound.engine"]
-        reveal(engine)
-        XCTAssertTrue((engine.label + " " + (engine.value as? String ?? "")).contains("LS V8"))
-        let ducking = app.switches["engineSound.lowersOtherAudio"]
-        reveal(ducking)
-        XCTAssertEqual(ducking.label, "Lower other audio while playing")
-        let windowFrame = app.windows.element(boundBy: 0).frame
-        XCTAssertTrue(windowFrame.contains(ducking.frame), "Ducking control \(ducking.frame) is outside window \(windowFrame)")
-        XCTAssertTrue(app.buttons["engineSound.done"].isHittable)
-        capture("engine-sound-\(style)-settings-scrolled-largest-text")
-        app.buttons["engineSound.done"].tap()
-        XCTAssertTrue(sound.waitForExistence(timeout: 5))
-    }
-
-    private func launch(largeText: Bool = false) {
+    private func launch() {
         app.launchArguments = ["-FakeController", "YES", "-DemoScenario", "driveLaps"]
-        if largeText {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        }
         app.launch()
         XCTAssertTrue(app.buttons["Drive"].waitForExistence(timeout: 20))
     }

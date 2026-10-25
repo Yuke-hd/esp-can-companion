@@ -38,8 +38,9 @@ moving dashboard and saved drafts across app relaunches need further work.
    recovery path when the change affects one. Previews alone are insufficient for
    a multi-screen journey.
 4. Inspect the rendered screen against the design. For layout changes, check one
-   small supported phone and larger text as well as the usual phone size. Check
-   important text remains readable, actions reachable, and content scrollable.
+   small supported phone as well as the usual phone size. Check important text
+   remains readable, actions reachable, and content scrollable. The app caps text
+   at the default size, so larger system text sizes need no separate check.
    Check screen-reader labels and reading order when affected.
 5. Run relevant existing tests; add behavior coverage for meaningful new logic.
    A layout-only adjustment does not need a test that merely repeats its code.
@@ -152,10 +153,9 @@ App tests inject `ToneSource` and a monotonic clock to check neutral targets,
 PCM silence, expiry, preferences, and source release. A Simulator test uses the
 real player to require callback frame consumption and release after stop.
 `EngineSoundUITests` checks preference persistence without launch-argument
-preference overrides and captures both styles' settings at accessibility XXXL.
-The CI settings preview matrix runs that screenshot journey on iPhone 16 and
-SE (3rd generation); inspect the top and scrolled screenshots for readable
-labels and reachable controls.
+preference overrides; it runs in the CI UI test shards.
+The UI test build job also uploads the Simulator app it built, with a manifest,
+as the short-lived `drive-sound-simulator-app` artifact for local checks.
 
 Inspect playback startup logs as well as test results. UI movement assertions
 alone do not establish audible output. Startup failure is logged under the
@@ -194,7 +194,7 @@ A report can be this small:
 ```text
 Change: Preset send-error presentation
 Revision: <commit>; working-tree changes: <brief description, if any>
-Environment: <Xcode version>, <iOS runtime>, <phone model>, <text size>
+Environment: <Xcode version>, <iOS runtime>, <phone model>
 Scenarios/state: connected; clean start
 Actions/results: opened Presets, selected a preset, confirmed Push to controller;
 checked the unsupported-operation error and unchanged active configuration

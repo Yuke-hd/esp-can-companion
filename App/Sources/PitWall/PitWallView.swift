@@ -183,8 +183,3 @@ private func pitWallPreview(_ scenario: DemoScenario) -> some View {
     PitWallView(model: AppModel(deferring: { DemoScenario.notPaired.makeSession() }))
         .preferredColorScheme(.dark)
 }
-
-#Preview("Large text") {
-    pitWallPreview(.connected)
-        .environment(\.dynamicTypeSize, .accessibility3)
-}
