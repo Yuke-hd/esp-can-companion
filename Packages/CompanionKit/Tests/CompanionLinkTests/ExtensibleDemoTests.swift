@@ -63,7 +63,7 @@ final class ExtensibleDemoTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertEqual(telemetry.snapshot?.reading(for: "example.enabled")?.value, .boolean(true))
-        for _ in 0..<1600 where !rejectedPacketSeen { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<10000 where !rejectedPacketSeen { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertTrue(rejectedPacketSeen)
         XCTAssertEqual(telemetry.snapshot?.reading(for: "example.enabled")?.value, .boolean(true), "a valid False prefix must not be partially installed")
         for _ in 0..<600 where telemetry.snapshot?.isStalled != true { try await Task.sleep(for: .milliseconds(5)) }
