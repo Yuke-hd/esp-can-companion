@@ -145,4 +145,33 @@ final class ExtensibleSignalFeedTests: XCTestCase {
         XCTAssertEqual(reading(feed, "vehicle.brake_pressed")?.availability, .freshnessUnverified)
         XCTAssertEqual(reading(feed, "vehicle.brake_pressed")?.value, .boolean(true))
     }
+    func testValueReceiptTimeIsNotRenewedByOtherRecordsOrMalformedPackets() throws {
+        var (feed, vectors) = try installed()
+        feed.receive(vectors.packet("typed_values"), at: start)
+        feed.receive(packet([5, 1, 0, 1, 9, 0]), at: start + .seconds(1))
+        feed.receive(vectors.packet("truncated_record_rejects_entire_packet"), at: start + .milliseconds(1500))
+
+        let snapshot = feed.snapshot(at: start + .milliseconds(1500))
+        XCTAssertEqual(snapshot.signals.first { $0.descriptor.key == "example.acceleration" }?.receivedAt, start)
+        XCTAssertEqual(snapshot.signals.first { $0.descriptor.key == "example.enabled" }?.receivedAt, start + .seconds(1))
+    }
+
+    func testInvalidAndExpiredValuesHaveNoReceiptTime() throws {
+        var (feed, vectors) = try installed()
+        feed.receive(vectors.packet("typed_values"), at: start)
+        feed.receive(vectors.packet("mismatched_type_clears_without_liveness_refresh"), at: start + .seconds(1))
+        let mismatched = feed.snapshot(at: start + .seconds(1))
+        XCTAssertNil(mismatched.signals.first { $0.descriptor.key == "example.acceleration" }?.receivedAt)
+        // A separate stalled snapshot has no value clock.
+        XCTAssertNil(feed.snapshot(at: start + .seconds(3)).signals.first?.receivedAt)
+        // Keep packets live while the untouched enabled value reaches its own
+        // three-second expiry; unrelated packets must not renew that clock.
+        feed.receive(packet(), at: start + .seconds(2))
+        XCTAssertEqual(feed.snapshot(at: start + .milliseconds(2999)).signals.first?.receivedAt, start)
+        XCTAssertFalse(feed.snapshot(at: start + .seconds(3)).isStalled)
+        XCTAssertNil(feed.snapshot(at: start + .seconds(3)).signals.first?.receivedAt)
+        feed.reset()
+        XCTAssertTrue(feed.snapshot(at: start + .seconds(3)).signals.isEmpty)
+    }
+
 }

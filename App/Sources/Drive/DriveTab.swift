@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 import CompanionProtocol
 import CompanionLink
 
@@ -8,6 +9,7 @@ struct DriveTab: View {
     let model: AppModel
     let onExit: () -> Void
     @State private var telemetry: LiveTelemetry?
+    @State private var engineSound = DriveEngineSoundController()
     @AppStorage("drive.style") private var style: DriveStyle = .motorsport
 
     init(model: AppModel, onExit: @escaping () -> Void) {
@@ -31,6 +33,7 @@ struct DriveTab: View {
         )
 
         let signals = MotorsportSignals(frame: frame, readout: readout)
+        let rpmReceivedAt = DriveEngineSoundController.rpmReceiptTime(in: telemetry?.snapshot)
 
         Group {
             switch style {
@@ -52,6 +55,22 @@ struct DriveTab: View {
                 )
             }
         }
+            .onAppear {
+                do {
+                    try engineSound.start()
+                    engineSound.receive(readout, receivedAt: rpmReceivedAt)
+                } catch {
+                    Logger(subsystem: "CANCompanion", category: "DriveSound")
+                        .error("Engine sound could not start: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            .onChange(of: telemetry?.snapshot) {
+                engineSound.receive(readout, receivedAt: rpmReceivedAt)
+            }
+            .onChange(of: session?.connection.state) {
+                engineSound.receive(readout, receivedAt: rpmReceivedAt)
+            }
+            .onDisappear { engineSound.stop() }
             .task(id: session?.phase) {
                 guard let session, session.phase == .ready else { return }
                 let liveTelemetry: LiveTelemetry

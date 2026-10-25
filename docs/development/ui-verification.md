@@ -130,6 +130,31 @@ installation: uninstalling the app removes its saved data. Never erase a whole
 personal Simulator as a routine reset. The planned helper will make reset versus
 retain explicit; no dedicated reset command exists today.
 
+## Experimental Drive engine sound
+
+Audio is opt-in for the first Drive integration. Add `-EngineSound YES` to
+launch arguments alongside `-DemoScenario driveLaps`. The normal launch creates
+no audio player or simulator source. Enter Drive to start playback; Exit Drive
+stops playback and releases its source. Reenter Drive to check a fresh start.
+The same route lifecycle applies to both Drive styles.
+
+Use `stalled` with the flag to check unknown RPM and fading to silence. The
+reusable follower also expires RPM after 0.5 seconds without a new typed RPM
+record, even while unrelated packets keep arriving. Verified and unverified
+RPM are mapped separately; unavailable, stale, disconnected, or untimestamped
+RPM cannot keep audio live. Unsupported legacy telemetry remains silent.
+Accelerator input uses the readout's normalized fraction, with the reusable
+follower deriving throttle when that input is unavailable.
+
+The controller uses the package's default LS profile and playback with other
+audio allowed. App tests inject `ToneSource` and a monotonic clock to check
+neutral targets, PCM silence, expiry, and source release without timing a native
+simulation. UI tests launch the real source in `driveLaps` and `stalled`; inspect
+rendered screenshots and playback startup logs as well as those test results.
+UI movement assertions alone do not establish audible output. A startup failure
+is logged under the `DriveSound` category. Keep Simulator listening evidence
+separate from physical-device or vehicle validation.
+
 ## Tests and evidence
 
 Run the relevant app or package checks on the same selected Simulator:
