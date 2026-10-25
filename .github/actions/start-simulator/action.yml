@@ -1,8 +1,9 @@
 name: Start simulator
 description: Starts booting the iPhone 16 Pro simulator in the background and tests on it by id.
 
-# Booting takes one to two minutes, so jobs start it right after checkout and it
-# overlaps the setup and build steps. Before the first test, a job blocks with
+# Booting takes one to two minutes, so jobs start it early and it overlaps their
+# downloads and builds. Homebrew took minutes to start during a boot, so jobs
+# that need setup-ios run it first. Before the first test, a job blocks with
 # `xcrun simctl bootstatus "$SIM_UDID" -b`, which also boots the simulator if
 # this boot was lost.
 runs:

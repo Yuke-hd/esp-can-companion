@@ -90,27 +90,41 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: ./.github/actions/start-simulator
-
       - uses: ./.github/actions/fetch-enginesim
 
       - uses: ./.github/actions/setup-ios
 
+      # Starts after setup-ios: Homebrew took minutes to start while the
+      # simulator booted.
+      - uses: ./.github/actions/start-simulator
+
       - name: Build CompanionKit package tests
-        # The package also supports macOS, so its tests build and run on the
-        # host with no simulator. The app build below still compiles it for iOS.
-        # Compiling overlaps the simulator boot.
+        # Compiles while the simulator boots.
         working-directory: Packages/CompanionKit
         run: |
           set -o pipefail
-          swift build --build-tests 2>&1 | xcbeautify --renderer github-actions
+          xcodebuild build-for-testing \
+            -scheme CompanionKit-Package \
+            -derivedDataPath "$RUNNER_TEMP/PackageDerivedData" \
+            -destination "$DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
 
       - name: Wait for simulator
         if: success() || failure()
         run: xcrun simctl bootstatus "$SIM_UDID" -b
 
+      - name: Test CompanionKit package
+        working-directory: Packages/CompanionKit
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -scheme CompanionKit-Package \
+            -derivedDataPath "$RUNNER_TEMP/PackageDerivedData" \
+            -destination "$DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
       - name: Build and test app
-        # Runs even when the package build fails, so one run reports both.
+        # Runs even when the package tests fail, so one run reports both.
         if: success() || failure()
         run: |
           set -o pipefail
@@ -120,16 +134,6 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
-
-      - name: Test CompanionKit package
-        # Runs last, once the simulator has finished booting: some tests use
-        # 40 ms timeouts and failed while the boot loaded the runner. Runs even
-        # when the app tests fail, so one run reports both.
-        if: success() || failure()
-        working-directory: Packages/CompanionKit
-        run: |
-          set -o pipefail
-          swift test --skip-build 2>&1 | xcbeautify --renderer github-actions
 
   ui-build:
     # Builds the app and UI test bundle once. The shards run this build with
@@ -185,10 +189,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Boots while the job sets up and downloads the build.
+      # Boots while the job downloads the build. The shards skip setup-ios:
+      # they run the built tests with no project, xcbeautify comes with the
+      # runner image, and Homebrew took minutes to start while the simulator
+      # booted.
       - uses: ./.github/actions/start-simulator
-
-      - uses: ./.github/actions/setup-ios
 
       - uses: actions/download-artifact@v7
         with:
