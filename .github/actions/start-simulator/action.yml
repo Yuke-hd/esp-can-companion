@@ -8,6 +8,12 @@ description: Starts booting the iPhone 16 Pro simulator in the background and te
 runs:
   using: composite
   steps:
+    - name: Select Xcode
+      # Before the boot, so the simulator does not start under the image's
+      # default Xcode and get switched while it boots.
+      shell: bash
+      run: .github/scripts/select-xcode.sh
+
     - name: Start simulator boot
       # Picks the iPhone 16 Pro on the newest iOS runtime, as the name-only
       # destination did. CoreSimulator can still be loading when a job starts,

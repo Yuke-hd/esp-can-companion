@@ -90,27 +90,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Only the app tests need the simulator. It boots while the package tests run.
       - uses: ./.github/actions/start-simulator
 
       - uses: ./.github/actions/fetch-enginesim
 
       - uses: ./.github/actions/setup-ios
 
-      - name: Test CompanionKit package
-        # The package also supports macOS, so its tests run on the host with
-        # no simulator. The app build below still compiles it for iOS.
+      - name: Build CompanionKit package tests
+        # The package also supports macOS, so its tests build and run on the
+        # host with no simulator. The app build below still compiles it for iOS.
+        # Compiling overlaps the simulator boot.
         working-directory: Packages/CompanionKit
         run: |
           set -o pipefail
-          swift test 2>&1 | xcbeautify --renderer github-actions
+          swift build --build-tests 2>&1 | xcbeautify --renderer github-actions
 
       - name: Wait for simulator
         if: success() || failure()
         run: xcrun simctl bootstatus "$SIM_UDID" -b
 
       - name: Build and test app
-        # Runs even when the package tests fail, so one run reports both.
+        # Runs even when the package build fails, so one run reports both.
         if: success() || failure()
         run: |
           set -o pipefail
@@ -120,6 +120,16 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination "$DESTINATION" \
             CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
+      - name: Test CompanionKit package
+        # Runs last, once the simulator has finished booting: some tests use
+        # 40 ms timeouts and failed while the boot loaded the runner. Runs even
+        # when the app tests fail, so one run reports both.
+        if: success() || failure()
+        working-directory: Packages/CompanionKit
+        run: |
+          set -o pipefail
+          swift test --skip-build 2>&1 | xcbeautify --renderer github-actions
 
   ui-build:
     # Builds the app and UI test bundle once. The shards run this build with
