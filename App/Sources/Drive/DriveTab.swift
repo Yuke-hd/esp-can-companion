@@ -12,6 +12,7 @@ struct DriveTab: View {
     @State private var engineSound = DriveEngineSoundController()
     @AppStorage(EngineSoundPreferences.enabledKey) private var soundEnabled = false
     @AppStorage(EngineSoundPreferences.lowersOtherAudioKey) private var lowersOtherAudio = true
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingSoundSettings = false
     @AppStorage("drive.style") private var style: DriveStyle = .motorsport
 
@@ -66,6 +67,7 @@ struct DriveTab: View {
                 EngineSoundSettings(isEnabled: $soundEnabled, lowersOtherAudio: $lowersOtherAudio)
             }
             .onAppear { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
+            .onChange(of: scenePhase) { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
             .onChange(of: soundEnabled) { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
             .onChange(of: lowersOtherAudio) { configureSound(readout: readout, receivedAt: rpmReceivedAt) }
             .onChange(of: telemetry?.snapshot) {
@@ -74,7 +76,7 @@ struct DriveTab: View {
             .onChange(of: session?.connection.state) {
                 engineSound.receive(readout, receivedAt: rpmReceivedAt)
             }
-            .onDisappear { engineSound.stop() }
+            .onDisappear { try? engineSound.setLifecycle(isDriveVisible: false, isAppActive: false) }
             .task(id: session?.phase) {
                 guard let session, session.phase == .ready else { return }
                 let liveTelemetry: LiveTelemetry
@@ -91,7 +93,8 @@ struct DriveTab: View {
 
     private func configureSound(readout: DriveReadout, receivedAt: ContinuousClock.Instant?) {
         do {
-            try engineSound.configure(.init(isEnabled: soundEnabled, lowersOtherAudio: lowersOtherAudio))
+            try engineSound.configure(.init(isEnabled: soundEnabled, lowersOtherAudio: lowersOtherAudio),
+                                      isDriveVisible: true, isAppActive: scenePhase == .active)
             engineSound.receive(readout, receivedAt: receivedAt)
         } catch {
             Logger(subsystem: "CANCompanion", category: "DriveSound")
