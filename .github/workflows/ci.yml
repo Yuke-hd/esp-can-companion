@@ -8,6 +8,7 @@ on:
 
 env:
   # Fixed device: skips the slow `simctl list` lookup and keeps results comparable.
+  # Jobs that run tests replace it with the id of the simulator they boot.
   DESTINATION: platform=iOS Simulator,name=iPhone 16 Pro
 
 concurrency:
@@ -93,11 +94,30 @@ jobs:
 
       - uses: ./.github/actions/setup-ios
 
+      # Starts after setup-ios: Homebrew took minutes to start while the
+      # simulator booted.
+      - uses: ./.github/actions/start-simulator
+
+      - name: Build CompanionKit package tests
+        # Compiles while the simulator boots.
+        working-directory: Packages/CompanionKit
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -scheme CompanionKit-Package \
+            -derivedDataPath "$RUNNER_TEMP/PackageDerivedData" \
+            -destination "$DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+
+      - name: Wait for simulator
+        if: success() || failure()
+        run: xcrun simctl bootstatus "$SIM_UDID" -b
+
       - name: Test CompanionKit package
         working-directory: Packages/CompanionKit
         run: |
           set -o pipefail
-          xcodebuild test \
+          xcodebuild test-without-building \
             -scheme CompanionKit-Package \
             -derivedDataPath "$RUNNER_TEMP/PackageDerivedData" \
             -destination "$DESTINATION" \
@@ -169,7 +189,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: ./.github/actions/setup-ios
+      # Boots while the job downloads the build. The shards skip setup-ios:
+      # they run the built tests with no project, xcbeautify comes with the
+      # runner image, and Homebrew took minutes to start while the simulator
+      # booted.
+      - uses: ./.github/actions/start-simulator
 
       - uses: actions/download-artifact@v7
         with:
@@ -183,24 +207,10 @@ jobs:
           xctestrun=$(ls "$RUNNER_TEMP"/Build/Products/*.xctestrun | head -1)
           echo "XCTESTRUN=$xctestrun" >> "$GITHUB_ENV"
 
-      - name: Boot simulator
-        # A cold simulator makes the first app launch time out, so boot it
-        # before testing. Picks the iPhone 16 Pro on the newest iOS runtime,
-        # as the name-only destination did, and tests on it by id.
-        run: |
-          udid=$(xcrun simctl list devices available -j | jq -r '
-            .devices | to_entries
-            | map(select(.key | test("\\.iOS-[0-9]")))
-            | sort_by(.key | capture("iOS-(?<v>[0-9-]+)$").v | split("-") | map(tonumber))
-            | map(.value[] | select(.name == "iPhone 16 Pro") | .udid)
-            | last // empty')
-          if [ -z "$udid" ]; then
-            echo "::error::no iPhone 16 Pro simulator to boot"
-            exit 1
-          fi
-          xcrun simctl boot "$udid" || true # already booted is fine
-          xcrun simctl bootstatus "$udid" -b
-          echo "DESTINATION=id=$udid" >> "$GITHUB_ENV"
+      - name: Wait for simulator
+        # A cold simulator makes the first app launch time out, so the tests
+        # start only once it has finished booting.
+        run: xcrun simctl bootstatus "$SIM_UDID" -b
 
       - name: Run UI tests
         run: |
