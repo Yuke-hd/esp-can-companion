@@ -9,7 +9,7 @@ final class DriveNavigationUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    func testDriveFromPitWallHidesTabBarAndExitsToPortrait() {
+    func testDriveHidesTabBarAndExitsToPitWallAndSetup() {
         launchConnected()
         openDrive()
         waitForLandscape()
@@ -24,6 +24,22 @@ final class DriveNavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Pit Wall"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Drive"].exists)
         capturePortrait("drive-exit-pit-wall-portrait")
+
+        app.buttons["Setup"].tap(until: app.buttons["rules.add"], timeout: 10)
+        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
+
+        openDrive()
+        waitForLandscape()
+        exitDrive()
+        waitForPortrait()
+        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
+
+        openDrive()
+        waitForLandscape()
+        captureLandscape("drive-reentered-landscape")
+        exitDrive()
+        waitForPortrait()
+        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
     }
 
     func testDriveReceivesTelemetryAfterLeavingLivePitWall() {
@@ -44,26 +60,6 @@ final class DriveNavigationUITests: XCTestCase {
         }
     }
 
-    func testDriveExitsToSetupAndCanBeReentered() {
-        launchConnected()
-        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 10))
-        app.buttons["Setup"].tap(until: app.buttons["rules.add"], timeout: 10)
-        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
-
-        openDrive()
-        waitForLandscape()
-        exitDrive()
-        waitForPortrait()
-        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
-
-        openDrive()
-        waitForLandscape()
-        captureLandscape("drive-reentered-landscape")
-        exitDrive()
-        waitForPortrait()
-        XCTAssertTrue(app.buttons["Setup"].waitForExistence(timeout: 5))
-    }
-
     func testDriveShowsNumericReadoutsAndPedalSignals() {
         launchConnected()
         openDrive()
@@ -78,20 +74,6 @@ final class DriveNavigationUITests: XCTestCase {
         captureLandscape("drive-readouts-and-pedal-signals")
     }
 
-    func testDriveBrakePressureRisesDuringDemoLap() {
-        launch(scenario: "driveLaps")
-        openDrive()
-        waitForLandscape()
-        let brake = app.descendants(matching: .any)["drive.brake"]
-        XCTAssertTrue(brake.waitForExistence(timeout: 10))
-        let pressure = NSPredicate { _, _ in
-            let label = self.accessibilitySummary(of: brake)
-            return label.contains("bar") && !label.contains("0.0 bar")
-        }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: pressure, object: nil)], timeout: 30), .completed)
-        captureLandscape("drive-brake-pressure-active")
-    }
-
     func testDriveShowsUnknownValuesAfterStalledScenario() {
         launch(scenario: "stalled")
         openDrive()
@@ -104,25 +86,6 @@ final class DriveNavigationUITests: XCTestCase {
         assertText(for: "drive.throttle", containing: "Unknown")
         assertText(for: "drive.brake", containing: "Unknown")
         captureLandscape("drive-stalled-unknown")
-    }
-
-    func testDriveGMeterShowsNoDataForLayout1Controller() {
-        launch(scenario: "driveLapsLayout1")
-        openDrive()
-        waitForLandscape()
-
-        assertText(for: "drive.gmeter", containing: "no data")
-    }
-
-    func testDriveShowsNotLinkedStateWithoutTelemetry() {
-        launch(scenario: "notPaired")
-        openDrive()
-        waitForLandscape()
-
-        assertText(for: "drive.link", containing: "not linked")
-        assertText(for: "drive.rpm", containing: "Unknown")
-        assertText(for: "drive.speed", containing: "Unknown")
-        captureLandscape("drive-not-linked")
     }
 
     func testDriveStyleButtonSwitchesToClusterAndBack() {

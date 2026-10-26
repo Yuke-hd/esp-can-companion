@@ -14,8 +14,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Jobs run in parallel. Five macOS jobs fit the free-plan concurrency limit:
-# unit tests, the UI test build and three UI test shards. The EngineSim job runs
+# Jobs run in parallel. Four macOS jobs fit the free-plan limit of five:
+# unit tests, the UI test build and two UI test shards. The EngineSim job runs
 # on Linux and does not use that limit.
 jobs:
   changes:
@@ -155,9 +155,9 @@ jobs:
   ui-tests:
     # Launches the app in the simulator and checks Drive's navigation,
     # rotation, on-screen layout and demo readouts through accessibility.
-    # The tests wait on real-time demo scenarios and take about 13 minutes
+    # The tests wait on real-time demo scenarios and take about 11 minutes
     # in a row, so they are split across shards that run in parallel.
-    name: UI tests (${{ matrix.shard }}/3)
+    name: UI tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: [changes, ui-build]
     if: needs.changes.outputs.companion == 'true'
     runs-on: macos-15
@@ -165,7 +165,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v5
 
@@ -205,7 +205,7 @@ jobs:
       - name: Run UI tests
         run: |
           set -o pipefail
-          only_testing=$(.github/scripts/ui-test-shard.sh $(( ${{ matrix.shard }} - 1 )) 3)
+          only_testing=$(.github/scripts/ui-test-shard.sh $(( ${{ matrix.shard }} - 1 )) ${{ strategy.job-total }})
           echo "Shard ${{ matrix.shard }}: $only_testing"
           run_tests() { # <result bundle> <-only-testing arguments>
             # shellcheck disable=SC2086 # one word per -only-testing argument
