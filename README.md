@@ -46,6 +46,12 @@ them inside Drive.
 These are screenshots of the app running in the iPhone Simulator with sample
 data. No car or controller was connected; the readings demonstrate the display.
 
+### Video
+
+[![Watch the demo video on YouTube](https://img.youtube.com/vi/rCT8OWe9huU/hqdefault.jpg)](https://youtube.com/shorts/rCT8OWe9huU)
+
+[Watch the demo on YouTube Shorts](https://youtube.com/shorts/rCT8OWe9huU).
+
 ## How the app and controller work together
 
 Your accessory controller reads signals from the car and runs the lighting
