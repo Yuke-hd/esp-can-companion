@@ -61,6 +61,12 @@ extension PitWallReadout {
         ReadoutBox(label: "Km/h", value: speedText, freshness: speedFreshness, isShown: speedKPH != nil)
     }
 
+    /// The shift light row as VoiceOver reads it, naming where red begins.
+    static func shiftLightsAccessibilityText(lit: Int, firstRed: Int?) -> String {
+        let text = "Shift lights, \(lit) of \(shiftLightCount) lit"
+        return firstRed.map { text + ", red from light \($0 + 1)" } ?? text
+    }
+
     var rpmAccessibilityText: String {
         guard let rpm else { return "Engine RPM, no value, \(rpmFreshness.title)" }
         return "Engine RPM \(Int(rpm.rounded())), \(rpmFreshness.title)"

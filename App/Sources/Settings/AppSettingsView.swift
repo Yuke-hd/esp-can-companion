@@ -1,10 +1,12 @@
 import SwiftUI
 import DesignSystem
+import CompanionLink
 
 /// How the phone shows data. Nothing here changes the controller's config,
 /// which stays in Setup. Like iPhone Settings, the top level lists a few
 /// categories; each opens its own page.
 struct AppSettingsView: View {
+    let model: AppModel
     @AppStorage(DriveStyle.storageKey) private var driveStyle: DriveStyle = .motorsport
 
     var body: some View {
@@ -17,8 +19,112 @@ struct AppSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings.drive")
+                SettingsSeparator()
+                NavigationLink {
+                    GaugesSettingsView(model: model)
+                } label: {
+                    SettingsRow(systemImage: "dial.medium", title: "Gauges", value: model.appConfig.rpmBand.settingsSummary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.gauges")
             }
         }
+    }
+}
+
+/// The in-app RPM span and redline the shift lights, RPM bar and red zone
+/// are drawn against. Each valid edit applies at once; an invalid one shows
+/// why and leaves the live band as it was.
+struct GaugesSettingsView: View {
+    let model: AppModel
+    @State private var draft: RPMBandDraft
+    @FocusState private var focused: RPMBandDraft.Field?
+
+    init(model: AppModel) {
+        self.model = model
+        _draft = State(initialValue: RPMBandDraft(model.appConfig.rpmBand))
+    }
+
+    var body: some View {
+        SettingsPage(eyebrow: "Settings // Gauges", title: "Gauges") {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                SettingsGroup(header: "RPM display") {
+                    RPMEntryRow(title: "Fill start", text: $draft.fillFrom, field: .fillFrom, focused: $focused,
+                                id: "settings.rpm.fillFrom")
+                    SettingsSeparator()
+                    RPMEntryRow(title: "Fill end", text: $draft.fillTo, field: .fillTo, focused: $focused,
+                                id: "settings.rpm.fillTo")
+                    SettingsSeparator()
+                    Toggle(isOn: $draft.redlineOn.animation()) {
+                        Text("Redline")
+                            .font(Theme.Typography.headline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                    .tint(Theme.Colors.accent)
+                    .settingsRowFrame()
+                    .accessibilityIdentifier("settings.rpm.redlineEnabled")
+                    if draft.redlineOn {
+                        SettingsSeparator()
+                        RPMEntryRow(title: "Redline at", text: $draft.redline, field: .redline, focused: $focused,
+                                    id: "settings.rpm.redline")
+                    }
+                }
+                if let problem = draft.problem {
+                    Label(problem.message, systemImage: "exclamationmark.triangle.fill")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.signalYellow)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .accessibilityIdentifier("settings.rpm.error")
+                }
+                Text("Shift lights fill from start to end; the RPM bar and numbers turn red at the redline. Up to \(SetupNumericEntry.formatted(RPMBand.maximumRPM)) rpm. Changes apply only when every value is valid.")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.md)
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: draft) { _, draft in
+            if case .success(let band) = draft.result { model.setRPMBand(band) }
+        }
+    }
+}
+
+/// A titled whole-number RPM entry on one settings row.
+private struct RPMEntryRow: View {
+    var title: String
+    @Binding var text: String
+    var field: RPMBandDraft.Field
+    var focused: FocusState<RPMBandDraft.Field?>.Binding
+    var id: String
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(title)
+                .font(Theme.Typography.headline)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .accessibilityHidden(true)
+            Spacer(minLength: Theme.Spacing.xs)
+            TextField(title, text: $text)
+                .font(Theme.Typography.value)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .keyboardType(.numbersAndPunctuation)
+                .submitLabel(.done)
+                .focused(focused, equals: field)
+                .onSubmit { focused.wrappedValue = nil }
+                .frame(width: 96)
+                .padding(Theme.Spacing.xs)
+                .background(Theme.Colors.surfaceRaised)
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).strokeBorder(Theme.Colors.separator, lineWidth: 1))
+                .accessibilityLabel("\(title), rpm")
+                .accessibilityIdentifier(id)
+            Text("rpm")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .accessibilityHidden(true)
+        }
+        .settingsRowFrame()
+        .onTapGesture { focused.wrappedValue = field }
     }
 }
 
@@ -156,5 +262,5 @@ private extension View {
 }
 
 #Preview {
-    NavigationStack { AppSettingsView() }
+    NavigationStack { AppSettingsView(model: AppModel(session: DemoScenario.connected.makeSession())) }
 }

@@ -169,7 +169,7 @@ struct ShiftLights: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Shift lights, \(lit) of \(PitWallReadout.shiftLightCount) lit")
+        .accessibilityLabel(PitWallReadout.shiftLightsAccessibilityText(lit: lit, firstRed: firstRed))
     }
 }
 

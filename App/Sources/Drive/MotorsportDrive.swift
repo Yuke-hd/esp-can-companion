@@ -123,7 +123,7 @@ private struct MotorsportShiftLights: View {
         }
         .animation(reduceMotion ? nil : .linear(duration: 0.12), value: readout.litShiftLights)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Shift lights, \(readout.litShiftLights) of \(PitWallReadout.shiftLightCount) lit")
+        .accessibilityLabel(PitWallReadout.shiftLightsAccessibilityText(lit: readout.litShiftLights, firstRed: readout.firstRedShiftLight))
         .accessibilityIdentifier("drive.shift-lights")
     }
 }

@@ -33,3 +33,50 @@ public struct AppConfig: Codable, Equatable, Sendable {
         brakePressureBarScale: 70
     )
 }
+
+/// A rule an `RPMBand` breaks. Each has its own case so the app can say
+/// exactly what to fix.
+public enum RPMBandIssue: Error, Equatable, Sendable {
+    /// The band has no fill span.
+    case missingFill
+    /// The fill starts below 0 RPM.
+    case fillStartBelowZero
+    /// The fill ends above `RPMBand.maximumRPM`.
+    case fillEndAboveMaximum
+    /// The fill does not start below where it ends.
+    case fillStartNotBelowEnd
+    /// The redline is at or below the fill start.
+    case redlineNotAboveFillStart
+    /// The redline is above the fill end.
+    case redlineAboveFillEnd
+}
+
+extension RPMBand {
+    /// The highest RPM a band may reach.
+    public static let maximumRPM: Double = 12_000
+
+    /// The first rule this band breaks, or nil when it is valid:
+    /// `0 ≤ fill.from < fill.to ≤ maximumRPM`, and the redline is off or
+    /// `fill.from < redline ≤ fill.to`. Comparisons are written so NaN fails.
+    public var issue: RPMBandIssue? {
+        guard let fill else { return .missingFill }
+        guard fill.from >= 0 else { return .fillStartBelowZero }
+        guard fill.to <= Self.maximumRPM else { return .fillEndAboveMaximum }
+        guard fill.from < fill.to else { return .fillStartNotBelowEnd }
+        if let redline {
+            guard redline > fill.from else { return .redlineNotAboveFillStart }
+            guard redline <= fill.to else { return .redlineAboveFillEnd }
+        }
+        return nil
+    }
+}
+
+extension AppConfig {
+    /// This config, with an invalid RPM band replaced by the default band.
+    public var withValidRPMBand: AppConfig {
+        guard rpmBand.issue != nil else { return self }
+        var config = self
+        config.rpmBand = AppConfig.default.rpmBand
+        return config
+    }
+}

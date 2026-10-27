@@ -59,6 +59,15 @@ final class AppConfigStoreTests: XCTestCase {
         XCTAssertEqual(UserDefaultsAppConfigStore(defaults: defaults).appConfig, .default)
     }
 
+    func testStoredInvalidRPMBandFallsBackToTheDefaultBand() {
+        var invalid = custom
+        invalid.rpmBand = RPMBand(fill: .init(from: 0, to: 20_000), redline: 6000)
+        UserDefaultsAppConfigStore(defaults: defaults).appConfig = invalid
+        let loaded = UserDefaultsAppConfigStore(defaults: defaults).appConfig
+        XCTAssertEqual(loaded.rpmBand, AppConfig.default.rpmBand)
+        XCTAssertEqual(loaded.brakePressureBarScale, 120, "only the band falls back")
+    }
+
     func testResetRemovesTheSavedConfig() {
         let store = UserDefaultsAppConfigStore(defaults: defaults)
         store.appConfig = custom

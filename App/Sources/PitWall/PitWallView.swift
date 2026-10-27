@@ -52,7 +52,7 @@ struct PitWallView: View {
 
     private var settingsButton: some View {
         NavigationLink {
-            AppSettingsView()
+            AppSettingsView(model: model)
         } label: {
             Image(systemName: "gearshape")
                 .font(Theme.Typography.headline)
