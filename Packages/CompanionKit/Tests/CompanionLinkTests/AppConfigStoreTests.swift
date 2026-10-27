@@ -68,6 +68,15 @@ final class AppConfigStoreTests: XCTestCase {
         XCTAssertEqual(loaded.brakePressureBarScale, 120, "only the band falls back")
     }
 
+    func testStoredOutOfRangeBrakeScaleFallsBackToTheDefaultScale() {
+        var invalid = custom
+        invalid.brakePressureBarScale = 500
+        UserDefaultsAppConfigStore(defaults: defaults).appConfig = invalid
+        let loaded = UserDefaultsAppConfigStore(defaults: defaults).appConfig
+        XCTAssertEqual(loaded.brakePressureBarScale, AppConfig.default.brakePressureBarScale)
+        XCTAssertEqual(loaded.rpmBand, custom.rpmBand, "only the scale falls back")
+    }
+
     func testResetRemovesTheSavedConfig() {
         let store = UserDefaultsAppConfigStore(defaults: defaults)
         store.appConfig = custom

@@ -59,7 +59,24 @@ final class RPMBandValidationTests: XCTestCase {
     func testInvalidBandIsReplacedByTheDefaultBandOnly() {
         let invalid = AppConfig(rpmBand: band(7000, 6000, redline: 6500), brakePressureBarScale: 120)
         let valid = AppConfig(rpmBand: band(1000, 7000, redline: nil), brakePressureBarScale: 120)
-        XCTAssertEqual(invalid.withValidRPMBand, AppConfig(rpmBand: AppConfig.default.rpmBand, brakePressureBarScale: 120))
-        XCTAssertEqual(valid.withValidRPMBand, valid)
+        XCTAssertEqual(invalid.validated, AppConfig(rpmBand: AppConfig.default.rpmBand, brakePressureBarScale: 120))
+        XCTAssertEqual(valid.validated, valid)
+    }
+
+    func testBrakeScaleRangeIsTenToTwoHundredBar() {
+        XCTAssertFalse(AppConfig.isValidBrakePressureBarScale(9))
+        XCTAssertTrue(AppConfig.isValidBrakePressureBarScale(10))
+        XCTAssertTrue(AppConfig.isValidBrakePressureBarScale(200))
+        XCTAssertFalse(AppConfig.isValidBrakePressureBarScale(201))
+        XCTAssertFalse(AppConfig.isValidBrakePressureBarScale(.nan))
+        XCTAssertFalse(AppConfig.isValidBrakePressureBarScale(.infinity))
+    }
+
+    func testOutOfRangeBrakeScaleIsReplacedByTheDefaultScaleOnly() {
+        let band = band(1000, 7000, redline: nil)
+        for scale in [0, 5, 250, Double.nan] {
+            XCTAssertEqual(AppConfig(rpmBand: band, brakePressureBarScale: scale).validated,
+                           AppConfig(rpmBand: band, brakePressureBarScale: AppConfig.default.brakePressureBarScale))
+        }
     }
 }

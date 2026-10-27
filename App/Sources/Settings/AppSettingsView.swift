@@ -8,6 +8,7 @@ import CompanionLink
 struct AppSettingsView: View {
     let model: AppModel
     @AppStorage(DriveStyle.storageKey) private var driveStyle: DriveStyle = .motorsport
+    @State private var confirmingReset = false
 
     var body: some View {
         SettingsPage(eyebrow: "Garage // App", title: "Settings") {
@@ -28,33 +29,61 @@ struct AppSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings.gauges")
             }
+            SettingsGroup(footer: "Restores the Drive style, RPM display and brake scale. The controller's config is not changed.") {
+                Button(role: .destructive) { confirmingReset = true } label: {
+                    Text("Reset to defaults")
+                        .font(Theme.Typography.headline)
+                        .foregroundStyle(Theme.Colors.accentText)
+                        .settingsRowFrame()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.reset")
+            }
+            .confirmationDialog("Reset app settings to defaults?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                Button("Reset to Defaults", role: .destructive) {
+                    model.resetAppSettings()
+                    driveStyle = .motorsport
+                }
+                .accessibilityIdentifier("settings.reset.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Drive style, RPM display and brake scale return to their defaults.")
+            }
         }
     }
 }
 
 /// The in-app RPM span and redline the shift lights, RPM bar and red zone
-/// are drawn against. The error updates as you type, but edits apply only on
-/// commit: leaving a field, Done, the Redline toggle, or leaving the page. An
-/// invalid draft at commit leaves the last committed band live.
+/// are drawn against, and the brake pressure scale the Drive brake bar fills
+/// against. Errors update as you type, but edits apply only on commit:
+/// leaving a field, Done, the Redline toggle, or leaving the page. An invalid
+/// draft at commit leaves the last committed value live.
 struct GaugesSettingsView: View {
+    enum Field: Hashable {
+        case rpm(RPMBandDraft.Field)
+        case brakeScale
+    }
+
     let model: AppModel
     @State private var draft: RPMBandDraft
-    @FocusState private var focused: RPMBandDraft.Field?
+    @State private var brakeDraft: BrakeScaleDraft
+    @FocusState private var focused: Field?
 
     init(model: AppModel) {
         self.model = model
         _draft = State(initialValue: RPMBandDraft(model.appConfig.rpmBand))
+        _brakeDraft = State(initialValue: BrakeScaleDraft(model.appConfig.brakePressureBarScale))
     }
 
     var body: some View {
         SettingsPage(eyebrow: "Settings // Gauges", title: "Gauges") {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 SettingsGroup(header: "RPM display") {
-                    RPMEntryRow(title: "Fill start", text: $draft.fillFrom, field: .fillFrom, focused: $focused,
-                                id: "settings.rpm.fillFrom")
+                    NumberEntryRow(title: "Fill start", unit: "rpm", text: $draft.fillFrom, field: .rpm(.fillFrom),
+                                   focused: $focused, id: "settings.rpm.fillFrom")
                     SettingsSeparator()
-                    RPMEntryRow(title: "Fill end", text: $draft.fillTo, field: .fillTo, focused: $focused,
-                                id: "settings.rpm.fillTo")
+                    NumberEntryRow(title: "Fill end", unit: "rpm", text: $draft.fillTo, field: .rpm(.fillTo),
+                                   focused: $focused, id: "settings.rpm.fillTo")
                     SettingsSeparator()
                     Toggle(isOn: $draft.redlineOn.animation()) {
                         Text("Redline")
@@ -66,18 +95,28 @@ struct GaugesSettingsView: View {
                     .accessibilityIdentifier("settings.rpm.redlineEnabled")
                     if draft.redlineOn {
                         SettingsSeparator()
-                        RPMEntryRow(title: "Redline at", text: $draft.redline, field: .redline, focused: $focused,
-                                    id: "settings.rpm.redline")
+                        NumberEntryRow(title: "Redline at", unit: "rpm", text: $draft.redline, field: .rpm(.redline),
+                                       focused: $focused, id: "settings.rpm.redline")
                     }
                 }
                 if let problem = draft.problem {
-                    Label(problem.message, systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Colors.signalYellow)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .accessibilityIdentifier("settings.rpm.error")
+                    FieldError(message: problem.message, id: "settings.rpm.error")
                 }
                 Text("Shift lights fill from start to end; the RPM bar and numbers turn red at the redline. Up to \(SetupNumericEntry.formatted(RPMBand.maximumRPM)) rpm. Changes apply when you tap Done or leave a field, and only if every value is valid.")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.md)
+            }
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                SettingsGroup(header: "Brake display") {
+                    NumberEntryRow(title: "Pressure scale", unit: "bar", text: $brakeDraft.text, field: .brakeScale,
+                                   focused: $focused, id: "settings.brake.scale",
+                                   accessibilityTitle: "Brake pressure scale")
+                }
+                if let problem = brakeDraft.problem {
+                    FieldError(message: problem.message, id: "settings.brake.error")
+                }
+                Text("Drive's brake bar is full at this pressure. A display scale only, \(SetupNumericEntry.formatted(AppConfig.brakePressureBarScaleRange.lowerBound)) to \(SetupNumericEntry.formatted(AppConfig.brakePressureBarScaleRange.upperBound)) bar.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .padding(.horizontal, Theme.Spacing.md)
@@ -85,25 +124,74 @@ struct GaugesSettingsView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .onChange(of: focused) { old, new in
-            if old != nil, old != new { commit() }
+            if let old, old != new { commit(old) }
         }
-        .onChange(of: draft.redlineOn) { commit() }
-        .onDisappear { commit(announce: false) }
+        .onChange(of: draft.redlineOn) { commitRPM() }
+        // Values committed elsewhere, such as Reset to defaults, replace the
+        // drafts unless a field is being edited.
+        .onAppear { resyncDrafts(rpm: true, brake: true) }
+        .onChange(of: model.appConfig) { old, new in
+            guard focused == nil else { return }
+            resyncDrafts(rpm: old.rpmBand != new.rpmBand,
+                         brake: old.brakePressureBarScale != new.brakePressureBarScale)
+        }
+        .onDisappear {
+            commitRPM(announce: false)
+            commitBrake(announce: false)
+        }
     }
 
-    private func commit(announce: Bool = true) {
+    private func commit(_ field: Field) {
+        switch field {
+        case .rpm: commitRPM()
+        case .brakeScale: commitBrake()
+        }
+    }
+
+    private func commitRPM(announce: Bool = true) {
         guard let problem = model.commitRPMBand(&draft), announce else { return }
         AccessibilityNotification.Announcement(problem.message).post()
     }
+
+    private func commitBrake(announce: Bool = true) {
+        guard let problem = model.commitBrakeScale(&brakeDraft), announce else { return }
+        AccessibilityNotification.Announcement(problem.message).post()
+    }
+
+    /// Replaces a draft that does not already hold the committed value.
+    private func resyncDrafts(rpm: Bool, brake: Bool) {
+        let config = model.appConfig
+        if rpm, (try? draft.result.get()) != config.rpmBand { draft = RPMBandDraft(config.rpmBand) }
+        if brake, (try? brakeDraft.result.get()) != config.brakePressureBarScale {
+            brakeDraft = BrakeScaleDraft(config.brakePressureBarScale)
+        }
+    }
 }
 
-/// A titled whole-number RPM entry on one settings row.
-private struct RPMEntryRow: View {
-    var title: String
-    @Binding var text: String
-    var field: RPMBandDraft.Field
-    var focused: FocusState<RPMBandDraft.Field?>.Binding
+/// An inline validation message under a settings group.
+private struct FieldError: View {
+    var message: String
     var id: String
+
+    var body: some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(Theme.Typography.body)
+            .foregroundStyle(Theme.Colors.signalYellow)
+            .padding(.horizontal, Theme.Spacing.md)
+            .accessibilityIdentifier(id)
+    }
+}
+
+/// A titled whole-number entry with its unit on one settings row.
+private struct NumberEntryRow: View {
+    var title: String
+    var unit: String
+    @Binding var text: String
+    var field: GaugesSettingsView.Field
+    var focused: FocusState<GaugesSettingsView.Field?>.Binding
+    var id: String
+    /// The VoiceOver name when the visible title relies on its group header.
+    var accessibilityTitle: String?
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -124,11 +212,12 @@ private struct RPMEntryRow: View {
                 .padding(Theme.Spacing.xs)
                 .background(Theme.Colors.surfaceRaised)
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xs).strokeBorder(Theme.Colors.separator, lineWidth: 1))
-                .accessibilityLabel("\(title), rpm")
+                .accessibilityLabel("\(accessibilityTitle ?? title), \(unit)")
                 .accessibilityIdentifier(id)
-            Text("rpm")
+            Text(unit)
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.textSecondary)
+                .frame(minWidth: 28, alignment: .leading)
                 .accessibilityHidden(true)
         }
         .settingsRowFrame()

@@ -72,11 +72,22 @@ extension RPMBand {
 }
 
 extension AppConfig {
-    /// This config, with an invalid RPM band replaced by the default band.
-    public var withValidRPMBand: AppConfig {
-        guard rpmBand.issue != nil else { return self }
+    /// The brake pressure scales the app accepts, in whole bar.
+    public static let brakePressureBarScaleRange: ClosedRange<Double> = 10...200
+
+    /// Whether `scale` is inside `brakePressureBarScaleRange`. NaN fails.
+    public static func isValidBrakePressureBarScale(_ scale: Double) -> Bool {
+        brakePressureBarScaleRange.contains(scale)
+    }
+
+    /// This config, with an invalid RPM band replaced by the default band and
+    /// an out-of-range brake pressure scale replaced by the default scale.
+    public var validated: AppConfig {
         var config = self
-        config.rpmBand = AppConfig.default.rpmBand
+        if rpmBand.issue != nil { config.rpmBand = AppConfig.default.rpmBand }
+        if !Self.isValidBrakePressureBarScale(brakePressureBarScale) {
+            config.brakePressureBarScale = AppConfig.default.brakePressureBarScale
+        }
         return config
     }
 }

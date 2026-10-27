@@ -85,4 +85,29 @@ final class AppModelConfigTests: XCTestCase {
         XCTAssertEqual(labels(RPMBand(fill: .init(from: 0, to: 1e300), redline: nil)), [])
         XCTAssertEqual(labels(RPMBand(fill: .init(from: 0, to: .infinity), redline: .nan)), [])
     }
+
+    func testStoredOutOfRangeBrakeScaleLoadsAsTheDefaultScale() {
+        var invalid = custom
+        invalid.brakePressureBarScale = 5
+        let app = AppModel(session: DemoScenario.notPaired.makeSession(), appConfigStore: InMemoryAppConfigStore(appConfig: invalid))
+        XCTAssertEqual(app.appConfig.brakePressureBarScale, AppConfig.default.brakePressureBarScale)
+        XCTAssertEqual(app.appConfig.rpmBand, custom.rpmBand)
+    }
+
+    func testResetRestoresAndSavesDefaultsAndTheMotorsportStyle() throws {
+        let suite = "AppModelConfigTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(DriveStyle.cluster.rawValue, forKey: DriveStyle.storageKey)
+        let store = UserDefaultsAppConfigStore(defaults: defaults)
+        store.appConfig = custom
+        let app = AppModel(session: DemoScenario.notPaired.makeSession(), appConfigStore: store)
+        XCTAssertEqual(app.appConfig, custom)
+
+        app.resetAppSettings(defaults: defaults)
+
+        XCTAssertEqual(app.appConfig, .default)
+        XCTAssertEqual(UserDefaultsAppConfigStore(defaults: defaults).appConfig, .default, "the defaults are saved")
+        XCTAssertEqual(defaults.string(forKey: DriveStyle.storageKey), DriveStyle.motorsport.rawValue)
+    }
 }
