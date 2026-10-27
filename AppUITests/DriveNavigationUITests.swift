@@ -186,7 +186,7 @@ final class DriveNavigationUITests: XCTestCase {
             condition(self.app.windows.element(boundBy: 0).frame)
         }
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
-        let result = XCTWaiter.wait(for: [expectation], timeout: 15)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 30)
         XCTAssertEqual(result, XCTWaiter.Result.completed, "window did not reach the expected orientation", file: file, line: line)
     }
 

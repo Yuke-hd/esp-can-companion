@@ -13,11 +13,14 @@ emulator, or automatic screenshot comparison is not a prerequisite.
 
 - Simulator launches use `FakeRadio` automatically. On a phone, Xcode launch
   arguments can select the same in-memory controller.
+- The connected fake advertises the protocol 1.2 output catalog so Setup's
+  catalog-driven editor can be checked without a board.
 - `DemoScenario` supplies connection and active-configuration starting states.
   The launched demo currently refuses uploads and factory-revert commands.
   Successful send/restart behavior exists in preset previews and sync tests.
-  Full-app send/restart, Setup editing, and the `validationError` scenario exist
-  only in local unmerged work; they are not available on main or included here.
+  Full-app successful send/restart exists only in local unmerged work; it is
+  not available on main or included here. `validationError` is an available
+  synthetic scenario.
 - SwiftUI previews and `ComponentCatalog` support quick appearance checks.
 - App and package tests check logic and simulated controller interactions.
 - CI runs these tests. It does not currently tap through screens or collect

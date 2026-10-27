@@ -4,6 +4,16 @@ import CompanionLink
 @testable import CANCompanion
 
 final class RuleEditingTests: XCTestCase {
+    func testRenamingActionPreservesUnknownOutputFields() {
+        let output = ControllerConfig.OutputBinding.unknown(.object([
+            "type": .string("future_output"), "action": .string("shift"), "counter": .integer(9007199254740993)
+        ]))
+
+        XCTAssertEqual(output.renamingAction(to: "brake"), .unknown(.object([
+            "type": .string("future_output"), "action": .string("brake"), "counter": .integer(9007199254740993)
+        ])))
+    }
+
     func testRPMRuleDisplaysWholeNumbersAndPreservesFineTuning() throws {
         var draft = RuleDraft(.sampledState(condition, releaseThreshold: 5800))
         XCTAssertEqual(draft.number, "6000")

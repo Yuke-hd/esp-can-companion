@@ -15,7 +15,7 @@ These names currently exist in `DemoScenario` and can be passed as
 | --- | --- | --- |
 | `notPaired` | No remembered controller; scanning finds a synthetic one. | Discovery and connect journey. |
 | `connecting` | Remembered controller is unavailable. | Waiting state without false success. |
-| `connected` | Controller running factory configuration; upload/command writes fail with Unsupported Operation. | Configuration read, confirmations, and send/revert error presentation. |
+| `connected` | Controller running factory configuration and advertising a protocol 1.2 output catalog; upload/command writes fail with Unsupported Operation. | Configuration read, catalog-driven Setup forms, confirmations, and send/revert error presentation. |
 | `customConfig` | Controller running a custom override. | Confirmed custom configuration presentation. |
 | `selectorCycle` | Parked car whose selector steps P, R, N, D, N, R every 2.5 seconds, reporting "shifting" for 0.4 seconds before each position. | Drive's selector animation replaces the gear briefly on each change, animating from the last position across the shifting window. |
 | `driveLaps` | Controller reports Live signals layout 2 and streams 28-byte frames at 10 Hz: a 24-second lap that loops. The extensible catalog also streams normalized accelerator position and synthetic brake pressure in bar. See [driveLaps lap](#drivelaps-lap) below. | Acceleration readings for the g-meter, plus throttle percentage and brake pressure bars. |
@@ -33,10 +33,11 @@ serves configuration reads, but rejects uploads and commands. Preset previews us
 `FakePresetSyncLink`, which supports successful writes and simulated restart.
 Those preview results do not establish that the full-app Bluetooth adapter works.
 
-Full-app successful uploads/restarts, factory revert, the `validationError`
-scenario, Setup editing, and in-memory state shared across routes exist only in
-local unmerged work. They are not available on main or included in this docs
-change. Update this reference when that implementation merges.
+Full-app successful uploads/restarts, factory revert, and in-memory state
+shared across routes remain unavailable. The `validationError` scenario is
+available for the fake. The connected fake supports reading the output catalog
+and exercising Setup's catalog-driven editor, but does not establish successful
+writes or restarts.
 
 Each process launch constructs a new fake controller from the selected scenario.
 Retaining saved phone data does not retain that controller's in-memory state.

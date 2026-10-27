@@ -97,6 +97,8 @@ public final class DemoController {
         controller.catalogDocument = signalCatalog.document
         controller.catalogToken = signalCatalog.catalog.token
         controller.catalogPageOffset = 0
+        controller.outputCatalogDocument = Self.outputCatalogDocument
+        controller.outputCatalogPageOffset = 0
     }
 
     func read(_ characteristic: GATTUUID) -> Result<Data, RadioError> {
@@ -145,10 +147,16 @@ public final class DemoController {
     // MARK: Sample data
 
     nonisolated public static let defaultDeviceInfo = DeviceInfo(
-        protocolMajor: 1, protocolMinor: 1, configSchemaVersion: 1, liveSignalLayoutVersion: 2,
+        protocolMajor: 1, protocolMinor: 2, configSchemaVersion: 1, liveSignalLayoutVersion: 2,
         flags: 0, maxConfigBytes: 4096, firmwareVersion: "0.4.0-demo", hardwareID: "weact-can485-v1.1",
-        extensionVersion: 1, extensionFlags: 1
+        extensionVersion: 1, extensionFlags: 3
     )
+
+    nonisolated public static let outputCatalogDocument: Data = {
+        guard let url = Bundle.module.url(forResource: "output-catalog", withExtension: "json", subdirectory: "Resources"),
+              let data = try? Data(contentsOf: url) else { return Data(#"{"outputs":[]}"#.utf8) }
+        return data
+    }()
 
     /// A verbatim copy of the firmware example
     /// `docs/specs/configuration/examples/controller-config-v1.json` (firmware 9ba94a0).

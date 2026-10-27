@@ -10,12 +10,16 @@ struct SetupRulesView: View {
     var selection: SetupSelection
     /// The connected controller's catalog; empty when none has been discovered.
     var signals: [SignalDescriptor] = []
+    var outputCatalog: OutputCatalog? = nil
     @State private var expanded: Set<Int> = []
     @State private var editing: RuleEditRequest?
 
     var body: some View {
         if let config = selection.editableConfig {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                if let outputCatalog {
+                    OutputCatalogEditor(selection: selection, catalog: outputCatalog)
+                }
                 HStack(alignment: .firstTextBaseline) {
                     Text("RULES").font(Theme.Typography.headline).accessibilityAddTraits(.isHeader)
                     Spacer()
@@ -139,7 +143,9 @@ struct SetupRulesView: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             ForEach(outputIndices, id: \.self) { outputIndex in
-                EffectEditor(selection: selection, index: outputIndex)
+                let output = config.outputs[outputIndex]
+                let isReadOnly = outputCatalog.map { !OutputCatalogEditor.isEditable(output, in: $0) } ?? false
+                EffectEditor(selection: selection, index: outputIndex, isReadOnly: isReadOnly)
             }
             if outputIndices.isEmpty {
                 Text("This rule's action shows nothing yet.")

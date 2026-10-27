@@ -124,8 +124,20 @@ final class RuleEditorUITests: XCTestCase {
     private func collapseAndExpandRule(at index: Int) {
         let toggle = app.buttons["rules.toggle.\(index)"]
         let name = app.textFields["rules.name.\(index)"]
-        for _ in 0..<4 where !toggle.isHittable { app.swipeDown() }
-        XCTAssertTrue(toggle.isHittable)
+        let scrollView = app.scrollViews.containing(.textField, identifier: name.identifier).firstMatch
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5), "Rule editor must be inside a scroll view")
+        for _ in 0..<8 where !toggle.isHittable {
+            // Saving the rule sheet can leave the header above or below the
+            // viewport, or under the keyboard or tab bar, so scroll toward
+            // whichever half of the scroll view it is in.
+            if toggle.frame.midY > scrollView.frame.midY {
+                scrollView.swipeUp()
+            } else {
+                scrollView.swipeDown()
+            }
+        }
+        XCTAssertTrue(toggle.isHittable,
+                      "Rule header must be reachable by scrolling; header: \(toggle.frame), name: \(name.frame), scroll: \(scrollView.frame)")
         toggle.tap(until: name, appearing: false)
         XCTAssertTrue(name.waitForNonExistence(timeout: 5))
         toggle.tap(until: name)

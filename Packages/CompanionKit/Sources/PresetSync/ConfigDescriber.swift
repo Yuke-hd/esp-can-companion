@@ -72,6 +72,8 @@ public enum ConfigDescriber {
             return "lights \(pixels(binding.zone)) \(colorName(binding.color)) for \(durationMs) ms"
         case .ledSolid(let binding):
             return "lights \(pixels(binding.zone)) solid \(colorName(binding.color))"
+        case .unknown(let json):
+            return "unsupported output type \(json.object?["type"]?.stringValue ?? "unknown")"
         }
     }
 

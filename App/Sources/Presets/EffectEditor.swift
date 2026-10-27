@@ -8,38 +8,49 @@ import PresetSync
 struct EffectEditor: View {
     var selection: SetupSelection
     let index: Int
+    var isReadOnly = false
 
     var body: some View {
         if let output {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Picker("Effect type", selection: kindBinding) {
-                    ForEach(EffectKind.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("setup.output.\(index).kind")
                 Text(ConfigDescriber.effect(of: output))
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if case .ledEffect(let binding) = output {
-                    Picker("Built-in effect", selection: builtInBinding(binding)) {
-                        ForEach(ControllerConfig.LedEffect.allCases, id: \.self) { Text($0.title).tag($0) }
+                if isReadOnly {
+                    Text("This output is read-only because the controller catalog does not describe its type or fields.")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                } else if case .unknown = output {
+                    Text("Unsupported output is read-only and will be preserved when you edit other settings.")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                } else {
+                    Picker("Effect type", selection: kindBinding) {
+                        ForEach(EffectKind.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("setup.output.\(index).kind")
+                    if case .ledEffect(let binding) = output {
+                        Picker("Built-in effect", selection: builtInBinding(binding)) {
+                            ForEach(ControllerConfig.LedEffect.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .font(Theme.Typography.body)
+                        .tint(Theme.Colors.textPrimary)
+                        .accessibilityIdentifier("setup.output.\(index).builtIn")
+                    }
+                    if let zone = output.zoneBinding { zoneControls(zone) }
+                    if case .ledTransient(_, let durationMs) = output {
+                        numericRow("FLASH MS", value: durationBinding(durationMs), id: "duration")
+                    }
+                    numericRow("PRIORITY", value: priorityBinding, id: "priority")
+                    Button("Remove effect", systemImage: "minus.circle", role: .destructive) {
+                        edit { $0.outputs.remove(at: index) }
                     }
                     .font(Theme.Typography.body)
-                    .tint(Theme.Colors.textPrimary)
-                    .accessibilityIdentifier("setup.output.\(index).builtIn")
+                    .tint(Theme.Colors.accentText)
+                    .accessibilityIdentifier("setup.output.\(index).remove")
                 }
-                if let zone = output.zoneBinding { zoneControls(zone) }
-                if case .ledTransient(_, let durationMs) = output {
-                    numericRow("FLASH MS", value: durationBinding(durationMs), id: "duration")
-                }
-                numericRow("PRIORITY", value: priorityBinding, id: "priority")
-                Button("Remove effect", systemImage: "minus.circle", role: .destructive) {
-                    edit { $0.outputs.remove(at: index) }
-                }
-                .font(Theme.Typography.body)
-                .tint(Theme.Colors.accentText)
-                .accessibilityIdentifier("setup.output.\(index).remove")
             }
             .padding(Theme.Spacing.sm)
             .background(Theme.Colors.surfaceRaised)
