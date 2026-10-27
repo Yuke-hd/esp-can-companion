@@ -24,6 +24,12 @@ final class GaugesSettingsUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertTrue(error.label.contains("at or below fill end"), "got \(error.label)")
         capture("gauges-invalid")
+        // Committing the invalid entry leaves the live band (and none of the
+        // prefixes typed on the way) in place.
+        redlineField.typeText("\n")
+        goBack(until: gaugesRow)
+        XCTAssertTrue(gaugesRow.label.contains("Redline 6000"), "got \(gaugesRow.label)")
+        gaugesRow.tap(until: redlineField, timeout: 5)
 
         replaceText(in: redlineField, with: "4000")
         XCTAssertTrue(error.waitForNonExistence(timeout: 5), "a valid band clears the error")

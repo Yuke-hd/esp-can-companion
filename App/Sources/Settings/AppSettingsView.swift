@@ -33,8 +33,9 @@ struct AppSettingsView: View {
 }
 
 /// The in-app RPM span and redline the shift lights, RPM bar and red zone
-/// are drawn against. Each valid edit applies at once; an invalid one shows
-/// why and leaves the live band as it was.
+/// are drawn against. The error updates as you type, but edits apply only on
+/// commit: leaving a field, Done, the Redline toggle, or leaving the page. An
+/// invalid draft at commit leaves the last committed band live.
 struct GaugesSettingsView: View {
     let model: AppModel
     @State private var draft: RPMBandDraft
@@ -76,16 +77,23 @@ struct GaugesSettingsView: View {
                         .padding(.horizontal, Theme.Spacing.md)
                         .accessibilityIdentifier("settings.rpm.error")
                 }
-                Text("Shift lights fill from start to end; the RPM bar and numbers turn red at the redline. Up to \(SetupNumericEntry.formatted(RPMBand.maximumRPM)) rpm. Changes apply only when every value is valid.")
+                Text("Shift lights fill from start to end; the RPM bar and numbers turn red at the redline. Up to \(SetupNumericEntry.formatted(RPMBand.maximumRPM)) rpm. Changes apply when you tap Done or leave a field, and only if every value is valid.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .padding(.horizontal, Theme.Spacing.md)
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: draft) { _, draft in
-            if case .success(let band) = draft.result { model.setRPMBand(band) }
+        .onChange(of: focused) { old, new in
+            if old != nil, old != new { commit() }
         }
+        .onChange(of: draft.redlineOn) { commit() }
+        .onDisappear { commit(announce: false) }
+    }
+
+    private func commit(announce: Bool = true) {
+        guard let problem = model.commitRPMBand(&draft), announce else { return }
+        AccessibilityNotification.Announcement(problem.message).post()
     }
 }
 
