@@ -127,12 +127,16 @@ final class RuleEditorUITests: XCTestCase {
         let scrollView = app.scrollViews.containing(.textField, identifier: name.identifier).firstMatch
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5), "Rule editor must be inside a scroll view")
         for _ in 0..<8 where !toggle.isHittable {
-            // The header is above the visible action name, so scroll back
-            // toward the top until the header enters the viewport.
-            scrollView.swipeDown()
+            // Saving the rule sheet can leave the header above or below the
+            // viewport, so scroll toward whichever side it is on.
+            if toggle.frame.minY > scrollView.frame.maxY {
+                scrollView.swipeUp()
+            } else {
+                scrollView.swipeDown()
+            }
         }
         XCTAssertTrue(toggle.isHittable,
-                      "Rule header must be reachable after scrolling up; header: \(toggle.frame), name: \(name.frame), scroll: \(scrollView.frame)")
+                      "Rule header must be reachable by scrolling; header: \(toggle.frame), name: \(name.frame), scroll: \(scrollView.frame)")
         toggle.tap(until: name, appearing: false)
         XCTAssertTrue(name.waitForNonExistence(timeout: 5))
         toggle.tap(until: name)
