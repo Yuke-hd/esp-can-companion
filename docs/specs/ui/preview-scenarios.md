@@ -250,8 +250,11 @@ Use `driveLaps` so Drive and the Pit Wall have moving RPM and brake pressure.
   outside it.
 
 `GaugesSettingsUITests`, `ResetSettingsUITests` and `AppSettingsUITests`
-automate these journeys, including relaunch. Check dialogs and popovers on an
-iOS 26 Simulator as well as an older one, because their presentation differs.
+automate the settings edits, invalid entries, Drive's shift lights, reset and
+relaunch. `AppModelConfigTests` covers the Pit Wall shift lights and redline
+zone, and `DriveReadoutTests` the brake bar fill at a custom scale; check those
+two visually. For dialogs, also see the
+[iOS 26 note](../../development/ui-verification.md#tests-and-evidence).
 
 ## Extending a recipe
 
