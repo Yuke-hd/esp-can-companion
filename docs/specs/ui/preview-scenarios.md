@@ -221,6 +221,38 @@ validate physical BLE bonding/service discovery, phone VoiceOver interaction,
 radio timing, CAN traffic, LED fail-off behavior, or any vehicle interpretation.
 Those phone/bench/vehicle checks remain unrun and require separate evidence.
 
+## App settings recipes
+
+App settings (Drive style, RPM band and brake pressure scale) are saved on the
+phone, not on the controller, so every scenario uses them. Open them from the
+gear on the Pit Wall (`settings.open`). Settings persist across relaunches;
+`-ResetAppConfig YES` clears the saved RPM band and brake scale at launch but
+keeps the Drive style (see [launch arguments](../../development/ui-verification.md#settings-launch-arguments)).
+Use `driveLaps` so Drive and the Pit Wall have moving RPM and brake pressure.
+
+- **Defaults:** launch with `-ResetAppConfig YES`. Gauges shows fill 0 to
+  6500 rpm, redline 6000 and a 70 bar brake scale. If the Drive style was
+  changed earlier, Drive opens in that style; the default is Motorsport.
+- **Custom RPM band:** in Gauges, set the redline to 4000 and tap Done.
+  Drive's Motorsport shift lights turn red from light 10 of 15 (light 14 by
+  default). The Pit Wall's shift lights and the shaded redline zone of its RPM
+  bar move the same way, without reconnecting. A redline above the fill end
+  shows "at or below fill end" and leaves the saved band in place. Changes
+  apply only when the field is committed.
+- **Custom brake scale:** set Pressure scale to 120 bar and tap Done. The
+  Motorsport brake bar is then full at 120 bar instead of 70; the Cluster style
+  and the Pit Wall have no brake bar. Values outside 10 to 200 bar show an
+  inline error and are never applied.
+- **Reset:** tap "Reset to defaults" and confirm "Reset to Defaults". Gauges
+  and the Drive style return to the defaults above, and a relaunch without
+  `-ResetAppConfig` still shows them. Cancelling changes nothing. Before iOS 26 the confirmation is an
+  action sheet with Cancel; on iOS 26 it is a popover dismissed by tapping
+  outside it.
+
+`GaugesSettingsUITests`, `ResetSettingsUITests` and `AppSettingsUITests`
+automate these journeys, including relaunch. Check dialogs and popovers on an
+iOS 26 Simulator as well as an older one, because their presentation differs.
+
 ## Extending a recipe
 
 For a new relevant scenario, record its name, starting controller/configuration,

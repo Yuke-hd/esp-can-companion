@@ -124,6 +124,16 @@ An agent needs a UI-control tool or an implemented UI test for interaction check
 otherwise it must report those checks as unverified. Use descriptive filenames
 for subsequent screenshots and retain the output path in the report.
 
+### Settings launch arguments
+
+App settings live in the app's `UserDefaults`. `-ResetAppConfig YES` clears the
+saved RPM band and brake pressure scale before launch, so Gauges starts from its
+defaults. It does not clear the Drive style (`drive.style`); to start a
+Drive-style check from Motorsport, choose it in Settings or use Reset to
+Defaults, as the settings UI tests do. Add the argument to the `simctl launch`
+command above or as two more Xcode launch entries. Recipes are in the
+[scenario reference](../specs/ui/preview-scenarios.md#app-settings-recipes).
+
 Relaunching terminates the app process but retains its saved data. A persistence
 check must keep that data. For a clean-start check, use a disposable test
 installation: uninstalling the app removes its saved data. Never erase a whole
@@ -153,6 +163,11 @@ For package changes, run from `Packages/CompanionKit`:
 xcodebuild test -scheme CompanionKit-Package \
   -destination "id=$preview_simulator_id" CODE_SIGNING_ALLOWED=NO
 ```
+
+CI runs the UI tests on an iPhone 16 Pro Simulator without pinning the runtime;
+the runner currently picks iOS 26.x. Dialogs, popovers and confirmation sheets
+look and behave differently on iOS 26, so check them locally on an iOS 26
+Simulator as well as an older runtime.
 
 These are existing unit/integration tests, not a substitute for interacting with
 the rendered app. Review relevant CI results before calling a PR ready.

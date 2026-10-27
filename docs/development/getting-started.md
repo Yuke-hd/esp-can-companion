@@ -72,6 +72,9 @@ Simulator, which has no Bluetooth; pass `-FakeController YES` as a launch argume
 to use it on a device. Pass `-DemoScenario <name>` to start in another state:
 `notPaired`, `connecting`, `connected`, `customConfig`, `relinking`, `incompatible`,
 `bluetoothOff` or `noAccess` (see `DemoScenario`). SwiftUI previews use the same scenarios.
+Pass `-ResetAppConfig YES` to clear the saved app settings (RPM band and brake
+pressure scale, but not the Drive style) at launch; see
+[UI verification](ui-verification.md#settings-launch-arguments).
 The demo controller also streams a synthetic drive on Live signals, so the Pit Wall moves.
 
 ## Protocol client
@@ -159,7 +162,7 @@ free Apple ID works, but the build expires after 7 days.
 GitHub Actions ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) runs on a
 macOS runner for every pull request and push to `main`. It generates the project,
 then runs the package tests, the app unit tests and two shards of UI tests as
-parallel jobs on an iOS Simulator. No signing is involved.
+parallel jobs on an iOS 26 Simulator. No signing is involved.
 
 ## Data safety
 
