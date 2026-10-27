@@ -47,7 +47,7 @@ final class ResetSettingsUITests: XCTestCase {
         // Cancelling the confirmation changes nothing.
         resetButton.tap(until: confirmReset, timeout: 5)
         capture("settings-reset-confirmation")
-        app.buttons["Cancel"].tap(until: confirmReset, appearing: false)
+        dismissResetConfirmation()
         XCTAssertTrue(gaugesRow.label.contains("Redline 4000"), "got \(gaugesRow.label)")
 
         // Confirming restores every page.
@@ -79,10 +79,25 @@ final class ResetSettingsUITests: XCTestCase {
     private var driveRow: XCUIElement { app.buttons["settings.drive"] }
     private var gaugesRow: XCUIElement { app.buttons["settings.gauges"] }
     private var resetButton: XCUIElement { app.buttons["settings.reset"] }
-    private var confirmReset: XCUIElement { app.buttons["Reset to Defaults"] }
+    /// iOS 26 shows the dialog as a popover that lists the button twice, so take the first match.
+    private var confirmReset: XCUIElement { app.buttons["settings.reset.confirm"].firstMatch }
     private var brakeField: XCUIElement { app.textFields["settings.brake.scale"] }
     private var redlineField: XCUIElement { app.textFields["settings.rpm.redline"] }
     private var brakeError: XCUIElement { app.descendants(matching: .any)["settings.brake.error"] }
+
+    /// Before iOS 26 the dialog is an action sheet with Cancel. On iOS 26 it
+    /// is a popover above the Reset row without one; the system's dismiss
+    /// region covers the screen and is tapped at its centre, below the row.
+    private func dismissResetConfirmation() {
+        let cancel = app.buttons["Cancel"]
+        let outside = app.otherElements["PopoverDismissRegion"]
+        if cancel.exists {
+            cancel.tap(until: confirmReset, appearing: false)
+        } else {
+            XCTAssertTrue(outside.exists, "expected Cancel or a popover dismiss region")
+            outside.tap(until: confirmReset, appearing: false)
+        }
+    }
 
     private func launch(resetConfig: Bool) {
         var arguments = ["-FakeController", "YES", "-DemoScenario", "driveLaps"]
