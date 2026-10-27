@@ -77,7 +77,7 @@ final class AppModel {
         // The in-memory default is for previews and tests; `launch()` passes the persistent store.
         let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
         self.appConfigStore = appConfigStore
-        appConfig = appConfigStore.appConfig.withValidRPMBand
+        appConfig = appConfigStore.appConfig.validated
     }
 
     /// Defers the session, and with it the system Bluetooth prompt, until
@@ -89,7 +89,7 @@ final class AppModel {
         self.makeSession = makeSession
         let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
         self.appConfigStore = appConfigStore
-        appConfig = appConfigStore.appConfig.withValidRPMBand
+        appConfig = appConfigStore.appConfig.validated
     }
 
     var needsBluetoothPermission: Bool { session == nil }

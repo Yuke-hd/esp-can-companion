@@ -286,6 +286,18 @@ extension DriveReadoutTests {
         XCTAssertEqual(invalidReadout.throttle.freshness, .unknown)
     }
 
+    func testBrakePressureFillFollowsACustomScale() throws {
+        let snapshot = projectionSnapshot([
+            projectionSignal("vehicle.brake_pressure", .number, availability: .fresh, value: .number(30)),
+        ])
+        let wide = DriveReadout(frame: .unknown, snapshot: snapshot, brakePressureBarScale: 120)
+        XCTAssertEqual(try XCTUnwrap(wide.brakePressureFraction), 0.25, accuracy: 0.000001)
+        XCTAssertEqual(try XCTUnwrap(wide.brakePressurePercent), 25, accuracy: 0.0001)
+
+        let narrow = DriveReadout(frame: .unknown, snapshot: snapshot, brakePressureBarScale: 20)
+        XCTAssertEqual(narrow.brakePressureFraction, 1, "pressure above the scale fills the bar")
+    }
+
     func testNegativeBrakePressureDisplaysZeroWithoutChangingFreshness() {
         for availability in [SignalAvailability.fresh, .freshnessUnverified] {
             for pressure: Float in [-0.01, -1, -100] {

@@ -69,7 +69,7 @@ struct RPMBandDraft: Equatable {
     /// An optionally signed run of digits, ignoring surrounding whitespace.
     /// Digits too long for `Int` still parse, so they meet the range rules
     /// instead of being called "not a whole number".
-    private static func wholeNumber(_ text: String) -> Double? {
+    static func wholeNumber(_ text: String) -> Double? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let digits = trimmed.first.map { "+-".contains($0) } == true ? trimmed.dropFirst() : Substring(trimmed)
         guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
