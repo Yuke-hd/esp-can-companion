@@ -17,7 +17,10 @@ struct PitWallView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     ScreenHeader(eyebrow: eyebrow, title: "Pit Wall") {
-                        linkPill
+                        HStack(spacing: Theme.Spacing.xs) {
+                            settingsButton
+                            linkPill
+                        }
                     }
                     if let session = model.session {
                         if session.phase == .ready, isLive {
@@ -45,6 +48,21 @@ struct PitWallView: View {
                 }
             }
         }
+    }
+
+    private var settingsButton: some View {
+        NavigationLink {
+            AppSettingsView()
+        } label: {
+            Image(systemName: "gearshape")
+                .font(Theme.Typography.headline)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("App settings")
+        .accessibilityHint("Changes how the phone shows data")
+        .accessibilityIdentifier("settings.open")
     }
 
     @ViewBuilder
