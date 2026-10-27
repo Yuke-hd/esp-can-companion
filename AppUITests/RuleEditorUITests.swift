@@ -128,8 +128,9 @@ final class RuleEditorUITests: XCTestCase {
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5), "Rule editor must be inside a scroll view")
         for _ in 0..<8 where !toggle.isHittable {
             // Saving the rule sheet can leave the header above or below the
-            // viewport, so scroll toward whichever side it is on.
-            if toggle.frame.minY > scrollView.frame.maxY {
+            // viewport, or under the keyboard or tab bar, so scroll toward
+            // whichever half of the scroll view it is in.
+            if toggle.frame.midY > scrollView.frame.midY {
                 scrollView.swipeUp()
             } else {
                 scrollView.swipeDown()
