@@ -42,7 +42,9 @@ final class AppSettingsUITests: XCTestCase {
         // The choice survives relaunch.
         choose("cluster")
         app.terminate()
-        launch()
+        // No reset here, so the saved choice is what the relaunch reads. (Today
+        // `-ResetAppConfig` clears only the app config, not `drive.style`.)
+        launch(resetConfig: false)
         openSettings()
         XCTAssertTrue(styleOption("cluster").isSelected, "Drive style should survive relaunch")
 
@@ -50,12 +52,15 @@ final class AppSettingsUITests: XCTestCase {
         choose("motorsport")
     }
 
-    private func launch() {
-        app.launchArguments = [
+    private func launch(resetConfig: Bool = true) {
+        var arguments = [
             "-FakeController", "YES",
-            "-DemoScenario", "connected",
-            "-ResetAppConfig", "YES"
+            "-DemoScenario", "connected"
         ]
+        if resetConfig {
+            arguments += ["-ResetAppConfig", "YES"]
+        }
+        app.launchArguments = arguments
         app.launch()
         XCTAssertTrue(app.buttons["Drive"].waitForExistence(timeout: 15))
     }

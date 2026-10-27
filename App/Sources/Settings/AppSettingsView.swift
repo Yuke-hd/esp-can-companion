@@ -74,6 +74,7 @@ private struct SettingsPage<Content: View>: View {
         .background(Theme.Colors.background.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Theme.Colors.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -118,7 +119,7 @@ private struct SettingsRow: View {
                 .font(Theme.Typography.headline)
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .frame(width: 30, height: 30)
-                .background(Theme.Colors.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                .background(Theme.Colors.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
                 .accessibilityHidden(true)
             Text(title)
                 .font(Theme.Typography.headline)
