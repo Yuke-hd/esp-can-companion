@@ -63,18 +63,32 @@ final class AppModel {
     /// Nil until the user allows Bluetooth on first launch.
     private(set) var session: ControllerSession? = nil
     private(set) var presetSync: PresetSyncModel?
+    /// The app's own display settings; never follows the controller's config.
+    var appConfig: AppConfig {
+        didSet { appConfigStore.appConfig = appConfig }
+    }
     @ObservationIgnored private let makeSession: @MainActor () -> ControllerSession
+    @ObservationIgnored private let appConfigStore: AppConfigStore
 
-    init(session: ControllerSession) {
+    init(session: ControllerSession, appConfigStore: AppConfigStore? = nil) {
         self.session = session
         presetSync = Self.makePresetSync(session)
         makeSession = { session }
+        let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
+        self.appConfigStore = appConfigStore
+        appConfig = appConfigStore.appConfig
     }
 
     /// Defers the session, and with it the system Bluetooth prompt, until
     /// `allowBluetooth()`.
-    init(deferring makeSession: @escaping @MainActor () -> ControllerSession) {
+    init(
+        deferring makeSession: @escaping @MainActor () -> ControllerSession,
+        appConfigStore: AppConfigStore? = nil
+    ) {
         self.makeSession = makeSession
+        let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
+        self.appConfigStore = appConfigStore
+        appConfig = appConfigStore.appConfig
     }
 
     var needsBluetoothPermission: Bool { session == nil }
@@ -100,16 +114,21 @@ final class AppModel {
     /// The Simulator has no Bluetooth radio, so it uses the in-memory fake
     /// controller. Pass `-FakeController YES` to use the fake on a device too,
     /// and `-DemoScenario <name>` (see `DemoScenario`) to start in another state.
+    /// `-ResetAppConfig YES` forgets saved app settings before loading them.
     static func launch() -> AppModel {
         let defaults = UserDefaults.standard
+        let configStore = UserDefaultsAppConfigStore(defaults: defaults)
+        if defaults.bool(forKey: "ResetAppConfig") {
+            configStore.reset()
+        }
         if let name = defaults.string(forKey: "DemoScenario"), let scenario = DemoScenario(rawValue: name) {
-            return AppModel(session: scenario.makeSession())
+            return AppModel(session: scenario.makeSession(), appConfigStore: configStore)
         }
         #if targetEnvironment(simulator)
-        return AppModel(session: DemoScenario.notPaired.makeSession())
+        return AppModel(session: DemoScenario.notPaired.makeSession(), appConfigStore: configStore)
         #else
         if defaults.bool(forKey: "FakeController") {
-            return AppModel(session: DemoScenario.notPaired.makeSession())
+            return AppModel(session: DemoScenario.notPaired.makeSession(), appConfigStore: configStore)
         }
 
         let make: @MainActor () -> ControllerSession = {
@@ -125,9 +144,9 @@ final class AppModel {
         // first. Once decided (or on a background relaunch for state
         // restoration), create it right away.
         if CBManager.authorization == .notDetermined {
-            return AppModel(deferring: make)
+            return AppModel(deferring: make, appConfigStore: configStore)
         }
-        return AppModel(session: make())
+        return AppModel(session: make(), appConfigStore: configStore)
         #endif
     }
 }

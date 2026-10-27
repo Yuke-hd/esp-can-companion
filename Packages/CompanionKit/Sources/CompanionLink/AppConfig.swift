@@ -3,7 +3,7 @@ import CompanionProtocol
 /// The RPM span the in-app displays (shift lights, RPM bar, drive numeral)
 /// are drawn against. This belongs to the app, not the controller: it never
 /// follows the config the controller is running.
-public struct RPMBand: Equatable, Sendable {
+public struct RPMBand: Codable, Equatable, Sendable {
     /// The span the shift lights fill across.
     public var fill: ControllerConfig.Span?
     /// The RPM at which the displays turn red.
@@ -16,7 +16,7 @@ public struct RPMBand: Equatable, Sendable {
 }
 
 /// Settings of the app itself, independent of the connected controller.
-public struct AppConfig: Equatable, Sendable {
+public struct AppConfig: Codable, Equatable, Sendable {
     public var rpmBand: RPMBand
     /// The rounded display span for brake pressure. This is a visual scale,
     /// not a vehicle limit or a claim about the controller's 91.071 bar
