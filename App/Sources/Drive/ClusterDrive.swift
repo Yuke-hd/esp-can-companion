@@ -419,6 +419,20 @@ private extension Path {
 
 // MARK: - Dashboard
 
+/// The Cluster RPM bar's numbers.
+enum ClusterRPMMarks {
+    /// One number per thousand RPM up to the in-app scale's top. A scale
+    /// beyond `RPMBand.maximumRPM` (which a valid band cannot reach) gets no
+    /// numbers rather than an unbounded or trapping range.
+    static func marks(for band: RPMBand) -> [(fraction: Double, label: String)] {
+        let scale = max(band.fill?.to ?? 0, band.redline ?? 0)
+        guard scale >= 1000, scale <= RPMBand.maximumRPM else { return [] }
+        return (0...Int(scale / 1000)).map { thousand in
+            (fraction: Double(thousand) * 1000 / scale, label: String(thousand))
+        }
+    }
+}
+
 private struct ClusterDashboard: View {
     let readout: DriveReadout
     let signals: MotorsportSignals
@@ -490,13 +504,8 @@ private struct ClusterDashboard: View {
         return (Double(lower) + within) / Double(marks.count - 1)
     }
 
-    /// One number per thousand RPM up to the in-app scale's top.
     private var rpmMarks: [ClusterBar.Mark] {
-        let scale = max(rpmBand.fill?.to ?? 0, rpmBand.redline ?? 0)
-        guard scale >= 1000 else { return [] }
-        return (0...Int(scale / 1000)).map { thousand in
-            ClusterBar.Mark(fraction: Double(thousand) * 1000 / scale, label: String(thousand))
-        }
+        ClusterRPMMarks.marks(for: rpmBand).map { ClusterBar.Mark(fraction: $0.fraction, label: $0.label) }
     }
 
     private func speed(_ geometry: ClusterGeometry) -> some View {

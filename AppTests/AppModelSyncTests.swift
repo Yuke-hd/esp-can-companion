@@ -55,4 +55,23 @@ final class AppModelSyncTests: XCTestCase {
         XCTAssertEqual(sync.active?.presetID, preset.id)
         XCTAssertTrue(app.hasCurrentPresetRead)
     }
+
+    /// #54: the in-app RPM band never follows the controller's config.
+    func testLoadingAPresetLeavesTheAppRPMBandUnchanged() async throws {
+        let session = DemoScenario.connected.makeSession(latency: 0.001)
+        let band = RPMBand(fill: .init(from: 1500, to: 5000), redline: 4000)
+        let store = InMemoryAppConfigStore(appConfig: AppConfig(rpmBand: band))
+        let app = AppModel(session: session, appConfigStore: store)
+        for _ in 0..<400 where session.phase != .ready {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let sync = try XCTUnwrap(app.presetSync)
+        let preset = try XCTUnwrap(sync.presets.first)
+        _ = try await session.client.uploadConfig(preset.config)
+        _ = try await session.clientAfterRestart()
+        await sync.refresh()
+        XCTAssertEqual(sync.active?.presetID, preset.id)
+        XCTAssertEqual(app.appConfig.rpmBand, band)
+        XCTAssertEqual(store.appConfig.rpmBand, band)
+    }
 }

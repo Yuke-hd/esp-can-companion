@@ -85,4 +85,11 @@ final class PitWallTextTests: XCTestCase {
         XCTAssertEqual(stalled.gearBox.lines.map(\.text), ["Gear", "—", "Unknown"])
         XCTAssertEqual(stalled.speedBox.lines.map(\.text), ["Km/h", "—", "Unknown"])
     }
+
+    func testShiftLightsAccessibilityNamesTheFirstRedLight() {
+        XCTAssertEqual(PitWallReadout.shiftLightsAccessibilityText(lit: 5, firstRed: 9),
+                       "Shift lights, 5 of 15 lit, red from light 10")
+        XCTAssertEqual(PitWallReadout.shiftLightsAccessibilityText(lit: 0, firstRed: nil),
+                       "Shift lights, 0 of 15 lit")
+    }
 }

@@ -7,7 +7,8 @@ public protocol AppConfigStore: AnyObject {
 }
 
 /// Keeps `AppConfig` as versioned JSON in `UserDefaults`. Anything it cannot
-/// read, including a newer version, comes back as `AppConfig.default`.
+/// read, including a newer version, comes back as `AppConfig.default`; an
+/// invalid RPM band comes back as the default band.
 @MainActor
 public final class UserDefaultsAppConfigStore: AppConfigStore {
     public static let defaultKey = "CompanionLink.appConfig"
@@ -32,7 +33,7 @@ public final class UserDefaultsAppConfigStore: AppConfigStore {
             guard let data = defaults.data(forKey: key),
                   let stored = try? JSONDecoder().decode(Stored.self, from: data),
                   stored.version == Self.currentVersion else { return .default }
-            return stored.config
+            return stored.config.withValidRPMBand
         }
         set {
             guard let data = try? JSONEncoder().encode(Stored(version: Self.currentVersion, config: newValue)) else { return }

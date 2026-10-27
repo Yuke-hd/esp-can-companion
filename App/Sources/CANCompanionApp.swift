@@ -77,7 +77,7 @@ final class AppModel {
         // The in-memory default is for previews and tests; `launch()` passes the persistent store.
         let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
         self.appConfigStore = appConfigStore
-        appConfig = appConfigStore.appConfig
+        appConfig = appConfigStore.appConfig.withValidRPMBand
     }
 
     /// Defers the session, and with it the system Bluetooth prompt, until
@@ -89,10 +89,19 @@ final class AppModel {
         self.makeSession = makeSession
         let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
         self.appConfigStore = appConfigStore
-        appConfig = appConfigStore.appConfig
+        appConfig = appConfigStore.appConfig.withValidRPMBand
     }
 
     var needsBluetoothPermission: Bool { session == nil }
+
+    /// Applies and saves `band` only when it is valid. Otherwise returns the
+    /// rule it breaks and leaves the live and saved band as they were.
+    @discardableResult
+    func setRPMBand(_ band: RPMBand) -> RPMBandIssue? {
+        if let issue = band.issue { return issue }
+        appConfig.rpmBand = band
+        return nil
+    }
 
     /// Cached preset identity is confirmed only by the current session's read.
     var hasCurrentPresetRead: Bool {
