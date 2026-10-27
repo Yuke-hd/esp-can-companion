@@ -74,6 +74,7 @@ final class AppModel {
         self.session = session
         presetSync = Self.makePresetSync(session)
         makeSession = { session }
+        // The in-memory default is for previews and tests; `launch()` passes the persistent store.
         let appConfigStore = appConfigStore ?? InMemoryAppConfigStore()
         self.appConfigStore = appConfigStore
         appConfig = appConfigStore.appConfig

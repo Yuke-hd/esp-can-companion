@@ -36,6 +36,15 @@ final class AppConfigStoreTests: XCTestCase {
         XCTAssertNil(UserDefaultsAppConfigStore(defaults: defaults).appConfig.rpmBand.redline)
     }
 
+    func testValueThatCannotBeEncodedKeepsTheSavedConfig() {
+        let store = UserDefaultsAppConfigStore(defaults: defaults)
+        store.appConfig = custom
+        var invalid = custom
+        invalid.brakePressureBarScale = .nan
+        store.appConfig = invalid
+        XCTAssertEqual(UserDefaultsAppConfigStore(defaults: defaults).appConfig, custom)
+    }
+
     func testCorruptDataFallsBackToDefaults() {
         defaults.set(Data("not json".utf8), forKey: UserDefaultsAppConfigStore.defaultKey)
         XCTAssertEqual(UserDefaultsAppConfigStore(defaults: defaults).appConfig, .default)

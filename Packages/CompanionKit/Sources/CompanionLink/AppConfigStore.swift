@@ -26,6 +26,7 @@ public final class UserDefaultsAppConfigStore: AppConfigStore {
         self.key = key
     }
 
+    /// A value that cannot be encoded (such as NaN) leaves the saved settings as they were.
     public var appConfig: AppConfig {
         get {
             guard let data = defaults.data(forKey: key),
@@ -34,7 +35,7 @@ public final class UserDefaultsAppConfigStore: AppConfigStore {
             return stored.config
         }
         set {
-            let data = try? JSONEncoder().encode(Stored(version: Self.currentVersion, config: newValue))
+            guard let data = try? JSONEncoder().encode(Stored(version: Self.currentVersion, config: newValue)) else { return }
             defaults.set(data, forKey: key)
         }
     }
