@@ -21,7 +21,7 @@ struct PitWallView: View {
                     }
                     if let session = model.session {
                         if session.phase == .ready, isLive {
-                            PitWallLive(session: session)
+                            PitWallLive(session: session, rpmBand: model.appConfig.rpmBand)
                         } else if session.phase != .ready {
                             ConnectionCard(connection: session.connection)
                             ControllerCard(session: session)
@@ -83,17 +83,19 @@ struct PitWallView: View {
 /// while this view is on screen.
 private struct PitWallLive: View {
     var session: ControllerSession
+    var rpmBand: RPMBand
     @State private var telemetry: LiveTelemetry
     @State private var showingSignals = false
 
-    init(session: ControllerSession) {
+    init(session: ControllerSession, rpmBand: RPMBand) {
         self.session = session
+        self.rpmBand = rpmBand
         _telemetry = State(initialValue: LiveTelemetry(session: session))
     }
 
     var body: some View {
         let summary = session.activeConfig?.configSummary
-        let readout = PitWallReadout(frame: telemetry.frame, band: AppConfig.default.rpmBand)
+        let readout = PitWallReadout(frame: telemetry.frame, band: rpmBand)
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             ControllerStrip(
                 firmware: session.deviceInfo?.firmwareVersion,

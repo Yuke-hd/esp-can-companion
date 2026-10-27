@@ -20,12 +20,13 @@ struct DriveTab: View {
         let session = model.session
         let summary = session?.activeConfig?.configSummary
         let frame = telemetry?.frame ?? .unknown
+        let appConfig = model.appConfig
         let readout = DriveReadout(
             frame: frame,
             activeConfig: summary,
-            rpmBand: AppConfig.default.rpmBand,
+            rpmBand: appConfig.rpmBand,
             snapshot: telemetry?.snapshot,
-            brakePressureBarScale: AppConfig.default.brakePressureBarScale,
+            brakePressureBarScale: appConfig.brakePressureBarScale,
             linkState: session?.connection.state ?? .unknown,
             framesPerSecond: telemetry?.framesPerSecond ?? 0
         )
@@ -46,7 +47,7 @@ struct DriveTab: View {
                 ClusterDriveView(
                     readout: readout,
                     signals: signals,
-                    rpmBand: AppConfig.default.rpmBand,
+                    rpmBand: appConfig.rpmBand,
                     onExit: onExit,
                     onSwitchStyle: switchStyle
                 )
