@@ -8,7 +8,7 @@ struct DriveTab: View {
     let model: AppModel
     let onExit: () -> Void
     @State private var telemetry: LiveTelemetry?
-    @AppStorage("drive.style") private var style: DriveStyle = .motorsport
+    @AppStorage(DriveStyle.storageKey) private var style: DriveStyle = .motorsport
 
     init(model: AppModel, onExit: @escaping () -> Void) {
         self.model = model
@@ -77,6 +77,16 @@ struct DriveTab: View {
 enum DriveStyle: String, CaseIterable {
     case motorsport
     case cluster
+
+    /// Shared by the Drive cycle button and the App settings picker.
+    static let storageKey = "drive.style"
+
+    var title: String {
+        switch self {
+        case .motorsport: "Motorsport"
+        case .cluster: "Cluster"
+        }
+    }
 
     var next: DriveStyle {
         let all = Self.allCases
