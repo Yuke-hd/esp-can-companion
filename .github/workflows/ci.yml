@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # 01:00 UTC is 12:00 in Sydney during daylight saving (13:00 in winter).
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 env:
@@ -12,7 +15,8 @@ env:
   DESTINATION: platform=iOS Simulator,name=iPhone 16 Pro
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # The daily run shares main's ref, so it needs its own group or a push cancels it.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'schedule' && 'daily' || 'change' }}
   cancel-in-progress: true
 
 # Jobs run in parallel. Four macOS jobs fit the free-plan limit of five:
@@ -21,16 +25,26 @@ concurrency:
 jobs:
   changes:
     # Decides which jobs a change needs. Anything that is not a pull request
-    # runs everything.
+    # runs everything. The slow UI tests run only on the daily schedule and
+    # manual runs, never for a commit; developers run them locally first.
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
       companion: ${{ steps.filter.outputs.companion }}
+      ui: ${{ steps.ui.outputs.ui }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - id: ui
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - id: filter
         env:
@@ -140,7 +154,7 @@ jobs:
     # test-without-building instead of each compiling the app again.
     name: UI test build
     needs: changes
-    if: needs.changes.outputs.companion == 'true'
+    if: needs.changes.outputs.ui == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -179,7 +193,7 @@ jobs:
     # in a row, so they are split across shards that run in parallel.
     name: UI tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: [changes, ui-build]
-    if: needs.changes.outputs.companion == 'true'
+    if: needs.changes.outputs.ui == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     strategy:

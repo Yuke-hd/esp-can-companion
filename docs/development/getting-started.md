@@ -164,6 +164,12 @@ macOS runner for every pull request and push to `main`. It generates the project
 then runs the package tests, the app unit tests and two shards of UI tests as
 parallel jobs on the runner's newest iOS Simulator (currently iOS 26). No signing is involved.
 
+The UI tests are slow, so no commit triggers them in CI, on a pull request or
+on `main`. They run on `main` once a day at 01:00 UTC (12:00 in Sydney during
+daylight saving), regardless of what changed, or on a manual run. Run the UI
+tests for the code you changed locally before committing (see
+[UI preview and verification](ui-verification.md)).
+
 ## Data safety
 
 Never commit vehicle captures, VINs, or anything that identifies a vehicle or
