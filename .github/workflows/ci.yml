@@ -24,19 +24,27 @@ concurrency:
 # on Linux and does not use that limit.
 jobs:
   changes:
-    # Decides which jobs a change needs. Pull requests run what their files
-    # touch, including the UI tests. A push to main skips the slow UI tests;
-    # the daily schedule and manual runs run everything.
+    # Decides which jobs a change needs. Anything that is not a pull request
+    # runs everything. The slow UI tests run only on the daily schedule and
+    # manual runs, never for a commit; developers run them locally first.
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
       companion: ${{ steps.filter.outputs.companion }}
-      ui: ${{ steps.filter.outputs.ui }}
+      ui: ${{ steps.ui.outputs.ui }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - id: ui
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - id: filter
         env:
@@ -47,7 +55,6 @@ jobs:
           if [ "$EVENT" != "pull_request" ]; then
             echo "engine=true" >> "$GITHUB_OUTPUT"
             echo "companion=true" >> "$GITHUB_OUTPUT"
-            [ "$EVENT" = "push" ] && echo "ui=false" >> "$GITHUB_OUTPUT" || echo "ui=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
@@ -63,10 +70,8 @@ jobs:
           # does not link it, so EngineSim-only changes do not need iOS jobs.
           if echo "$files" | grep -qE '^(App/|AppTests/|AppUITests/|Packages/CompanionKit/|Config/|project\.yml$|\.github/)'; then
             echo "companion=true" >> "$GITHUB_OUTPUT"
-            echo "ui=true" >> "$GITHUB_OUTPUT"
           else
             echo "companion=false" >> "$GITHUB_OUTPUT"
-            echo "ui=false" >> "$GITHUB_OUTPUT"
           fi
 
   engine-tests:

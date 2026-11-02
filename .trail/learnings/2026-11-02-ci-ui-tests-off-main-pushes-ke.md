@@ -10,8 +10,9 @@ touches:
 ---
 
 ## Decided
-- ci.yml `changes` job now has a `ui` output: PRs set it from the path filter, push to main sets false, schedule and workflow_dispatch set true. `ui-build` and `ui-tests` gate on it instead of `companion`. Daily cron is 01:00 UTC (12:00 Sydney in daylight saving, 13:00 in winter).
-- "Require UI tests before commit" was read as the PR gate (existing path filter), not a local git hook.
+- ci.yml `changes` job has a `ui` output that is true only for `schedule` and `workflow_dispatch`; `ui-build` and `ui-tests` gate on it, so no commit (PR or push to main) runs UI tests in CI. Daily cron is 01:00 UTC (12:00 Sydney in daylight saving, 13:00 in winter).
+- First version ran UI tests on PRs via the path filter, and `.github/` in that filter made this very PR run them. The owner wanted no commit to trigger them, so the filter no longer feeds `ui`.
+- "Require UI tests on changed code before commit" is a local rule: added to AGENTS.md, not a git hook.
 
 ## Tried and ruled out
 - Making the UI check required: main has no branch protection (API 404), and changing repo settings is the owner's call, so it was left alone.
